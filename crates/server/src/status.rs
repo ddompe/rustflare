@@ -24,7 +24,12 @@ pub struct CameraStatus {
 #[derive(Clone, Serialize)]
 pub struct MountStatus {
     pub info: String,
+    /// Whether the mount is tracking, as last read back from the mount itself.
     pub tracking: bool,
+    pub slewing: Option<bool>,
+    pub at_home: Option<bool>,
+    pub park: Option<rustflare_core::ParkState>,
+    pub alt_az: Option<bool>,
 }
 
 #[derive(Clone, Serialize)]

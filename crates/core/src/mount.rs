@@ -49,7 +49,34 @@ pub enum TrackingRate {
     Lunar,
 }
 
+/// Park state as reported by the mount itself. Read-only information: RustFlare does not park or unpark (on ZWO
+/// mounts that is a different thing from going home); it only knows that a parked mount refuses to move.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ParkState {
+    Unparked,
+    Parking,
+    Parked,
+}
+
+/// What the mount itself says it is doing. Fields are `None` when the driver cannot tell. The mount can be
+/// changed from outside (its own buttons, another app), so this is read back, never assumed.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize)]
+pub struct MountState {
+    pub tracking: Option<bool>,
+    pub slewing: Option<bool>,
+    pub at_home: Option<bool>,
+    pub park: Option<ParkState>,
+    /// Alt-azimuth mode (field rotation; park is not available).
+    pub alt_az: Option<bool>,
+}
+
 pub trait Mount: Send {
+    /// Asks the mount for its current state (read-only).
+    fn state(&mut self) -> Result<MountState> { Ok(MountState::default()) }
+    /// Moves to the home (zero) position. Moves the mount.
+    fn go_home(&mut self) -> Result<()> { Err(crate::Error::Unsupported("go home".into())) }
+
     fn info(&self) -> String;
     fn set_tracking(&mut self, enabled: bool) -> Result<()>;
     /// Selects the sky tracking rate (the Sun needs `Solar`).

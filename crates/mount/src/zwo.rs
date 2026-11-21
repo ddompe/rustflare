@@ -9,9 +9,9 @@
 //!   * `stop()` no longer disables tracking (matches the `Mount` trait contract);
 //!   * generic over the I/O object so the protocol is unit-testable.
 
+use rustflare_core::{Axis, Error, Mount, MountState, ParkState, RadPerSec, Result, SlewSpeed, TrackingRate, SIDEREAL_RATE};
 use std::io::{Read, Write};
 use std::time::Duration;
-use rustflare_core::{Axis, Error, Mount, RadPerSec, Result, SlewSpeed, TrackingRate, SIDEREAL_RATE};
 
 const END_CHAR: u8 = b'#';
 /// Guide pulse length requested from the mount; the engine re-issues commands, so this is a safety bound.
@@ -74,9 +74,13 @@ impl<P: Read + Write + Send> Zwo<P> {
             },
             Err(_) => "unknown (no reply)".into(),
         };
-        // Start from a known state: tracking off.
-        send(&mut port, ":Td#", Reply::None)?;
-        Ok(Zwo { port, model, device: device.into(), tracking: false })
+        // Do NOT force a state: the mount may already be tracking (a service restart or update must not stop
+        // it), or have been changed with its own buttons. Ask it. (The first version sent `:Td#` here.)
+        let tracking = match send(&mut port, ":GU#", Reply::EndsWith(END_CHAR)) {
+            Ok(flags) => !flags.contains(&b'n'),
+            Err(_) => false,
+        };
+        Ok(Zwo { port, model, device: device.into(), tracking })
     }
 
     fn cmd(&mut self, c: &str) -> Result<()> {
@@ -92,6 +96,31 @@ impl<P: Read + Write + Send> Drop for Zwo<P> {
 
 impl<P: Read + Write + Send> Mount for Zwo<P> {
     fn info(&self) -> String { format!("ZWO {} on {}", self.model, self.device) }
+
+    /// `:GU#` flags: `n` = tracking OFF, `N` = not slewing, `H` = at home, `Z` = alt-az mode; `:Gps#` = park state
+    /// (0 not parked, 1 parking, 2 parked; read-only here). A parked mount reports no `N`, which is not a slew.
+    fn state(&mut self) -> Result<MountState> {
+        let flags = send(&mut self.port, ":GU#", Reply::EndsWith(END_CHAR))?;
+        let has = |c: u8| flags.contains(&c);
+        let park = send(&mut self.port, ":Gps#", Reply::EndsWith(END_CHAR)).ok().and_then(|r| match r.first() {
+            Some(b'0') => Some(ParkState::Unparked),
+            Some(b'1') => Some(ParkState::Parking),
+            Some(b'2') => Some(ParkState::Parked),
+            _ => None,
+        });
+        let parked = park == Some(ParkState::Parked);
+        let slewing = !has(b'N') && !parked;
+        let at_home = has(b'H');
+        self.tracking = !has(b'n');
+
+        Ok(MountState { tracking: Some(self.tracking), slewing: Some(slewing), at_home: Some(at_home), park, alt_az: Some(has(b'Z')) })
+    }
+
+    fn go_home(&mut self) -> Result<()> {
+        self.cmd(":hC#")?;
+        self.tracking = false;
+        Ok(())
+    }
 
     fn set_tracking(&mut self, enabled: bool) -> Result<()> {
         send(&mut self.port, if enabled { ":Te#" } else { ":Td#" }, Reply::Exactly("1"))?;
@@ -205,20 +234,23 @@ mod tests {
         fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
     }
 
-    fn mount(replies: &str) -> Zwo<Mock> {
-        Zwo::new(Mock { written: String::new(), replies: replies.bytes().collect() }, "mock").unwrap()
+    /// Model reply and a "tracking off" `:GU#` reply (what the constructor reads), then `extra` replies.
+    fn mount(extra: &str) -> Zwo<Mock> {
+        Zwo::new(Mock { written: String::new(), replies: format!("AM5#n#{extra}").bytes().collect() }, "mock").unwrap()
     }
 
     #[test]
-    fn detects_model_and_disables_tracking() {
-        let m = mount("AM5#");
+    fn detects_model_and_reads_the_tracking_state_without_changing_it() {
+        let m = mount("");
         assert_eq!(m.info(), "ZWO AM5 on mock");
-        assert_eq!(m.port.written, ":GVP#:Td#");
+        // it asks the mount for its state; it never forces tracking off
+        assert_eq!(m.port.written, ":GVP#:GU#");
+        assert!(!m.tracking);
     }
 
     #[test]
     fn guide_rate_is_clamped_not_pinned() {
-        let mut m = mount("AM5#1");
+        let mut m = mount("1");
         m.set_tracking(true).unwrap();
         m.port.written.clear();
         m.guide(RadPerSec(0.5 * SIDEREAL_RATE.0), RadPerSec(0.0)).unwrap();
@@ -232,17 +264,47 @@ mod tests {
 
     #[test]
     fn guide_requires_tracking() {
-        let mut m = mount("AM5#");
+        let mut m = mount("");
         assert!(m.guide(RadPerSec(0.5 * SIDEREAL_RATE.0), RadPerSec(0.0)).is_err());
     }
 
     #[test]
     fn solar_rate_and_slew() {
-        let mut m = mount("AM5#");
+        let mut m = mount("");
         m.port.written.clear();
         m.set_tracking_rate(TrackingRate::Solar).unwrap();
         m.slew(Axis::Secondary, SlewSpeed::Specific(RadPerSec(-8.0 * SIDEREAL_RATE.0))).unwrap();
         assert_eq!(m.port.written, ":TS#:R5#:Ms#");
         assert!(!m.slewing_speed_supported(RadPerSec(3.0 * SIDEREAL_RATE.0)));
+    }
+
+    #[test]
+    fn already_tracking_mount_is_left_tracking_on_connect() {
+        // `:GU#` without the `n` flag = tracking ON (a service restart must not stop the mount)
+        let m = Zwo::new(Mock { written: String::new(), replies: "AM5#N#".bytes().collect() }, "mock").unwrap();
+        assert!(m.tracking);
+        assert!(!m.port.written.contains(":Td#"));
+    }
+
+    #[test]
+    fn state_reads_external_changes() {
+        let mut m = mount("N#0#");
+        let s = m.state().unwrap();
+        assert_eq!((s.tracking, s.slewing, s.park), (Some(true), Some(false), Some(ParkState::Unparked)));
+        // parked with the mount's own button: tracking off, no `N`, park state 2 — not "slewing"
+        let mut m = mount("n#2#");
+        let s = m.state().unwrap();
+        assert_eq!((s.tracking, s.slewing, s.park), (Some(false), Some(false), Some(ParkState::Parked)));
+        let mut m = mount("nZ#0#");
+        assert_eq!(m.state().unwrap().alt_az, Some(true));
+    }
+
+    #[test]
+    fn go_home_sends_the_home_command() {
+        let mut m = mount("");
+        m.port.written.clear();
+        m.go_home().unwrap();
+        assert_eq!(m.port.written, ":hC#");
+        assert!(!m.tracking);
     }
 }

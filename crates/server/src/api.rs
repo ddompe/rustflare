@@ -41,6 +41,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/mount/tracking", post(mount_tracking))
         .route("/api/mount/slew", post(mount_slew))
         .route("/api/mount/stop", post(|s| run(s, Command::MountStop)))
+        .route("/api/mount/home", post(|s, b| mount_motion(s, b, Command::MountHome)))
         .route("/api/tracking/start", post(tracking_start))
         .route("/api/tracking/stop", post(|s| run(s, Command::StopTracking)))
         .route("/api/guiding/calibrate", post(|s| run(s, Command::Calibrate)))
@@ -360,4 +361,15 @@ async fn ui_put(State(st): State<AppState>, Json(b): Json<UiSetting>) -> Res {
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
+}
+
+#[derive(Deserialize, Default)]
+struct Confirm { #[serde(default)] confirm: bool }
+
+/// Going home MOVES the mount: refuse unless the caller says it is sure (the UI asks the user first).
+async fn mount_motion(s: State<AppState>, body: Option<Json<Confirm>>, cmd: Command) -> Res {
+    if !body.map(|b| b.0.confirm).unwrap_or(false) {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "this moves the mount: send {\"confirm\": true}" }))).into_response();
+    }
+    run(s, cmd).await
 }

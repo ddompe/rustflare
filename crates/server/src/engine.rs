@@ -8,7 +8,7 @@ use rustflare_camera as cams;
 use rustflare_capture::{write_png, BurstSpec, FlatAccumulator, FlatDecision, FlatTarget, Format, FrameSink, SerWriter};
 use rustflare_core::camera::CTRL_EXPOSURE_US;
 use rustflare_core::sim::SimSky;
-use rustflare_core::{Axis, Camera, CameraDriver, Error, Frame, Mount, RadPerSec, SlewSpeed, TrackingRate, Vec2, SIDEREAL_RATE};
+use rustflare_core::{Axis, Camera, CameraDriver, Error, Frame, Mount, MountState, ParkState, RadPerSec, SlewSpeed, TrackingRate, Vec2, SIDEREAL_RATE};
 use rustflare_tracking::*;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -59,6 +59,8 @@ pub enum Command {
     MountTracking { enabled: bool },
     MountSlew { axis: Axis, speed: f64 },
     MountStop,
+    /// Moves the mount to its home (zero) position; the API asks for explicit confirmation.
+    MountHome,
     StartTracking { mode: String, x: Option<f64>, y: Option<f64>, radius: Option<f64> },
     StopTracking,
     Calibrate,
@@ -155,6 +157,10 @@ pub struct Engine {
     camera: Option<Box<dyn Camera>>,
     mount: Option<Box<dyn Mount>>,
     mount_tracking: bool,
+    /// What the mount itself last reported (it can be changed from outside: its buttons, another app).
+    mount_state: MountState,
+    last_mount_poll: Instant,
+    mount_poll_failures: u32,
     tracker: Option<Tracker>,
     lost: bool,
     guide: GuideState,
@@ -207,6 +213,9 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         camera: None,
         mount: None,
         mount_tracking: false,
+        mount_state: MountState::default(),
+        last_mount_poll: Instant::now(),
+        mount_poll_failures: 0,
         tracker: None,
         lost: false,
         guide: GuideState::Off,
@@ -258,6 +267,7 @@ impl Engine {
         loop {
             self.poll_sink();
             self.auto_connect_tick();
+            self.poll_mount();
             self.flush_controls();
             if self.draining.is_some() && self.last_publish.elapsed() >= Duration::from_millis(200) {
                 self.publish();
@@ -383,7 +393,8 @@ impl Engine {
         }
         self.status.seq += 1;
         self.last_publish = Instant::now();
-        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking });
+        let ms = self.mount_state;
+        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking, slewing: ms.slewing, at_home: ms.at_home, park: ms.park, alt_az: ms.alt_az });
         self.status.guiding.state = match self.guide {
             GuideState::Off => "off",
             GuideState::Calibrating(_) => "calibrating",
@@ -462,6 +473,9 @@ impl Engine {
                 Ok(json!({}))
             }
             Command::MountTracking { enabled } => {
+                if enabled {
+                    self.require_not_parked()?;
+                }
                 let m = self.mount.as_mut().ok_or("no mount connected")?;
                 if enabled {
                     m.set_tracking_rate(TrackingRate::Solar).map_err(s)?;
@@ -474,6 +488,9 @@ impl Engine {
                 Ok(json!({}))
             }
             Command::MountSlew { axis, speed } => {
+                if speed != 0.0 {
+                    self.require_not_parked()?;
+                }
                 if !matches!(self.guide, GuideState::Off) {
                     return Err("stop guiding before slewing manually".into());
                 }
@@ -492,6 +509,14 @@ impl Engine {
             Command::MountStop => {
                 self.stop_guiding_quietly();
                 self.mount.as_mut().ok_or("no mount connected")?.stop().map_err(s)?;
+                Ok(json!({}))
+            }
+            Command::MountHome => {
+                self.require_idle()?;
+                self.require_not_parked()?;
+                self.stop_guiding_quietly();
+                self.mount.as_mut().ok_or("no mount connected")?.go_home().map_err(s)?;
+                self.mount_tracking = false; // the mount stops tracking to go home; the next poll confirms
                 Ok(json!({}))
             }
             Command::StartTracking { mode, x, y, radius } => {
@@ -651,6 +676,49 @@ impl Engine {
         }
     }
 
+    fn require_not_parked(&self) -> Result<(), String> {
+        match self.mount_state.park {
+            Some(ParkState::Parked) | Some(ParkState::Parking) => Err("the mount is parked: unpark it first".into()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Reads the mount's real state every couple of seconds: it can be changed from outside (its own park
+    /// button, another app), so the app must not assume it is still doing what we last told it.
+    fn poll_mount(&mut self) {
+        if self.mount.is_none() || self.last_mount_poll.elapsed() < Duration::from_secs(2) {
+            return;
+        }
+        self.last_mount_poll = Instant::now();
+        match self.mount.as_mut().map(|m| m.state()) {
+            Some(Ok(st)) => {
+                self.mount_poll_failures = 0;
+                if let Some(t) = st.tracking {
+                    if t != self.mount_tracking {
+                        log::info!("mount tracking is now {} (changed outside RustFlare)", if t { "on" } else { "off" });
+                        if !t && !matches!(self.guide, GuideState::Off) {
+                            self.stop_guiding_quietly();
+                            self.status.error = Some("the mount stopped tracking (changed on the mount itself): guiding stopped".into());
+                        }
+                        self.mount_tracking = t;
+                    }
+                }
+                let changed = st != self.mount_state;
+                self.mount_state = st;
+                if changed {
+                    self.publish(); // the state can change under us; show it now, not at the next command
+                }
+            }
+            Some(Err(e)) => {
+                self.mount_poll_failures += 1;
+                if self.mount_poll_failures == 3 {
+                    self.status.error = Some(format!("lost contact with the mount: {e}"));
+                }
+            }
+            None => {}
+        }
+    }
+
     fn require_idle(&self) -> Result<(), String> {
         if !matches!(self.job, Job::Idle) {
             Err("a capture is running".into())
@@ -683,6 +751,7 @@ impl Engine {
         self.storage.ensure_ready().map(|_| ())
     }
     fn require_ready_to_guide(&self, need_cal: bool) -> Result<(), String> {
+        self.require_not_parked()?;
         if self.tracker.is_none() {
             return Err("start tracking first".into());
         }
@@ -733,7 +802,13 @@ impl Engine {
         self.disconnect_mount();
         let m = rustflare_mount::connect(driver, device, &self.sky).map_err(s)?;
         self.mount = Some(m);
-        self.mount_tracking = false; // connecting never starts tracking: that moves the mount
+        // Connecting never changes the mount's tracking; read back what it is actually doing.
+        self.mount_tracking = false;
+        self.mount_state = MountState::default();
+        if let Some(Ok(st)) = self.mount.as_mut().map(|m| m.state()) {
+            self.mount_tracking = st.tracking.unwrap_or(false);
+            self.mount_state = st;
+        }
         Ok(())
     }
 
@@ -801,6 +876,7 @@ impl Engine {
         self.stop_guiding_quietly();
         self.mount = None;
         self.mount_tracking = false;
+        self.mount_state = MountState::default();
         self.calibration = None;
     }
 
