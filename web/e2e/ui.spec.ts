@@ -84,3 +84,15 @@ test('flats live in the Camera tab', async ({ page }) => {
   await page.getByRole('tab', { name: /^More/ }).click()
   await expect(page.getByText('Flats', { exact: true })).toHaveCount(0)
 })
+
+test('Prominence view toggles from the live view tools', async ({ page }) => {
+  await page.goto('/')
+  await expect.poll(async () => !!(await (await page.request.get('/api/status')).json()).sun, { timeout: 10_000 }).toBe(true).catch(() => {})
+  const btn = page.getByRole('button', { name: 'Prominence view' })
+  if (await btn.isDisabled()) test.skip(true, 'the simulator scene has no Sun in view')
+  await btn.click()
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).coronagraph.enabled).toBe(true)
+  await expect(btn).toHaveAttribute('aria-pressed', 'true') // the UI follows the server
+  await btn.click()
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).coronagraph.enabled).toBe(false)
+})

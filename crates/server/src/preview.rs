@@ -163,8 +163,9 @@ pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::Shar
                 if let Some((x, y, r)) = mask {
                     mask_disc(&mut frame, x, y, r);
                 }
-                // with the disc masked the picture is only useful stretched: the faint corona would otherwise be black
-                let st = stretch.load(Ordering::Relaxed) || mask.is_some();
+                // Not forced to stretch: the point of the mask is to judge the exposure, so the picture must keep showing
+                // the real brightness unless the viewer chose auto-stretch (which would hide any exposure change).
+                let st = stretch.load(Ordering::Relaxed);
                 if let Some(jpg) = encode(&frame, st, mask.is_some()) {
                     tx.send_replace(Some(Arc::new(jpg)));
                 }

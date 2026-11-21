@@ -32,6 +32,8 @@ The overlays sit on the picture, are semi-transparent, can be dragged anywhere, 
 - **Guiding**: the average error and a one-minute graph while tracking.
 - **Histogram**.
 
+The round **Prominence view** button in the picture's tool column blacks out the Sun's disc (display only) so you can judge the exposure you want for prominences: raise exposure or gain and watch the faint structure at the limb appear. It does not auto-stretch, so what you see is the real brightness; use *Auto-stretch* in Display if you want it brightened. *Record > Prominence pair* then captures the disc and a longer exposure together.
+
 The slider button opens display settings (auto-stretch, brightness, contrast, gamma, colour tint, bullseye). These affect viewing only, not what is recorded.
 
 ## When something goes wrong

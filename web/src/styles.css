@@ -413,3 +413,4 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .fm-foot { padding: .6rem 1rem .8rem; border-top: 1px solid var(--line-soft); background: var(--surface); }
 @media (max-width: 699px) { .fm-row { grid-template-columns: auto 1fr; } .fm-actions { grid-column: 2; justify-content: flex-start; } }
 @media (min-width: 900px) { .fm-screen { inset: 3vh 8vw; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .6); } }
+.live-tools button.tool-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
