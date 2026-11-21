@@ -16,6 +16,7 @@ export interface Status {
   clock?: { ntp_synchronized: boolean | null }
   goto?: { target: string; phase: string } | null
   guide_params?: { window_s: number; deadband_px: number; gain: number; speed: number; fast_speed: number; fast_above_px: number }
+  coronagraph?: { enabled: boolean; scale: number }
   flats?: { applied: boolean; available: boolean; name: string | null }
   startup: Startup
   optics: Optics

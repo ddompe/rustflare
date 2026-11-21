@@ -8,17 +8,53 @@ use tokio::sync::watch;
 
 const MAX_WIDTH: u32 = 1280;
 
+/// Software coronagraph for the live view: black out the Sun's disc so the stretch is set by the faint prominences and
+/// limb structure around it. Display only; recordings and tracking use the untouched frame.
+#[derive(Default)]
+pub struct Corona {
+    pub enabled: bool,
+    /// Mask radius as a fraction of the detected Sun radius (a little over 1 hides the bright limb, which would otherwise set the white point).
+    pub scale: f64,
+    /// Latest detected Sun (x, y, radius) in frame pixels, set by the engine.
+    pub sun: Option<(f64, f64, f64)>,
+}
+pub type SharedCorona = Arc<std::sync::Mutex<Corona>>;
+
+/// Sets every pixel inside the circle to zero.
+pub fn mask_disc(frame: &mut Frame, cx: f64, cy: f64, r: f64) {
+    let (w, h) = (frame.width as i64, frame.height as i64);
+    let bpp = frame.format.bytes_per_pixel();
+    let y0 = ((cy - r).floor() as i64).max(0);
+    let y1 = ((cy + r).ceil() as i64).min(h - 1);
+    for y in y0..=y1 {
+        let dy = y as f64 - cy;
+        let half = (r * r - dy * dy).max(0.0).sqrt();
+        let x0 = ((cx - half).ceil() as i64).max(0);
+        let x1 = ((cx + half).floor() as i64).min(w - 1);
+        if x1 < x0 {
+            continue;
+        }
+        let a = (y * w + x0) as usize * bpp;
+        let b = (y * w + x1 + 1) as usize * bpp;
+        frame.data[a..b].fill(0);
+    }
+}
+
 pub type JpegTx = watch::Sender<Option<Arc<Vec<u8>>>>;
 
 /// Display range (in the frame's own units) that maps to black..white when auto-stretching:
 /// the 0.5th and 99.8th percentile, so a few hot pixels or dark corners don't flatten the picture.
-fn stretch_range(frame: &Frame) -> (f64, f64) {
+fn stretch_range(frame: &Frame, skip_zero: bool) -> (f64, f64) {
     let full = frame.format.full_scale();
     let mut hist = vec![0u32; 4096];
     let mut n = 0u64;
     for y in (0..frame.height).step_by(4) {
         for x in (0..frame.width).step_by(4) {
-            hist[((frame.pixel(x, y) as f64 / (full + 1.0)) * 4096.0) as usize] += 1;
+            let v = frame.pixel(x, y);
+            if skip_zero && v == 0 {
+                continue;
+            }
+            hist[((v as f64 / (full + 1.0)) * 4096.0) as usize] += 1;
             n += 1;
         }
     }
@@ -37,10 +73,10 @@ fn stretch_range(frame: &Frame) -> (f64, f64) {
     if hi - lo < full / 256.0 { (lo, lo + full / 256.0) } else { (lo, hi) }
 }
 
-pub fn encode(frame: &Frame, stretch: bool) -> Option<Vec<u8>> {
+pub fn encode(frame: &Frame, stretch: bool, masked: bool) -> Option<Vec<u8>> {
     let f = frame.width.div_ceil(MAX_WIDTH).max(1) as usize;
     let (w, h) = (frame.width as usize / f, frame.height as usize / f);
-    let (lo, hi) = if stretch { stretch_range(frame) } else { (0.0, frame.format.full_scale() + 1.0) };
+    let (lo, hi) = if stretch { stretch_range(frame, masked) } else { (0.0, frame.format.full_scale() + 1.0) };
     // Fixed point (16.16) multiplier: one integer multiply and shift per output pixel, no floating point in the loop.
     let lo_i = lo as i64;
     let mul = ((255.0 / (hi - lo).max(1.0)) * 65536.0) as i64;
@@ -78,7 +114,7 @@ pub fn encode(frame: &Frame, stretch: bool) -> Option<Vec<u8>> {
 }
 
 /// Returns a sender; frames are dropped (never queued) while the encoder is busy.
-pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::SharedFlat) -> SyncSender<Frame> {
+pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::SharedFlat, corona: SharedCorona) -> SyncSender<Frame> {
     let (ftx, frx) = sync_channel::<Frame>(1);
     std::thread::Builder::new()
         .name("preview".into())
@@ -89,7 +125,13 @@ pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::Shar
                 if let Some(ff) = field.filter(|ff| ff.matches(&frame)) {
                     ff.apply(&mut frame);
                 }
-                if let Some(jpg) = encode(&frame, stretch.load(Ordering::Relaxed)) {
+                let mask = { let c = corona.lock().unwrap(); if c.enabled { c.sun.map(|(x, y, r)| (x, y, r * c.scale)) } else { None } };
+                if let Some((x, y, r)) = mask {
+                    mask_disc(&mut frame, x, y, r);
+                }
+                // with the disc masked the picture is only useful stretched: the faint corona would otherwise be black
+                let st = stretch.load(Ordering::Relaxed) || mask.is_some();
+                if let Some(jpg) = encode(&frame, st, mask.is_some()) {
                     tx.send_replace(Some(Arc::new(jpg)));
                 }
             }
@@ -112,9 +154,9 @@ mod tests {
             d.extend_from_slice(&v.to_le_bytes());
         } }
         let f = Frame::new(w, h, PixelFormat::Mono16, d);
-        let (lo, hi) = stretch_range(&f);
+        let (lo, hi) = stretch_range(&f, false);
         assert!(lo >= 150.0 && lo <= 250.0 && hi >= 1900.0 && hi <= 2100.0, "{lo} {hi}");
-        assert!(encode(&f, true).is_some() && encode(&f, false).is_some());
+        assert!(encode(&f, true, false).is_some() && encode(&f, false, false).is_some());
     }
 
     /// `cargo test --release -p rustflare-server bench_encode -- --ignored --nocapture`
@@ -126,11 +168,29 @@ mod tests {
         let f = Frame::new(w, h, PixelFormat::Mono16, d);
         for stretch in [false, true] {
             let t = std::time::Instant::now();
-            for _ in 0..20 { assert!(encode(&f, stretch).is_some()); }
+            for _ in 0..20 { assert!(encode(&f, stretch, false).is_some()); }
             println!("encode stretch={stretch}: {:.1} ms/frame", t.elapsed().as_secs_f64() * 50.0);
         }
         let t = std::time::Instant::now();
         for _ in 0..20 { let _ = f.clone(); }
         println!("clone: {:.1} ms", t.elapsed().as_secs_f64() * 50.0);
+    }
+
+    #[test]
+    fn coronagraph_masks_the_disc_and_stretches_the_rest() {
+        // bright disc (60000) on a faint sky (300) with a faint "prominence" ring (900)
+        let (w, h) = (64u32, 64u32);
+        let mut d = Vec::new();
+        for y in 0..h { for x in 0..w {
+            let r2 = (x as i32 - 32).pow(2) + (y as i32 - 32).pow(2);
+            let v: u16 = if r2 < 200 { 60000 } else if r2 < 260 { 900 } else { 300 };
+            d.extend_from_slice(&v.to_le_bytes());
+        } }
+        let mut f = Frame::new(w, h, PixelFormat::Mono16, d);
+        mask_disc(&mut f, 32.0, 32.0, 14.2);
+        assert_eq!(f.pixel(32, 32), 0);
+        assert_eq!(f.pixel(0, 0), 300);
+        let (lo, hi) = stretch_range(&f, true);
+        assert!(hi < 2000.0 && lo >= 250.0, "{lo} {hi}: the disc must not set the white point");
     }
 }

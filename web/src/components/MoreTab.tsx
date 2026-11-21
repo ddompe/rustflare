@@ -41,13 +41,15 @@ function SiteSettings({ status }: { status: Status | null }) {
   )
 }
 
-function DisplaySettings({ d, set, reset }: { d: Display; set: (p: Partial<Display>) => void; reset: () => void }) {
+function DisplaySettings({ d, set, reset, status }: { d: Display; set: (p: Partial<Display>) => void; reset: () => void; status: Status | null }) {
   const [stretch, setStretch] = useState(false)
   useEffect(() => { api<{ stretch: boolean }>('GET', '/preview').then((r) => setStretch(r.stretch)).catch(() => {}) }, [])
   return (
     <div>
       <h3>Image</h3>
       <Switch label="Auto-stretch" checked={stretch} onChange={(on) => { setStretch(on); api('PUT', '/preview', { stretch: on }).catch(() => {}) }} hint="Brightens dim 16-bit frames (everyone's preview)." />
+      <Switch label="Prominence view (software coronagraph)" checked={!!status?.coronagraph?.enabled} disabled={!status?.sun} onChange={(on) => api('PUT', '/coronagraph', { enabled: on, scale: status?.coronagraph?.scale ?? 1.03 }).catch(() => {})} hint={status?.sun ? 'Blacks out the Sun disc in the live view so the faint prominences and limb show. Viewing only: recordings are untouched.' : 'Needs the Sun in view.'} />
+      {status?.coronagraph?.enabled && <RangeField label="Mask size" value={status.coronagraph.scale} min={0.95} max={1.15} step={0.01} show={`${Math.round(status.coronagraph.scale * 100)}% of the disc`} onChange={(v) => api('PUT', '/coronagraph', { enabled: true, scale: v }).catch(() => {})} />}
       <RangeField label="Brightness" value={d.brightness} min={0.3} max={4} step={0.05} show={d.brightness.toFixed(2)} onChange={(v) => set({ brightness: v })} />
       <RangeField label="Contrast" value={d.contrast} min={0.3} max={4} step={0.05} show={d.contrast.toFixed(2)} onChange={(v) => set({ contrast: v })} />
       <RangeField label="Gamma" value={d.gamma} min={0.3} max={3} step={0.05} show={d.gamma.toFixed(2)} onChange={(v) => set({ gamma: v })} />
@@ -200,7 +202,7 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus }: { 
   return (
     <>
       <p className="hint-text">At the telescope: set the phone's Auto-Lock to Never (Settings, Display and Brightness) for the session, and use Share, Add to Home Screen for a full-screen app.</p>
-      {item('display', 'Display', `${display.tint === 'none' ? 'grayscale' : display.tint === 'orange' ? 'H-alpha orange' : 'deep red'} · ${display.rings ? `${display.rings} rings` : 'no rings'}`, <DisplaySettings d={display} set={setDisplay} reset={resetDisplay} />)}
+      {item('display', 'Display', `${display.tint === 'none' ? 'grayscale' : display.tint === 'orange' ? 'H-alpha orange' : 'deep red'} · ${display.rings ? `${display.rings} rings` : 'no rings'}`, <DisplaySettings d={display} set={setDisplay} reset={resetDisplay} status={status} />)}
       {item('optics', 'Optics', o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set', <OpticsSettings status={status} />)}
       {item('site', 'Site', status?.site ? `${status.site.latitude.toFixed(2)}°, ${status.site.longitude.toFixed(2)}°` : 'not set', <SiteSettings status={status} />)}
       {item('storage', 'Storage', 'drive for captures', <StorageSettings status={status} />)}

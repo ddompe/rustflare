@@ -160,7 +160,14 @@ pub struct GuideParamsStatus {
 }
 
 #[derive(Clone, Serialize)]
+pub struct CoronagraphStatus {
+    pub enabled: bool,
+    pub scale: f64,
+}
+
+#[derive(Clone, Serialize)]
 pub struct Status {
+    pub coronagraph: CoronagraphStatus,
     pub guide_params: GuideParamsStatus,
     pub flats: FlatsStatus,
     pub site: Option<SiteStatus>,
@@ -184,6 +191,7 @@ pub struct Status {
 impl Default for Status {
     fn default() -> Self {
         Status {
+            coronagraph: CoronagraphStatus { enabled: false, scale: 1.03 },
             guide_params: GuideParamsStatus { window_s: 10.0, deadband_px: 3.0, gain: 0.7, speed: 0.2, fast_speed: 0.8, fast_above_px: 20.0 },
             flats: FlatsStatus { available: false, applied: false, name: None },
             site: None,

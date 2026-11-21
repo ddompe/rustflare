@@ -79,6 +79,8 @@ pub enum Command {
     MountGotoSun { allow_unsynced_clock: bool },
     /// Observer site (decimal degrees, east-positive longitude).
     SetSite { latitude: f64, longitude: f64 },
+    /// Prominence view: mask the Sun's disc in the live view (display only).
+    SetCoronagraph { enabled: bool, scale: f64 },
     /// Guiding tuning; takes effect the next time guiding starts.
     SetGuideParams { window_s: f64, deadband_px: f64, gain: f64, speed: f64, fast_speed: f64, fast_above_px: f64 },
     /// Switch flat-field correction of the live view on or off (a master flat must exist).
@@ -224,6 +226,7 @@ pub struct Engine {
     status_tx: watch::Sender<Status>,
     preview_tx: SyncSender<Frame>,
     flat: rustflare_capture::SharedFlat,
+    corona: preview::SharedCorona,
     last_preview: Instant,
     last_publish: Instant,
     last_temp: Instant,
@@ -240,6 +243,13 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
     let (status_tx, status_rx) = watch::channel(first_status.clone());
     let (jpeg_tx, jpeg_rx) = watch::channel(None);
     let sky = SimSky::new();
+    let corona: preview::SharedCorona = Default::default();
+    {
+        let c = crate::config::read(storage.config_file());
+        let mut g = corona.lock().unwrap();
+        g.enabled = c.get("coronagraph").and_then(|v| v.get("enabled")).and_then(|v| v.as_bool()).unwrap_or(false);
+        g.scale = c.get("coronagraph").and_then(|v| v.get("scale")).and_then(|v| v.as_f64()).filter(|s| (0.8..=1.2).contains(s)).unwrap_or(1.03);
+    }
     let flat: rustflare_capture::SharedFlat = Default::default();
     load_saved_flat(&storage, &flat);
     let engine = Engine {
@@ -282,8 +292,9 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         storage,
         status: first_status,
         status_tx,
-        preview_tx: preview::spawn(jpeg_tx, stretch, flat.clone()),
+        preview_tx: preview::spawn(jpeg_tx, stretch, flat.clone(), corona.clone()),
         flat,
+        corona,
         last_preview: Instant::now(),
         last_publish: Instant::now(),
         last_temp: Instant::now(),
@@ -511,6 +522,10 @@ impl Engine {
         }
         let gp = self.guide_params;
         self.status.guide_params = GuideParamsStatus { window_s: gp.window.as_secs_f64(), deadband_px: gp.deadband_px, gain: gp.gain, speed: gp.speed, fast_speed: gp.fast_speed, fast_above_px: gp.fast_above_px };
+        {
+            let c = self.corona.lock().unwrap();
+            self.status.coronagraph = CoronagraphStatus { enabled: c.enabled, scale: c.scale };
+        }
         self.status.clock = ClockStatus { ntp_synchronized: self.ntp_sync };
         self.status.site = self.site.map(|s| SiteStatus { latitude: s.latitude, longitude: s.longitude });
         self.status.sky_sun = self.site.map(|s| {
@@ -692,6 +707,18 @@ impl Engine {
                 }
                 self.guide_params = GuideParams { window: Duration::from_secs_f64(window_s), deadband_px, gain, speed, fast_speed, fast_above_px, ..self.guide_params };
                 crate::config::set(self.storage.config_file(), "guide", json!({ "window_s": window_s, "deadband_px": deadband_px, "gain": gain, "speed": speed, "fast_speed": fast_speed, "fast_above_px": fast_above_px }))?;
+                Ok(json!({}))
+            }
+            Command::SetCoronagraph { enabled, scale } => {
+                if !(0.8..=1.2).contains(&scale) {
+                    return Err("mask scale must be 0.8 to 1.2 of the Sun's radius".into());
+                }
+                {
+                    let mut c = self.corona.lock().unwrap();
+                    c.enabled = enabled;
+                    c.scale = scale;
+                }
+                crate::config::set(self.storage.config_file(), "coronagraph", json!({ "enabled": enabled, "scale": scale }))?;
                 Ok(json!({}))
             }
             Command::SetSite { latitude, longitude } => {
@@ -1210,6 +1237,7 @@ impl Engine {
             }
             let sun = locate_sun(&frame, self.radius_hint());
             self.learn_radius(sun.as_ref());
+            self.corona.lock().unwrap().sun = sun.as_ref().map(|s| (s.pos.x, s.pos.y, s.radius));
             self.status.sun = sun;
             self.step_tracking(&frame, now);
             self.last_frame = Some(frame.clone());

@@ -64,6 +64,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/storage/eject", post(storage_eject))
         .route("/api/flats/applied", put(flats_applied))
         .route("/api/guiding/params", put(guide_params))
+        .route("/api/coronagraph", put(coronagraph))
         .route("/api/datasheet/:kind", get(datasheet))
         .route("/api/files/stats", get(file_stats))
         .route("/api/files/delete", post(file_delete))
@@ -347,6 +348,12 @@ async fn datasheet(State(st): State<AppState>, axum::extract::Path(kind): axum::
 struct GuideParamsBody { window_s: f64, deadband_px: f64, gain: f64, speed: f64, fast_speed: f64, fast_above_px: f64 }
 async fn guide_params(s: State<AppState>, Json(b): Json<GuideParamsBody>) -> Res {
     run(s, Command::SetGuideParams { window_s: b.window_s, deadband_px: b.deadband_px, gain: b.gain, speed: b.speed, fast_speed: b.fast_speed, fast_above_px: b.fast_above_px }).await
+}
+
+#[derive(Deserialize)]
+struct CoronagraphBody { enabled: bool, scale: Option<f64> }
+async fn coronagraph(s: State<AppState>, Json(b): Json<CoronagraphBody>) -> Res {
+    run(s, Command::SetCoronagraph { enabled: b.enabled, scale: b.scale.unwrap_or(1.03) }).await
 }
 
 #[derive(Deserialize)]
