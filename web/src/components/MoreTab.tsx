@@ -3,6 +3,7 @@ import { api, Status } from '../api'
 import { Display } from '../display'
 import { Disclosure, ErrorLine, Field, Switch, useAction } from './ui'
 import { StorageSettings } from './Storage'
+import { useSetting } from '../settings'
 
 const arcmin = (s: number) => `${Math.floor(s / 60)}′ ${(s % 60).toFixed(0)}″`
 
@@ -125,9 +126,9 @@ function BufferSettings({ status }: { status: Status | null }) {
 }
 
 function Flats({ status }: { status: Status | null }) {
-  const [name, setName] = useState('')
-  const [flatFrames, setFlatFrames] = useState('50')
-  const [level, setLevel] = useState('50')
+  const [name, setName] = useSetting('capture.flat_name', '')
+  const [flatFrames, setFlatFrames] = useSetting('capture.flat_frames', '50')
+  const [level, setLevel] = useSetting('capture.flat_level', '50')
   const { err, run } = useAction()
   const busy = !!status && status.capture.state !== 'idle'
   const n = (s: string) => (s.trim() === '' ? undefined : parseFloat(s))
@@ -159,13 +160,14 @@ function Startup({ status }: { status: Status | null }) {
 
 /** Everything that is set once and left alone, one collapsed line each. */
 export function MoreTab({ status, display, setDisplay, resetDisplay, focus }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; resetDisplay: () => void; focus: { id: string; nonce: number } | null }) {
-  const [open, setOpen] = useState<string | null>(focus?.id ?? null)
+  const [saved, setSaved] = useSetting('ui.more_open', '')
+  const [open, setOpen] = useState<string | null>(focus?.id ?? (saved || null))
   useEffect(() => { if (focus) setOpen(focus.id) }, [focus?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
   const o = status?.optics
   const sun = status?.sun
   const mismatch = !!(sun && o?.expected_radius_px && Math.abs(sun.radius / o.expected_radius_px - 1) > 0.1)
   const item = (id: string, title: string, summary: string, body: ReactNode) => (
-    <Disclosure key={id} title={title} summary={summary} open={open === id} onToggle={(isOpen) => setOpen((cur) => (isOpen ? id : cur === id ? null : cur))}>{open === id ? body : null}</Disclosure>
+    <Disclosure key={id} title={title} summary={summary} open={open === id} onToggle={(isOpen) => { setOpen((cur) => (isOpen ? id : cur === id ? null : cur)); if (isOpen) setSaved(id); else if (open === id) setSaved('') }}>{open === id ? body : null}</Disclosure>
   )
   return (
     <>

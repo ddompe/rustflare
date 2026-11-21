@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { api, CameraInfo, Control, Status } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
+import { useSetting } from '../settings'
 import { Histogram } from './Histogram'
 
 const fmt = (c: Control, v: number) => {
@@ -127,14 +128,14 @@ const PRIMARY = ['exposure_us', 'gain']
 /** Step 1: open the camera, then get a good exposure (histogram, no clipping). */
 export function CameraTab({ status, next }: { status: Status | null; next: () => void }) {
   const [list, setList] = useState<CameraInfo[]>([])
-  const [sel, setSel] = useState('')
+  const [sel, setSel] = useSetting('camera.selected', '')
   const { err, busy, run } = useAction()
   const cam = status?.camera
 
   const refresh = () => run(async () => {
     const l = await api<CameraInfo[]>('GET', '/cameras')
     setList(l)
-    if (l.length && !sel) setSel(`${l[0].driver}|${l[0].id}`)
+    if (l.length && !l.some((c) => `${c.driver}|${c.id}` === sel)) setSel(`${l[0].driver}|${l[0].id}`)
   })
   useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

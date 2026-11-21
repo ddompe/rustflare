@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react'
 import { api, Status } from '../api'
 import { Disclosure, Empty, Section, Segmented, useAction } from './ui'
+import { useSetting } from '../settings'
 
 type Mode = 'limb' | 'anchor' | 'sun_disc'
 const MODES: { id: Mode; label: string; help: string }[] = [
@@ -34,8 +35,8 @@ function Step({ done, bad, title, state, action, children }: { done: boolean; ba
 
 /** Step 3: choose what to follow, calibrate once, then hold position. */
 export function TrackTab({ status, anchorPick, setAnchorPick, goto, next }: { status: Status | null; anchorPick: boolean; setAnchorPick: (b: boolean) => void; goto: (t: 'aim') => void; next: () => void }) {
-  const [mode, setMode] = useState<Mode>('limb')
-  const [radius, setRadius] = useState('')
+  const [mode, setMode] = useSetting<Mode>('tracking.mode', 'limb')
+  const [radius, setRadius] = useSetting('tracking.radius', '')
   const { err, run } = useAction()
   const t = status?.tracking
   const g = status?.guiding

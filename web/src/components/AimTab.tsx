@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, Status } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
+import { useSetting } from '../settings'
 
 // Speeds the ZWO AM3/AM5 supports, as multiples of the sidereal rate.
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 20, 60, 720, 1440]
@@ -9,12 +10,12 @@ type Axis = 'primary' | 'secondary'
 
 function MountConnect() {
   const [drivers, setDrivers] = useState<string[]>([])
-  const [driver, setDriver] = useState('zwo')
-  const [device, setDevice] = useState('')
+  const [driver, setDriver] = useSetting('mount.driver', 'zwo')
+  const [device, setDevice] = useSetting('mount.device', '')
   const [ports, setPorts] = useState<{ path: string; label: string }[]>([])
   const { err, busy, run } = useAction()
   useEffect(() => { api<string[]>('GET', '/mount/drivers').then(setDrivers).catch(() => {}) }, [])
-  const scan = () => api<{ path: string; label: string }[]>('GET', '/mount/ports').then((p) => { setPorts(p); setDevice((d) => d || p[0]?.path || '/dev/ttyACM0') }).catch(() => {})
+  const scan = () => api<{ path: string; label: string }[]>('GET', '/mount/ports').then((p) => { setPorts(p); if (!device) setDevice(p[0]?.path || '/dev/ttyACM0') }).catch(() => {})
   useEffect(() => { scan() }, [])
   return (
     <Section title="Connect the mount" error={err}>
@@ -100,7 +101,7 @@ function Offset({ status }: { status: Status }) {
 
 /** The hold-to-move slew pad: pointer down starts the slew, pointer up (or cancel, or leaving the tab) stops it. */
 function Pad({ status }: { status: Status }) {
-  const [speed, setSpeed] = useState(8)
+  const [speed, setSpeed] = useSetting('mount.slew_speed', 8)
   const [err, setErr] = useState<string | null>(null)
   const [active, setActive] = useState<string | null>(null)
   const held = useRef(new Map<string, Axis>())

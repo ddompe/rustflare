@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, Status } from '../api'
 import { Disclosure, Empty, Field, Section, Segmented, useAction } from './ui'
 import { StorageLine } from './Storage'
+import { useSetting } from '../settings'
 
 const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`)
 const size = (b: number) => (b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} kB`)
@@ -49,13 +50,13 @@ export function Progress({ status, onStop }: { status: Status; onStop: () => voi
 
 /** Step 4: record. Defaults to the usual job (a burst every N seconds); everything rarer is in More. */
 export function RecordTab({ status, goto }: { status: Status | null; goto: (t: 'more', focus: string) => void }) {
-  const [name, setName] = useState('')
-  const [mode, setMode] = useState<'sequence' | 'bursts'>('bursts')
-  const [format, setFormat] = useState<'ser' | 'png'>('ser')
-  const [frames, setFrames] = useState('100')
-  const [seconds, setSeconds] = useState('')
-  const [every, setEvery] = useState('30')
-  const [bursts, setBursts] = useState('')
+  const [name, setName] = useSetting('capture.name', '')
+  const [mode, setMode] = useSetting<'sequence' | 'bursts'>('capture.mode', 'bursts')
+  const [format, setFormat] = useSetting<'ser' | 'png'>('capture.format', 'ser')
+  const [frames, setFrames] = useSetting('capture.frames', '100')
+  const [seconds, setSeconds] = useSetting('capture.seconds', '')
+  const [every, setEvery] = useSetting('capture.every', '30')
+  const [bursts, setBursts] = useSetting('capture.bursts', '')
   const { err, run } = useAction()
   const c = status?.capture
   const cam = status?.camera

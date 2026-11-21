@@ -1,6 +1,7 @@
 import { KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { api, useStatus } from './api'
 import { useDisplay } from './display'
+import { useSetting } from './settings'
 import { LiveView } from './components/LiveView'
 import { StatusStrip, TabId } from './components/StatusStrip'
 import { CameraTab } from './components/CameraTab'
@@ -23,7 +24,9 @@ export function App() {
   const { status, connected } = useStatus()
   const [anchorPick, setAnchorPick] = useState(false)
   const [display, setDisplay, resetDisplay] = useDisplay()
-  const [tab, setTab] = useState<TabId>('camera')
+  const [savedTab, setSavedTab] = useSetting<TabId>('ui.tab', 'camera')
+  const [tab, setTabState] = useState<TabId>(TABS.some((x) => x.id === savedTab) ? savedTab : 'camera')
+  const setTab = (t: TabId) => { setTabState(t); setSavedTab(t) }
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null)
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const panelRef = useRef<HTMLElement>(null)
