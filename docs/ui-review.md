@@ -100,7 +100,7 @@ three controls. After opening the camera: exposure and gain, plus the tabs.
 
 The phone is the primary target; the laptop layout is the secondary one.
 
-**Add it to the Home Screen.** Open the Pi's address in Safari (`http://astropi.local:8080`), tap Share, then Add to Home
+**Add it to the Home Screen.** Open the Pi's address in Safari (`http://<pi-name>.local:8080`), tap Share, then Add to Home
 Screen. It starts full-screen with the RustFlare icon, no browser bars, and works in portrait and landscape.
 Set the phone's Auto-Lock to Never (Settings, Display and Brightness) for the session: the Pi serves plain HTTP, so there is
 no service worker and no Screen Wake Lock (both need HTTPS; tracked separately). A one-line reminder is at the top of More.
