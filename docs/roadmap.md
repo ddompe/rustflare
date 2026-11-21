@@ -1,6 +1,6 @@
 # Roadmap & status
 
-Work is tracked in the [GitHub project](https://github.com/users/ddompe/projects) and the repository's issues; this page is the narrative summary.
+Work is tracked on the [GitHub project board](https://github.com/users/ddompe/projects/1) (one issue per item, closed = done); this page is the narrative summary. `scripts/create-project-board.py` created the board from this list.
 
 ## Verified
 
