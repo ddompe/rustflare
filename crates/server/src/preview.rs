@@ -38,29 +38,42 @@ fn stretch_range(frame: &Frame) -> (f64, f64) {
 }
 
 pub fn encode(frame: &Frame, stretch: bool) -> Option<Vec<u8>> {
-    let f = frame.width.div_ceil(MAX_WIDTH).max(1);
-    let (w, h) = (frame.width / f, frame.height / f);
+    let f = frame.width.div_ceil(MAX_WIDTH).max(1) as usize;
+    let (w, h) = (frame.width as usize / f, frame.height as usize / f);
     let (lo, hi) = if stretch { stretch_range(frame) } else { (0.0, frame.format.full_scale() + 1.0) };
-    let scale = 255.0 / (hi - lo);
-    // 16-bit data uses the full range when stretching; without it, the plain high byte (cheap and exact).
-    let mut gray = Vec::with_capacity((w * h) as usize);
-    for y in 0..h {
-        for x in 0..w {
-            let v = frame.pixel(x * f, y * f) as f64;
-            gray.push(if stretch {
-                ((v - lo) * scale).clamp(0.0, 255.0) as u8
-            } else {
-                match frame.format {
-                    PixelFormat::Mono8 => v as u8,
-                    PixelFormat::Mono16 => (frame.pixel(x * f, y * f) >> 8) as u8,
+    // Fixed point (16.16) multiplier: one integer multiply and shift per output pixel, no floating point in the loop.
+    let lo_i = lo as i64;
+    let mul = ((255.0 / (hi - lo).max(1.0)) * 65536.0) as i64;
+    let stride = frame.width as usize;
+    let mut gray = Vec::with_capacity(w * h);
+    match frame.format {
+        PixelFormat::Mono16 => {
+            for y in 0..h {
+                let row = &frame.data[y * f * stride * 2..(y * f + 1) * stride * 2];
+                if stretch {
+                    gray.extend((0..w).map(|x| {
+                        let v = u16::from_le_bytes([row[x * f * 2], row[x * f * 2 + 1]]) as i64;
+                        (((v - lo_i).max(0) * mul) >> 16).min(255) as u8
+                    }));
+                } else {
+                    // without stretching: the plain high byte (cheap and exact)
+                    gray.extend((0..w).map(|x| row[x * f * 2 + 1]));
                 }
-            });
+            }
+        }
+        PixelFormat::Mono8 => {
+            for y in 0..h {
+                let row = &frame.data[y * f * stride..(y * f + 1) * stride];
+                if stretch {
+                    gray.extend((0..w).map(|x| (((row[x * f] as i64 - lo_i).max(0) * mul) >> 16).min(255) as u8));
+                } else {
+                    gray.extend((0..w).map(|x| row[x * f]));
+                }
+            }
         }
     }
     let mut out = Vec::new();
-    jpeg_encoder::Encoder::new(&mut out, 75)
-        .encode(&gray, w as u16, h as u16, jpeg_encoder::ColorType::Luma)
-        .ok()?;
+    jpeg_encoder::Encoder::new(&mut out, 75).encode(&gray, w as u16, h as u16, jpeg_encoder::ColorType::Luma).ok()?;
     Some(out)
 }
 
@@ -102,5 +115,22 @@ mod tests {
         let (lo, hi) = stretch_range(&f);
         assert!(lo >= 150.0 && lo <= 250.0 && hi >= 1900.0 && hi <= 2100.0, "{lo} {hi}");
         assert!(encode(&f, true).is_some() && encode(&f, false).is_some());
+    }
+
+    /// `cargo test --release -p rustflare-server bench_encode -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_encode() {
+        let (w, h) = (1944u32, 1472u32);
+        let d: Vec<u8> = (0..w * h).flat_map(|i| (((i % 1000) * 40) as u16).to_le_bytes()).collect();
+        let f = Frame::new(w, h, PixelFormat::Mono16, d);
+        for stretch in [false, true] {
+            let t = std::time::Instant::now();
+            for _ in 0..20 { assert!(encode(&f, stretch).is_some()); }
+            println!("encode stretch={stretch}: {:.1} ms/frame", t.elapsed().as_secs_f64() * 50.0);
+        }
+        let t = std::time::Instant::now();
+        for _ in 0..20 { let _ = f.clone(); }
+        println!("clone: {:.1} ms", t.elapsed().as_secs_f64() * 50.0);
     }
 }
