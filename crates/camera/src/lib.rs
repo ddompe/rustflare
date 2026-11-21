@@ -4,6 +4,8 @@
 pub mod simulator;
 #[cfg(feature = "playerone")]
 pub mod playerone;
+#[cfg(feature = "asi")]
+pub mod asi;
 
 use rustflare_core::{sim::SimSky, CameraDriver};
 
@@ -12,6 +14,8 @@ pub fn drivers(sky: SimSky) -> Vec<Box<dyn CameraDriver>> {
     let mut v: Vec<Box<dyn CameraDriver>> = Vec::new();
     #[cfg(feature = "playerone")]
     v.push(Box::new(playerone::PlayerOneDriver));
+    #[cfg(feature = "asi")]
+    v.push(Box::new(asi::AsiDriver));
     v.push(Box::new(simulator::SimulatorDriver::new(sky)));
     v
 }

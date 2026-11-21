@@ -10,6 +10,11 @@ default = []
 # Needs libclang at build time (bindgen).
 playerone = ["dep:playerone-sdk"]
 
+# ZWO ASI cameras: the vendor library (libASICamera2, Debian package libasi) is dlopen-ed at run time.
+asi = ["dep:libloading"]
+
 [dependencies]
 rustflare-core.workspace = true
+libloading = { version = "0.8", optional = true }
+log.workspace = true
 playerone-sdk = { version = "0.2.3", optional = true }

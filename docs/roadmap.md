@@ -26,7 +26,7 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 
 ## Planned
 
-- **ZWO ASI camera support** (the owner has one to test): port Vidoxide's ASI driver to our camera trait.
+- **ZWO ASI camera follow-ups:** the driver exists (ADR 0014; ASI174MM Mini enumerates, opens and streams on the Pi, USB 2 only so far). Still to do: measure on a USB 3 port, ROI/binning (frame rate), colour ASI cameras, cooler/fan controls.
 - **EAF support and seeing-robust autofocus**: drive a ZWO EAF; compute a focus metric on an *average of several frames* (aligned on the limb) so turbulence does not corrupt the metric.
 - **Device datasheets and inventory**: images and spec sheets (including the HCG point) for ZWO and Player One planetary/solar cameras and the AM3, shown in the Camera and Mount panels.
 - **Software coronagraph for prominences**: a second, longer exposure recorded after the regular one (disc saturated on purpose), with disc masks from the fitted limb, stacked separately and blended in post-processing; plus a live coronagraph preview (disc blacked out, rest stretched).

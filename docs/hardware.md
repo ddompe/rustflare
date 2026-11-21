@@ -13,7 +13,18 @@ Controls exposed: exposure (µs), gain, offset, 8/16-bit output. Colour cameras 
     **SD card write speed** (Pi 5): ≈ 65 MB/s sustained (572 MB burst flushed in ≈ 8.7 s), i.e. ≈ 11 fps of full-frame 16-bit video; the RAM buffer is what makes faster bursts possible.
     **Frame rate:** the first version used the SDK's one-shot capture, which re-arms the camera for every frame and measured a constant **8.4 fps (9.8 fps at 8-bit) whatever the exposure**. The driver now uses the SDK's continuous mode (arm once, fetch frames). **Measured after the change: 57 fps at 16-bit and 82 fps at 8-bit (1944×1472), constant from 10 ms down to 0.1 ms exposure**, about 7–8× faster, so the camera or USB link is now the limit.
 
-## ZWO AM3 / AM5 mounts
+## ZWO ASI cameras
+
+ZWO ASI cameras are driven through ZWO's userspace library `libASICamera2`, which RustFlare **loads at run time** (`dlopen`); it is never linked or bundled. On Raspberry Pi OS / Debian install it with `sudo apt install libasi` (the `.deb` lists it as *Recommends*, so apt installs it by default). Without it the ASI driver lists no cameras and opening one reports `install it with: sudo apt install libasi`. Build with `--features asi`; see [ADR 0014](adr/0014-zwo-asi-cameras.md).
+
+Controls exposed: exposure (µs), gain, offset, USB bandwidth (%), 8/16-bit output. Mono cameras only for now. The `libasi` package ships its own udev rule (`/usr/lib/udev/rules.d/99-asi.rules`: vendor id `03c3`, mode 0666, and `usbfs_memory_mb=200`), so RustFlare adds none. The same vendor id covers the ZWO AM3/AM5 mount (a serial device), which the rule leaves usable.
+
+**ASI174MM Mini** (USB id `03c3:1749`), from [ZWO's Mini Cameras page](https://www.zwoastro.com/product/mini-cameras/): Sony IMX174 (global shutter), 1/1.2" (11.3 × 7.1 mm), 1936 × 1216, 5.86 µm pixels, 12-bit ADC, read noise 3.5 e-, full well 32 ke-, peak QE 77 %, USB 3.0, up to 164 fps (ZWO's figure).
+
+!!! note "Status: verified on a real ASI174MM Mini (Raspberry Pi 5, libasi 1.27)"
+    Verified: enumeration, opening, controls (exposure 32 µs to 2000 s, gain 0-400, offset 0-240, USB bandwidth 40-100 %, 8/16-bit), 1936 × 1216 frames, pixel size 5.86 µm, temperature readout (about 38-41 °C idle), RAW16 scaled to the full 16-bit range (mean level matches the 8-bit stream).
+    **Frame rate:** the camera enumerated at **USB 2.0 speed (480 Mbit/s)** on the Pi's USB 2 port, so it measured **8.7 fps at 16-bit and 17.3 fps at 8-bit (full frame)**, independent of exposure from 1 to 10 ms: the USB 2 link (about 40 MB/s) is the limit, not the driver. ZWO's 164 fps needs a USB 3 port and cable (blue Pi port), and was **not measured**.
+
 
 Connected over USB as a serial device (it appears as `/dev/ttyACM0`, and as a stable name under `/dev/serial/by-id/`, which the Mount panel suggests); RustFlare speaks the ZWO serial protocol directly (no ASCOM/INDI).
 The AM3 can run equatorial or alt-az; RustFlare calls the axes *primary/secondary* (RA/Dec in equatorial mode). See [Calibration](tracking-and-guiding.md#calibration) for what that means for guiding. Supported: solar tracking rate (`:TS#`), tracking on/off, manual slewing at the ten speeds the mount offers

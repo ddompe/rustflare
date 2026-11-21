@@ -19,3 +19,4 @@ an accepted record: supersede it with a new one and link both ways.
 | [0011](0011-storage-selection-and-safety.md) | Storage selection and safety (USB drives, FAT32) | Accepted |
 | [0012](0012-burst-capture-and-ram-buffer.md) | Burst capture through a RAM buffer | Accepted |
 | [0013](0013-partial-disc-first-tracking-and-optics.md) | Partial-disc-first tracking, Otsu detection, optics | Accepted |
+| [0014](0014-zwo-asi-cameras.md) | ZWO ASI cameras via a run-time loaded vendor library | Accepted |

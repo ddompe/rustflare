@@ -9,6 +9,7 @@ description = "Headless web-controlled solar capture server"
 [features]
 default = []
 playerone = ["rustflare-camera/playerone"]
+asi = ["rustflare-camera/asi"]
 
 [dependencies]
 rustflare-core.workspace = true
@@ -40,6 +41,7 @@ extended-description = "Headless web-controlled solar capture: Player One camera
 section = "science"
 priority = "optional"
 depends = "libc6 (>= 2.36), libusb-1.0-0, python3, curl, ca-certificates"
+recommends = "libasi"
 maintainer-scripts = "../../packaging/"
 conf-files = ["/etc/default/rustflare"]
 assets = [
