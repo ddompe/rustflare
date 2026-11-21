@@ -1,52 +1,107 @@
-import { useState } from 'react'
-import { useStatus } from './api'
-import { LiveView } from './components/LiveView'
-import { CameraPanel } from './components/CameraPanel'
-import { CenteringPanel } from './components/CenteringPanel'
-import { MountPanel } from './components/MountPanel'
-import { TrackingPanel } from './components/TrackingPanel'
-import { CapturePanel } from './components/CapturePanel'
-import { DisplayPanel } from './components/DisplayPanel'
+import { KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { api, useStatus } from './api'
 import { useDisplay } from './display'
-import { StoragePanel } from './components/StoragePanel'
-import { OpticsPanel } from './components/OpticsPanel'
-import { FilesPanel } from './components/FilesPanel'
+import { LiveView } from './components/LiveView'
+import { StatusStrip, TabId } from './components/StatusStrip'
+import { CameraTab } from './components/CameraTab'
+import { AimTab } from './components/AimTab'
+import { TrackTab } from './components/TrackTab'
+import { RecordTab } from './components/RecordTab'
+import { MoreTab } from './components/MoreTab'
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'camera', label: 'Camera' },
+  { id: 'aim', label: 'Aim' },
+  { id: 'track', label: 'Track' },
+  { id: 'record', label: 'Record' },
+  { id: 'more', label: 'More' },
+]
+
+type Tone = 'ok' | 'warn' | 'bad' | 'rec' | null
 
 export function App() {
   const { status, connected } = useStatus()
   const [anchorPick, setAnchorPick] = useState(false)
   const [display, setDisplay, resetDisplay] = useDisplay()
+  const [tab, setTab] = useState<TabId>('camera')
+  const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null)
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const panelRef = useRef<HTMLElement>(null)
+  useEffect(() => { panelRef.current?.scrollTo(0, 0) }, [tab])
   const cam = status?.camera
+
+  const goto = (t: TabId) => setTab(t)
+  const openMore = (id: string) => { setFocus({ id, nonce: Date.now() }); setTab('more') }
+  const stopCapture = () => { api('POST', '/capture/stop').catch(() => {}) }
+
+  // A dot on each tab says where the session stands without opening anything.
+  const g = status?.guiding
+  const t = status?.tracking
+  const tone = (id: TabId): Tone => {
+    if (id === 'camera') return !cam ? null : cam.saturated > 0.001 ? 'bad' : 'ok'
+    if (id === 'aim') return !status?.mount ? null : status.mount.tracking ? 'ok' : 'warn'
+    if (id === 'track') return t?.lost ? 'bad' : g?.state === 'guiding' ? 'ok' : t ? 'warn' : null
+    if (id === 'record') return status && status.capture.state !== 'idle' ? 'rec' : null
+    return null
+  }
+  const toneText: Record<string, string> = { ok: 'ready', warn: 'needs attention', bad: 'problem', rec: 'recording' }
+
+  const onKey = (e: KeyboardEvent) => {
+    const i = TABS.findIndex((x) => x.id === tab)
+    const to = e.key === 'ArrowRight' ? (i + 1) % TABS.length : e.key === 'ArrowLeft' ? (i + TABS.length - 1) % TABS.length : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : -1
+    if (to < 0) return
+    e.preventDefault()
+    setTab(TABS[to].id)
+    tabRefs.current[TABS[to].id]?.focus()
+  }
 
   return (
     <div className="app">
-      <header>
+      <a className="skip" href="#panel">Skip to controls</a>
+      <header className="top">
         <h1>Rustflare</h1>
-        <span className={`dot ${connected ? 'ok' : 'bad'}`} title={connected ? 'connected' : 'reconnecting…'} />
-        {cam && (
-          <span className="stats">
-            {cam.name} · {cam.width}×{cam.height} {cam.bits}-bit · {cam.fps.toFixed(1)} fps · mean {(cam.mean * 100).toFixed(0)}%
-            {cam.temperature_c != null && ` · ${cam.temperature_c.toFixed(1)} °C`}
-          </span>
-        )}
+        <span className={`conn ${connected ? 'ok' : 'bad'}`}><i aria-hidden="true" />{connected ? 'Online' : 'Reconnecting…'}</span>
+        {cam && <span className="camname">{cam.name} · {cam.width}×{cam.height} · {cam.bits}-bit</span>}
       </header>
-      {status?.error && <div className="banner">{status.error}</div>}
-      {!connected && !status && <div className="banner">Connecting to the Rustflare server…</div>}
-      <main>
-        <section className="view">
-          <LiveView status={status} display={display} setDisplay={setDisplay} anchorPick={anchorPick} onPicked={() => setAnchorPick(false)} />
-        </section>
-        <aside>
-          <CameraPanel status={status} />
-          <OpticsPanel status={status} />
-          <CenteringPanel status={status} />
-          <DisplayPanel d={display} set={setDisplay} reset={resetDisplay} />
-          <MountPanel status={status} />
-          <TrackingPanel status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} />
-          <CapturePanel status={status} />
-          <StoragePanel status={status} />
-          <FilesPanel status={status} />
-        </aside>
+      {(status?.error || (!connected && !status)) && (
+        <div className="banner" role="alert">{status?.error ?? 'Connecting to the Rustflare server…'}</div>
+      )}
+
+      <section className="view" aria-label="Live view">
+        <LiveView status={status} display={display} setDisplay={setDisplay} anchorPick={anchorPick} onPicked={() => setAnchorPick(false)} onDisplay={() => openMore('display')} />
+        <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} />
+      </section>
+
+      <nav className="tabs" role="tablist" aria-label="Session steps" onKeyDown={onKey}>
+        {TABS.map((x) => {
+          const tn = tone(x.id)
+          return (
+            <button
+              key={x.id}
+              ref={(el) => { tabRefs.current[x.id] = el }}
+              type="button"
+              role="tab"
+              id={`tab-${x.id}`}
+              aria-selected={tab === x.id}
+              aria-controls="panel"
+              tabIndex={tab === x.id ? 0 : -1}
+              className={tab === x.id ? 'on' : ''}
+              onClick={() => setTab(x.id)}
+            >
+              <span>{x.label}</span>
+              {tn && <i className={`tdot ${tn}`} aria-hidden="true" />}
+              {tn && <span className="sr-only"> ({toneText[tn]})</span>}
+            </button>
+          )
+        })}
+      </nav>
+
+      <main ref={panelRef} className="panel" id="panel" role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={-1}>
+        {tab === 'camera' && <CameraTab status={status} next={() => goto('aim')} />}
+        {tab === 'aim' && <AimTab status={status} next={() => goto('track')} />}
+        {tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} />}
+        {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} />}
+        {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} />}
       </main>
     </div>
   )

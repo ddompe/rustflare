@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { api, Status } from '../api'
 import { Display, cssFilter } from '../display'
 
 /** Live image (MJPEG) with display filters, zoom/pan and a measurement overlay in frame-pixel coordinates. */
-export function LiveView({ status, display, setDisplay, anchorPick, onPicked }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; anchorPick: boolean; onPicked: () => void }) {
+export function LiveView({ status, display, setDisplay, anchorPick, onPicked, onDisplay }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; anchorPick: boolean; onPicked: () => void; onDisplay: () => void }) {
   const box = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
   const drag = useRef<{ x: number; y: number; px: number; py: number; moved: boolean } | null>(null)
@@ -42,7 +42,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked }: 
     try { await api('POST', '/tracking/start', { mode: 'anchor', x, y }) } catch (err) { alert((err as Error).message) }
   }
 
-  if (!cam) return <div className="placeholder">No camera open</div>
+  if (!cam) return <div className="placeholder"><div><b>No camera open</b><br />Open the camera in the Camera tab to see the Sun.</div></div>
   const W = cam.width, H = cam.height
   const stroke = Math.max(1.5, W / 500) / d.zoom
   const cx = W / 2, cy = H / 2
@@ -52,7 +52,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked }: 
   const hint = d.zoom > 1 ? `${d.zoom.toFixed(1)}×` : ''
 
   return (
-    <div ref={box} className={`live ${anchorPick ? 'pick' : ''}`} style={{ aspectRatio: `${W} / ${H}`, maxWidth: `calc((100vh - 6rem) * ${W / H})` }}
+    <div ref={box} className={`live ${anchorPick ? 'pick' : ''}`} style={{ '--ar': W / H } as React.CSSProperties}
       onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onDoubleClick={() => setDisplay({ zoom: 1, panX: 0, panY: 0 })}>
       <svg width="0" height="0" style={{ position: 'absolute' }}>
         <filter id="rf-gamma" colorInterpolationFilters="sRGB">
@@ -103,8 +103,16 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked }: 
           </g>
         </svg>
       </div>
+      {t?.lost && <div className="lost-badge" role="alert">TARGET LOST</div>}
+      <div className="live-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+        <button type="button" aria-label="Zoom in" onClick={() => { const zoom = Math.min(8, d.zoom * 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>+</button>
+        <button type="button" aria-label="Zoom out" disabled={d.zoom <= 1} onClick={() => { const zoom = Math.max(1, d.zoom / 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>−</button>
+        <button type="button" aria-label="Display settings" onClick={onDisplay}>
+          <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h8M15 15h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /><circle cx="13" cy="5" r="2" fill="currentColor" /><circle cx="7" cy="10" r="2" fill="currentColor" /><circle cx="13" cy="15" r="2" fill="currentColor" /></svg>
+        </button>
+      </div>
       <div className="hud">{W}×{H} · {cam.fps.toFixed(1)} fps{hint && ` · ${hint}`}</div>
-      {anchorPick && <div className="hint">Click a feature (sunspot, filament, plage) to track it</div>}
+      {anchorPick && <div className="hint" role="status">Tap a feature (sunspot, filament, plage) to track it</div>}
     </div>
   )
 }

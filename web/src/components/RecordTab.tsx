@@ -1,0 +1,126 @@
+import { useEffect, useState } from 'react'
+import { api, Status } from '../api'
+import { Disclosure, Empty, Field, Section, Segmented, useAction } from './ui'
+import { StorageLine } from './Storage'
+
+const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`)
+const size = (b: number) => (b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} kB`)
+
+interface FileEntry { path: string; size: number; modified: number | null; folder_files: number | null }
+
+function Files({ last }: { last: string | null | undefined }) {
+  const [files, setFiles] = useState<FileEntry[]>([])
+  useEffect(() => { api<FileEntry[]>('GET', '/files').then(setFiles).catch(() => {}) }, [last])
+  return (
+    <Disclosure title="Recent captures" summary={files.length ? `${files.length}` : 'none yet'}>
+      {files.length === 0 && <span className="muted">Nothing captured yet</span>}
+      <ul className="files">
+        {files.slice(0, 40).map((f) => (
+          <li key={f.path}>
+            {f.folder_files != null ? <span>{f.path}/</span> : <a href={`/files/${f.path}`} download>{f.path}</a>}{' '}
+            <span className="muted">{f.folder_files != null ? `${f.folder_files} frames · ` : ''}{size(f.size)}</span>
+          </li>
+        ))}
+      </ul>
+    </Disclosure>
+  )
+}
+
+/** Live progress of whatever is being captured; also used in the status strip's Stop button. */
+export function Progress({ status, onStop }: { status: Status; onStop: () => void }) {
+  const c = status.capture
+  const active = ['single', 'sequence', 'bursts', 'flats'].includes(c.state)
+  return (
+    <div className="progress">
+      <div className="prog-title"><b>{c.state}</b>: {c.phase}</div>
+      {c.burst != null && <div className="muted">burst {c.burst}{c.bursts_total ? ` of ${c.bursts_total}` : ''}{c.next_in_s != null ? ` · next in ${c.next_in_s.toFixed(0)} s` : ''}</div>}
+      {c.total != null && c.state !== 'flushing' && <progress max={c.total} value={c.done} aria-label="Frames captured" />}
+      {c.state !== 'flats' && c.buffer_capacity > 0 && (
+        <>
+          <progress max={c.buffer_capacity} value={c.buffer_queued} className="buf" aria-label="RAM buffer in use" />
+          <div className="hint-text">RAM buffer {c.buffer_queued}/{c.buffer_capacity} frames · disk writing {c.disk_mb_s.toFixed(0)} MB/s</div>
+        </>
+      )}
+      <div className="hint-text">{c.done}{c.total != null ? ` / ${c.total}` : ''} frames {c.file && `· ${c.file}`}</div>
+      {active && <button type="button" className="danger wide big" onClick={onStop}>Stop recording</button>}
+    </div>
+  )
+}
+
+/** Step 4: record. Defaults to the usual job (a burst every N seconds); everything rarer is in More. */
+export function RecordTab({ status, goto }: { status: Status | null; goto: (t: 'more', focus: string) => void }) {
+  const [name, setName] = useState('')
+  const [mode, setMode] = useState<'sequence' | 'bursts'>('bursts')
+  const [format, setFormat] = useState<'ser' | 'png'>('ser')
+  const [frames, setFrames] = useState('100')
+  const [seconds, setSeconds] = useState('')
+  const [every, setEvery] = useState('30')
+  const [bursts, setBursts] = useState('')
+  const { err, run } = useAction()
+  const c = status?.capture
+  const cam = status?.camera
+  const busy = !!c && c.state !== 'idle'
+  const n = (s: string) => (s.trim() === '' ? undefined : parseFloat(s))
+  const nm = name.trim() || undefined
+
+  if (!cam || !status || !c) return <Empty>Open the camera first, then record here.</Empty>
+
+  if (busy) {
+    return (
+      <Section title="Recording" error={err}>
+        <Progress status={status} onStop={() => run(() => api('POST', '/capture/stop'))} />
+        <StorageLine status={status} onChange={() => goto('more', 'storage')} />
+      </Section>
+    )
+  }
+
+  // planning aid: how big is a burst, does it fit in the RAM buffer, is the disk likely to keep up?
+  const frameBytes = cam.width * cam.height * (cam.bits / 8)
+  const nFrames = n(frames) ?? (n(seconds) && cam.fps ? n(seconds)! * cam.fps : 0)
+  const burstBytes = nFrames * frameBytes
+  const bufFrames = frameBytes ? Math.floor(((c.buffer_mb ?? 1024) * 1048576) / frameBytes) : 0
+  const burstSecs = cam.fps ? nFrames / cam.fps : 0
+  const every_s = n(every) ?? 0
+  const diskNeed = burstSecs && every_s ? burstBytes / Math.max(every_s, burstSecs) / 1e6 : 0 // average MB/s needed
+
+  const start = () =>
+    mode === 'sequence'
+      ? run(() => api('POST', '/capture/sequence', { name: nm, frames: n(frames), seconds: n(seconds), format }))
+      : run(() => api('POST', '/capture/bursts', { name: nm, frames: n(frames), seconds: n(seconds), interval_s: n(every), bursts: n(bursts), format }))
+
+  return (
+    <>
+      <Section title="Record" error={err}>
+        <Segmented label="Recording mode" value={mode} onChange={setMode} options={[{ id: 'bursts', label: 'Bursts every N s' }, { id: 'sequence', label: 'One sequence' }]} />
+        <div className="grid2">
+          <Field label={mode === 'bursts' ? 'Frames per burst' : 'Frames'}>{(id) => <input id={id} inputMode="numeric" value={frames} onChange={(e) => setFrames(e.target.value)} />}</Field>
+          <Field label="or seconds">{(id) => <input id={id} inputMode="decimal" value={seconds} onChange={(e) => setSeconds(e.target.value)} placeholder="stop after…" />}</Field>
+          {mode === 'bursts' && (
+            <>
+              <Field label="Every (s)">{(id) => <input id={id} inputMode="decimal" value={every} onChange={(e) => setEvery(e.target.value)} placeholder="start to start" />}</Field>
+              <Field label="Number of bursts">{(id) => <input id={id} inputMode="numeric" value={bursts} onChange={(e) => setBursts(e.target.value)} placeholder="until stopped" />}</Field>
+            </>
+          )}
+        </div>
+        {nFrames > 0 && (
+          <p className="hint-text plan">
+            {mode === 'bursts' ? 'Each burst' : 'This recording'}: ≈ {Math.round(nFrames)} frames, {gb(burstBytes)}{burstSecs ? `, ≈ ${burstSecs.toFixed(1)} s at ${cam.fps.toFixed(0)} fps` : ''}.
+            {bufFrames > 0 && (nFrames <= bufFrames
+              ? ` Fits in the RAM buffer (${bufFrames} frames), so the disk can be slower than the camera.`
+              : ` Larger than the RAM buffer (${bufFrames} frames): once it is full, capture slows to disk speed.`)}
+            {mode === 'bursts' && diskNeed > 0 && ` Average disk load ≈ ${diskNeed.toFixed(0)} MB/s.`}
+          </p>
+        )}
+        <Segmented label="File format" value={format} onChange={setFormat} options={[{ id: 'ser', label: 'SER video' }, { id: 'png', label: 'PNG images' }]} />
+        <StorageLine status={status} onChange={() => goto('more', 'storage')} />
+        <div className="sticky-act"><button type="button" className="primary wide big" onClick={start}>{mode === 'bursts' ? 'Start bursts' : 'Start recording'}</button></div>
+      </Section>
+      <Disclosure title="Name and single frame">
+        <Field label="Name (optional)">{(id) => <input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. AR3842" />}</Field>
+        <button type="button" className="wide" onClick={() => run(() => api('POST', '/capture/single', { name: nm }))}>Save a single frame (PNG)</button>
+      </Disclosure>
+      {c.last_file && <div className="hint-text lastfile">Last: <a href={`/files/${c.last_file}`}>{c.last_file}</a> ({c.phase}{c.disk_mb_s > 0 ? `, written at ${c.disk_mb_s.toFixed(0)} MB/s` : ''})</div>}
+      <Files last={c.last_file} />
+    </>
+  )
+}
