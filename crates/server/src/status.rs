@@ -30,6 +30,9 @@ pub struct MountStatus {
     pub at_home: Option<bool>,
     pub park: Option<rustflare_core::ParkState>,
     pub alt_az: Option<bool>,
+    /// `usb` or `ble`, and whether that link is alive (a Bluetooth link can drop; the engine then drops the mount).
+    pub link: Option<&'static str>,
+    pub link_up: bool,
 }
 
 #[derive(Clone, Serialize)]

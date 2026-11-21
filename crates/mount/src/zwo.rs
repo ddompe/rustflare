@@ -9,8 +9,10 @@
 //!   * `stop()` no longer disables tracking (matches the `Mount` trait contract);
 //!   * generic over the I/O object so the protocol is unit-testable.
 
-use rustflare_core::{Axis, Error, Mount, MountState, ParkState, RadPerSec, Result, SlewSpeed, TrackingRate, SIDEREAL_RATE};
+use rustflare_core::{Axis, Error, LinkInfo, Mount, MountState, ParkState, RadPerSec, Result, SlewSpeed, TrackingRate, SIDEREAL_RATE};
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 const END_CHAR: u8 = b'#';
@@ -49,6 +51,9 @@ pub struct Zwo<P: Read + Write + Send> {
     model: String,
     device: String,
     tracking: bool,
+    /// Transport kind (`usb`/`ble`) and, for links that can drop, a flag the transport clears when it is lost.
+    link_kind: &'static str,
+    link_alive: Option<Arc<AtomicBool>>,
 }
 
 impl Zwo<Box<dyn serialport::SerialPort>> {
@@ -66,7 +71,11 @@ impl Zwo<Box<dyn serialport::SerialPort>> {
 }
 
 impl<P: Read + Write + Send> Zwo<P> {
-    pub fn new(mut port: P, device: &str) -> Result<Self> {
+    pub fn new(port: P, device: &str) -> Result<Self> {
+        Self::with_link(port, device, "usb", None)
+    }
+
+    pub fn with_link(mut port: P, device: &str, link_kind: &'static str, link_alive: Option<Arc<AtomicBool>>) -> Result<Self> {
         let model = match send(&mut port, ":GVP#", Reply::EndsWith(END_CHAR)) {
             Ok(b) => match String::from_utf8_lossy(&b).as_ref() {
                 m @ ("AM3" | "AM5") => m.to_string(),
@@ -80,7 +89,7 @@ impl<P: Read + Write + Send> Zwo<P> {
             Ok(flags) => !flags.contains(&b'n'),
             Err(_) => false,
         };
-        Ok(Zwo { port, model, device: device.into(), tracking })
+        Ok(Zwo { port, model, device: device.into(), tracking, link_kind, link_alive })
     }
 
     fn cmd(&mut self, c: &str) -> Result<()> {
@@ -95,6 +104,10 @@ impl<P: Read + Write + Send> Drop for Zwo<P> {
 }
 
 impl<P: Read + Write + Send> Mount for Zwo<P> {
+    fn link(&self) -> Option<LinkInfo> {
+        Some(LinkInfo { kind: self.link_kind, up: self.link_alive.as_ref().map_or(true, |a| a.load(Ordering::Relaxed)) })
+    }
+
     fn info(&self) -> String { format!("ZWO {} on {}", self.model, self.device) }
 
     /// `:GU#` flags: `n` = tracking OFF, `N` = not slewing, `H` = at home, `Z` = alt-az mode; `:Gps#` = park state

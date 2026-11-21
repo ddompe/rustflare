@@ -4,8 +4,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+# Bluetooth LE transport for the ZWO mount over BlueZ/D-Bus (pure Rust, ADR 0015)
+ble = ["dep:zbus"]
+
 [dependencies]
+serde.workspace = true
 rustflare-core.workspace = true
 # default-features = false: avoids the libudev dependency on Linux (no port enumeration;
 # the device path comes from configuration, e.g. /dev/ttyACM0 or /dev/serial/by-id/...).
 serialport = { version = "4", default-features = false }
+zbus = { version = "5", optional = true, default-features = true }

@@ -71,7 +71,17 @@ pub struct MountState {
     pub alt_az: Option<bool>,
 }
 
+/// How the mount is connected and whether that link is still alive (a Bluetooth link can drop at any time).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LinkInfo {
+    /// `"usb"` or `"ble"`.
+    pub kind: &'static str,
+    pub up: bool,
+}
+
 pub trait Mount: Send {
+    /// The transport and its health; `None` for drivers without a physical link (the simulator).
+    fn link(&self) -> Option<LinkInfo> { None }
     /// Asks the mount for its current state (read-only).
     fn state(&mut self) -> Result<MountState> { Ok(MountState::default()) }
     /// Moves to the home (zero) position. Moves the mount.

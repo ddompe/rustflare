@@ -35,6 +35,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/camera/close", post(|s| run(s, Command::CloseCamera)))
         .route("/api/camera/control", put(camera_control))
         .route("/api/mount/ports", get(mount_ports))
+        .route("/api/mount/scan", get(mount_scan))
         .route("/api/mount/drivers", get(|| async { Json(json!(rustflare_mount::DRIVERS)) }))
         .route("/api/mount/connect", post(mount_connect))
         .route("/api/mount/disconnect", post(|s| run(s, Command::DisconnectMount)))
@@ -111,9 +112,47 @@ async fn camera_control(s: State<AppState>, Json(b): Json<Control>) -> Res {
 }
 
 #[derive(Deserialize)]
-struct MountConnect { driver: String, device: Option<String> }
+struct MountConnect { driver: String, device: Option<String>, transport: Option<String> }
+
+/// Maps the request to the device string the engine stores: a serial path as is (USB, the old form), or
+/// `ble:<address>` for Bluetooth.
+fn connect_device(transport: Option<&str>, device: Option<String>) -> Result<Option<String>, String> {
+    let device = device.filter(|d| !d.is_empty());
+    match transport.unwrap_or("usb") {
+        "usb" | "serial" => Ok(device),
+        "ble" => {
+            let a = device.ok_or("Bluetooth needs the mount's address (scan first)")?;
+            let a = a.strip_prefix(rustflare_mount::BLE_PREFIX).unwrap_or(&a).to_uppercase();
+            let ok = a.split(':').count() == 6 && a.split(':').all(|p| p.len() == 2 && p.bytes().all(|b| b.is_ascii_hexdigit()));
+            if !ok {
+                return Err(format!("not a Bluetooth address: {a:?}"));
+            }
+            Ok(Some(format!("{}{a}", rustflare_mount::BLE_PREFIX)))
+        }
+        other => Err(format!("unknown transport {other:?} (usb or ble)")),
+    }
+}
+
 async fn mount_connect(s: State<AppState>, Json(b): Json<MountConnect>) -> Res {
-    run(s, Command::ConnectMount { driver: b.driver, device: b.device.filter(|d| !d.is_empty()) }).await
+    match connect_device(b.transport.as_deref(), b.device) {
+        Ok(device) => run(s, Command::ConnectMount { driver: b.driver, device }).await,
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
+}
+
+/// Nearby Bluetooth mounts (takes about 6 seconds). Does not go through the engine thread.
+async fn mount_scan() -> Res {
+    static SCANNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if SCANNING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return (StatusCode::CONFLICT, Json(json!({ "error": "a scan is already running" }))).into_response();
+    }
+    let r = tokio::task::spawn_blocking(|| rustflare_mount::ble::scan(Duration::from_secs(6))).await;
+    SCANNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    match r {
+        Ok(Ok(devs)) => Json(json!(devs)).into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e.to_string() }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -372,4 +411,24 @@ async fn mount_motion(s: State<AppState>, body: Option<Json<Confirm>>, cmd: Comm
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "this moves the mount: send {\"confirm\": true}" }))).into_response();
     }
     run(s, cmd).await
+}
+
+#[cfg(test)]
+mod ble_tests {
+    use super::connect_device;
+
+    #[test]
+    fn usb_form_is_unchanged() {
+        assert_eq!(connect_device(None, Some("/dev/ttyACM0".into())).unwrap().as_deref(), Some("/dev/ttyACM0"));
+        assert_eq!(connect_device(Some("usb"), Some(String::new())).unwrap(), None);
+    }
+
+    #[test]
+    fn ble_address_is_validated_and_prefixed() {
+        assert_eq!(connect_device(Some("ble"), Some("aa:bb:cc:dd:ee:01".into())).unwrap().as_deref(), Some("ble:AA:BB:CC:DD:EE:01"));
+        assert!(connect_device(Some("ble"), None).is_err());
+        assert!(connect_device(Some("ble"), Some("/dev/ttyACM0".into())).is_err());
+        assert!(connect_device(Some("ble"), Some("AA:BB:CC:DD:EE".into())).is_err());
+        assert!(connect_device(Some("wifi"), None).is_err());
+    }
 }

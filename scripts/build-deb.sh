@@ -27,8 +27,9 @@ fi
 [ -f web/dist/index.html ] || { echo "web/dist missing: build the UI first" >&2; exit 1; }
 
 # --features asi: ZWO ASI cameras, loads libASICamera2 (Debian: libasi, a Recommends) at run time, ADR 0014
+# --features ble: Bluetooth mount link over BlueZ/D-Bus (pure Rust zbus, bluez is a Recommends), ADR 0015
 # --features playerone: Player One camera support (bundles the vendor library, see ADR 0006)
-cargo zigbuild --release -p rustflare-server --features playerone,asi --target "$TARGET.$GLIBC"
+cargo zigbuild --release -p rustflare-server --features playerone,asi,ble --target "$TARGET.$GLIBC"
 
 mkdir -p dist
 DEB_ARGS=(--no-build --no-strip --target "$TARGET" -p rustflare-server --output dist/)

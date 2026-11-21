@@ -161,6 +161,8 @@ pub struct Engine {
     mount_state: MountState,
     last_mount_poll: Instant,
     mount_poll_failures: u32,
+    /// A Bluetooth connection attempt running on its own thread (auto-reconnect must not stall the engine).
+    pending_mount: Option<Receiver<Result<Box<dyn Mount>, String>>>,
     tracker: Option<Tracker>,
     lost: bool,
     guide: GuideState,
@@ -216,6 +218,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         mount_state: MountState::default(),
         last_mount_poll: Instant::now(),
         mount_poll_failures: 0,
+        pending_mount: None,
         tracker: None,
         lost: false,
         guide: GuideState::Off,
@@ -303,6 +306,7 @@ impl Engine {
 
     fn dispatch(&mut self, r: Request) {
         let res = self.handle(r.cmd);
+        self.check_link();
         if res.is_ok() {
             self.status.error = None;
         }
@@ -394,7 +398,7 @@ impl Engine {
         self.status.seq += 1;
         self.last_publish = Instant::now();
         let ms = self.mount_state;
-        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking, slewing: ms.slewing, at_home: ms.at_home, park: ms.park, alt_az: ms.alt_az });
+        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking, slewing: ms.slewing, at_home: ms.at_home, park: ms.park, alt_az: ms.alt_az, link: m.link().map(|l| l.kind), link_up: m.link().map_or(true, |l| l.up) });
         self.status.guiding.state = match self.guide {
             GuideState::Off => "off",
             GuideState::Calibrating(_) => "calibrating",
@@ -686,6 +690,7 @@ impl Engine {
     /// Reads the mount's real state every couple of seconds: it can be changed from outside (its own park
     /// button, another app), so the app must not assume it is still doing what we last told it.
     fn poll_mount(&mut self) {
+        self.check_link();
         if self.mount.is_none() || self.last_mount_poll.elapsed() < Duration::from_secs(2) {
             return;
         }
@@ -717,6 +722,27 @@ impl Engine {
             }
             None => {}
         }
+    }
+
+    /// A Bluetooth link that dropped: stop guiding, drop the driver (which sends a stop where the link still allows
+    /// it) and let the auto-reconnect retry. The mount is never left believed-connected while the link is gone.
+    fn check_link(&mut self) {
+        let lost = self.mount.as_ref().and_then(|m| m.link()).is_some_and(|l| l.kind == "ble" && !l.up);
+        if !lost {
+            return;
+        }
+        log::warn!("Bluetooth link to the mount lost");
+        self.stop_guiding_quietly();
+        if let Some(m) = self.mount.as_mut() {
+            let _ = m.stop();
+        }
+        self.disconnect_mount();
+        self.status.error = Some("the Bluetooth link to the mount was lost; the mount may still be moving until its own limits: check it. Reconnecting".into());
+        if self.startup.enabled && self.startup.mount.is_some() {
+            self.auto_until = Some(Instant::now() + Duration::from_secs(600));
+            self.last_auto_try = Instant::now() - Duration::from_secs(5);
+        }
+        self.publish();
     }
 
     fn require_idle(&self) -> Result<(), String> {
@@ -800,7 +826,13 @@ impl Engine {
 
     fn connect_mount(&mut self, driver: &str, device: Option<&str>) -> Result<(), String> {
         self.disconnect_mount();
-        let m = rustflare_mount::connect(driver, device, &self.sky).map_err(s)?;
+        let opts = rustflare_mount::ConnectOptions { ble_token: crate::config::read(self.storage.config_file()).get("zwo_ble_token").and_then(|v| v.as_str()).map(String::from) };
+        let m = rustflare_mount::connect_with(driver, device, &self.sky, &opts).map_err(s)?;
+        self.adopt_mount(m);
+        Ok(())
+    }
+
+    fn adopt_mount(&mut self, m: Box<dyn Mount>) {
         self.mount = Some(m);
         // Connecting never changes the mount's tracking; read back what it is actually doing.
         self.mount_tracking = false;
@@ -809,7 +841,6 @@ impl Engine {
             self.mount_tracking = st.tracking.unwrap_or(false);
             self.mount_state = st;
         }
-        Ok(())
     }
 
     /// Writes changed camera control values to the settings file once they have settled for a moment.
@@ -845,15 +876,41 @@ impl Engine {
                 }
             }
         }
-        if self.mount.is_none() {
+        if let Some(rx) = &self.pending_mount {
+            match rx.try_recv() {
+                Ok(Ok(m)) => {
+                    self.pending_mount = None;
+                    if self.mount.is_none() && self.startup.mount.is_some() {
+                        self.adopt_mount(m);
+                        log::info!("reconnected mount over Bluetooth (tracking stays off)");
+                        changed = true;
+                    }
+                }
+                Ok(Err(e)) => { self.pending_mount = None; log::debug!("auto mount (Bluetooth): {e}"); }
+                Err(TryRecvError::Empty) => {}
+                Err(TryRecvError::Disconnected) => self.pending_mount = None,
+            }
+        }
+        if self.mount.is_none() && self.pending_mount.is_none() {
             if let Some((driver, device)) = self.startup.mount.clone() {
+                if device.as_deref().is_some_and(|d| d.starts_with(rustflare_mount::BLE_PREFIX)) {
+                    // Bluetooth may take many seconds (the mount might not be advertising): never on the engine thread.
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let (sky, dev) = (self.sky.clone(), device.clone());
+                    let opts = rustflare_mount::ConnectOptions { ble_token: crate::config::read(self.storage.config_file()).get("zwo_ble_token").and_then(|v| v.as_str()).map(String::from) };
+                    let spawned = std::thread::Builder::new().name("ble-connect".into()).spawn(move || {
+                        let _ = tx.send(rustflare_mount::connect_with(&driver, dev.as_deref(), &sky, &opts).map_err(|e| e.to_string()));
+                    });
+                    if spawned.is_ok() { self.pending_mount = Some(rx); }
+                } else {
                 match self.connect_mount(&driver, device.as_deref()) {
                     Ok(()) => { log::info!("reconnected mount {driver} {device:?} (tracking stays off)"); changed = true; }
                     Err(e) => log::debug!("auto mount {driver}: {e}"),
                 }
+                }
             }
         }
-        let done = (self.camera.is_some() || self.startup.camera.is_none()) && (self.mount.is_some() || self.startup.mount.is_none());
+        let done = (self.camera.is_some() || self.startup.camera.is_none()) && (self.mount.is_some() || self.startup.mount.is_none()) && self.pending_mount.is_none();
         if done {
             self.auto_until = None;
         }
@@ -873,6 +930,7 @@ impl Engine {
     }
 
     fn disconnect_mount(&mut self) {
+        self.pending_mount = None;
         self.stop_guiding_quietly();
         self.mount = None;
         self.mount_tracking = false;
