@@ -8,8 +8,33 @@ const fmt = (c: Control, v: number) => {
   return v >= 1e6 ? `${(v / 1e6).toFixed(2)} s` : v >= 1000 ? `${(v / 1000).toFixed(2)} ms` : `${Math.round(v)} µs`
 }
 
+/** Exposure slider windows: a full-width drag covers only two decades, so fine control is possible. */
+const EXP_RANGES = [
+  { label: '10 µs – 1 ms', min: 10, max: 1_000 },
+  { label: '0.1 – 10 ms', min: 100, max: 10_000 },
+  { label: '1 – 100 ms', min: 1_000, max: 100_000 },
+  { label: '10 ms – 1 s', min: 10_000, max: 1_000_000 },
+  { label: '0.1 – 10 s', min: 100_000, max: 10_000_000 },
+  { label: 'Full range', min: 0, max: Infinity },
+]
+
+/** The window in which the current value sits closest to the middle of the slider. */
+function bestRange(v: number): number {
+  let best = 0, bestD = Infinity
+  EXP_RANGES.slice(0, -1).forEach((r, i) => {
+    if (v < r.min || v > r.max) return
+    const d = Math.abs(Math.log(v / r.min) / Math.log(r.max / r.min) - 0.5)
+    if (d < bestD) { best = i; bestD = d }
+  })
+  return bestD === Infinity ? EXP_RANGES.length - 1 : best
+}
+
 function Slider({ c }: { c: Control }) {
-  const toPos = (v: number) => (c.log ? Math.log(Math.max(v, c.min)) : v)
+  const isExp0 = c.id === 'exposure_us'
+  const [range, setRange] = useState(() => (isExp0 ? bestRange(c.value) : 0))
+  const win = isExp0 ? EXP_RANGES[range] : { min: 0, max: Infinity }
+  const lo = Math.max(c.min, win.min), hi = Math.min(c.max, win.max)
+  const toPos = (v: number) => (c.log ? Math.log(Math.min(hi, Math.max(v, lo))) : v)
   const fromPos = (p: number) => (c.log ? Math.exp(p) : p)
   const [value, setValue] = useState(c.value)
   const dragging = useRef(false)
@@ -17,6 +42,9 @@ function Slider({ c }: { c: Control }) {
   const { err, run } = useAction()
   const [text, setText] = useState<string | null>(null)
   useEffect(() => { if (!dragging.current) setValue(c.value) }, [c.value])
+  useEffect(() => {
+    if (isExp0 && !dragging.current && (c.value < EXP_RANGES[range].min || c.value > EXP_RANGES[range].max) && range !== EXP_RANGES.length - 1) setRange(bestRange(c.value))
+  }, [c.value]) // eslint-disable-line react-hooks/exhaustive-deps
   const send = (v: number) => { const x = Math.min(c.max, Math.max(c.min, v)); setValue(x); run(() => api('PUT', '/camera/control', { id: c.id, value: x })) }
   const isExp = c.id === 'exposure_us'
 
@@ -41,7 +69,7 @@ function Slider({ c }: { c: Control }) {
   }
   return (
     <Row label={c.label}>
-      <input type="range" min={toPos(c.min)} max={toPos(c.max)} step={c.log ? 0.01 : c.step} value={toPos(value)} onChange={(e) => change(parseFloat(e.target.value))} />
+      <input type="range" min={c.log ? Math.log(lo) : c.min} max={c.log ? Math.log(hi) : c.max} step={c.log ? 0.002 : c.step} value={toPos(value)} onChange={(e) => change(parseFloat(e.target.value))} />
       <input
         className="num"
         value={text ?? (isExp ? String(Math.round(value)) : String(Math.round(value)))}
@@ -53,11 +81,23 @@ function Slider({ c }: { c: Control }) {
       />
       <span className="unit">{c.unit ?? ''}</span>
       {err && <span className="err">{err}</span>}
-      {isExp && (
+      {isExp ? (
         <div className="expbar">
+          <select value={range} onChange={(e) => setRange(parseInt(e.target.value))} title="Slider range: a narrower range gives finer control">
+            {EXP_RANGES.map((r, i) => <option key={r.label} value={i}>{r.label}</option>)}
+          </select>
+          <button onClick={() => send(value * 0.95)} title="−5 %">−5%</button>
+          <button onClick={() => send(value * 1.05)} title="+5 %">+5%</button>
           <button onClick={() => send(value / 2)}>½×</button>
           <span className="muted small">{fmt(c, value)}</span>
           <button onClick={() => send(value * 2)}>2×</button>
+        </div>
+      ) : (
+        <div className="expbar">
+          <button onClick={() => send(value - 1)}>−1</button>
+          <button onClick={() => send(value + 1)}>+1</button>
+          <button onClick={() => send(value - 10)}>−10</button>
+          <button onClick={() => send(value + 10)}>+10</button>
         </div>
       )}
     </Row>
