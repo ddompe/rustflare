@@ -7,6 +7,7 @@ nav:
   - Getting started: getting-started.md
   - Using Rustflare: usage.md
   - Hardware: hardware.md
+  - ZWO mount Bluetooth protocol: zwo-ble-protocol.md
   - Tracking & guiding: tracking-and-guiding.md
   - Capture & flats: capture.md
   - Architecture: architecture.md
