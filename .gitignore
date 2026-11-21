@@ -8,3 +8,6 @@ web/dist
 /data-smoke*
 rustflare.json
 *.config.json
+
+# local agent worktrees
+/.claude/
