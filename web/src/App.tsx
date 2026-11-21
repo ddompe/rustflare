@@ -62,12 +62,13 @@ export function App() {
     <div className="app">
       <a className="skip" href="#panel">Skip to controls</a>
       <header className="top">
-        <h1>Rustflare</h1>
+        <img className="mark" src="/logo-mark.svg" alt="" width="26" height="26" />
+        <h1>Rust<span>Flare</span></h1>
         <span className={`conn ${connected ? 'ok' : 'bad'}`}><i aria-hidden="true" />{connected ? 'Online' : 'Reconnecting…'}</span>
         {cam && <span className="camname">{cam.name} · {cam.width}×{cam.height} · {cam.bits}-bit</span>}
       </header>
       {(status?.error || (!connected && !status)) && (
-        <div className="banner" role="alert">{status?.error ?? 'Connecting to the Rustflare server…'}</div>
+        <div className="banner" role="alert">{status?.error ?? 'Connecting to the RustFlare server…'}</div>
       )}
 
       <section className="view" aria-label="Live view">

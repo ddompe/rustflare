@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { api, Status } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
+import { DeviceCard } from './DeviceCard'
+import { useDatasheet } from '../datasheet'
 
 // Speeds the ZWO AM3/AM5 supports, as multiples of the sidereal rate.
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 20, 60, 720, 1440]
@@ -134,11 +136,13 @@ function Pad({ status }: { status: Status }) {
     window.addEventListener('keyup', up)
     window.addEventListener('blur', stopAll)
     document.addEventListener('visibilitychange', stopAll)
+    window.addEventListener('pagehide', stopAll)
     return () => {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', stopAll)
       document.removeEventListener('visibilitychange', stopAll)
+      window.removeEventListener('pagehide', stopAll)
       stopAll() // never leave the mount running when this tab is left
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -149,7 +153,7 @@ function Pad({ status }: { status: Status }) {
       className={`pad-btn ${active === key ? 'held' : ''}`}
       aria-label={`${name}: hold to move`}
       aria-pressed={active === key}
-      onPointerDown={(e) => { e.preventDefault(); (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); start(key, axis, dir) }}
+      onPointerDown={(e) => { e.preventDefault(); try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* synthetic pointer */ } start(key, axis, dir) }}
       onPointerUp={() => stop(key)}
       onPointerCancel={() => stop(key)}
       onLostPointerCapture={() => stop(key)}
@@ -185,6 +189,7 @@ function Pad({ status }: { status: Status }) {
 export function AimTab({ status, next }: { status: Status | null; next: () => void }) {
   const { err, run } = useAction()
   const m = status?.mount
+  const sheet = useDatasheet('mount', status, m ? m.info : null)
   if (!status || !m) return <MountConnect />
   return (
     <>
@@ -194,6 +199,7 @@ export function AimTab({ status, next }: { status: Status | null; next: () => vo
         <Switch label="Solar tracking" checked={m.tracking} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? m.info : `${m.info}. Off: the Sun will drift out of view.`} />
       </Section>
       <Framing status={status} />
+      <DeviceCard kind="mount" data={sheet} />
       <div className="btnrow end">
         <button type="button" className="quiet" onClick={() => run(() => api('POST', '/mount/disconnect'))}>Disconnect mount</button>
         <button type="button" className="primary" onClick={next}>Next: Track →</button>

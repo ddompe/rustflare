@@ -20,7 +20,7 @@ function Check({ done, bad }: { done: boolean; bad?: boolean }) {
   )
 }
 
-function Step({ done, bad, title, state, action, children }: { done: boolean; bad?: boolean; title: string; state: string; action?: ReactNode; children?: ReactNode }) {
+function Step({ done, bad, title, state, action, children }: { done: boolean; bad?: boolean; title: string; state: ReactNode; action?: ReactNode; children?: ReactNode }) {
   return (
     <li className="step">
       <Check done={done} bad={bad} />
@@ -103,9 +103,9 @@ export function TrackTab({ status, anchorPick, setAnchorPick, goto, next }: { st
               </button>
             }
           >
-            <div className="hint-text">{calibrated ? `RA+ moves the image ${angle(g!.calibration!.primary_dir)}, Dec+ ${angle(g!.calibration!.secondary_dir)}` : 'Teaches Rustflare which way each mount axis moves the image. Takes a few seconds per axis.'}</div>
+            <div className="hint-text">{calibrated ? `RA+ moves the image ${angle(g!.calibration!.primary_dir)}, Dec+ ${angle(g!.calibration!.secondary_dir)}` : 'Teaches RustFlare which way each mount axis moves the image. Takes a few seconds per axis.'}</div>
           </Step>
-          <Step done={guiding} title="Hold position" state={guiding ? `guiding · ${g?.error_px?.toFixed(1) ?? '–'} px error` : 'not holding'}>
+          <Step done={guiding} title="Hold position" state={guiding ? <><b className="bignum">{g?.error_px?.toFixed(1) ?? '–'}</b> px error</> : 'not holding'}>
             {guiding ? (
               <button type="button" className="danger wide big" onClick={() => run(() => api('POST', '/guiding/stop'))}>Stop guiding</button>
             ) : (

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 150" fill="none" stroke="#f4efec" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Compact strain-wave equatorial mount">
+  <path d="M96 140h56M108 140l6-24h20l6 24"/>
+  <path d="M112 116l-12-44 36-14 14 40z"/>
+  <path d="M104 92l36-14" opacity=".5"/>
+  <rect x="118" y="34" width="72" height="34" rx="9" transform="rotate(-14 154 51)"/>
+  <circle cx="190" cy="44" r="7" stroke="#F2652A"/>
+  <path d="M134 26l60-15M140 14l54-14"/>
+  <path d="M120 58L70 74"/>
+  <rect x="42" y="68" width="28" height="20" rx="4" transform="rotate(-18 56 78)"/>
+  <circle cx="134" cy="98" r="3.5" stroke="#62e38f"/>
+</svg>

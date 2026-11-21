@@ -1,10 +1,11 @@
-/* Rustflare: built for a phone held in sunlight. Near-black ground, off-white text, one amber action colour,
-   state colours that are never the only signal (every state also has words). */
+/* RustFlare: built for an iPhone held in sunlight. Brand dark ground (#0E0C0B), white text, the brand orange (#F2652A)
+   as the one action colour, state colours that are never the only signal (every state also has words).
+   Orange on the ground is 6.2:1; text on orange is the ground colour (never white: 3.2:1). */
 :root {
   color-scheme: dark;
-  --bg: #0b0c0e; --surface: #15171b; --raised: #1f232a; --line: #3d434d; --line-soft: #272b32;
-  --fg: #f6f3ec; --muted: #c0bcb2; --faint: #9a968c;
-  --accent: #ffb21f; --accent-ink: #1a1100;
+  --bg: #0E0C0B; --surface: #181513; --raised: #242020; --line: #473f3b; --line-soft: #2b2624;
+  --fg: #ffffff; --muted: #cdc5c0; --faint: #a39a95;
+  --accent: #F2652A; --accent-ink: #0E0C0B; --accent-hover: #ff7d49;
   --ok: #62e38f; --bad: #ff7466; --warn: #ffd04d; --info: #5fd8ee;
   --danger: #c5221f;
   --radius: 10px; --tap: 48px;
@@ -27,7 +28,9 @@ code { background: var(--raised); padding: 0 .3rem; border-radius: 4px; }
 /* ---------- shell ---------- */
 .app { height: 100vh; height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; grid-template-areas: 'top' 'banner' 'view' 'panel' 'tabs'; }
 .top { grid-area: top; display: flex; align-items: center; gap: .75rem; padding: .5rem 1rem; min-height: 44px; border-bottom: 1px solid var(--line-soft); }
-.top h1 { font-size: 1.1rem; margin: 0; color: var(--accent); letter-spacing: .01em; }
+.top h1 { font-size: 1.2rem; margin: 0; color: #fff; letter-spacing: -.03em; font-weight: 800; }
+.top h1 span { color: var(--accent); }
+.mark { display: block; flex: none; }
 .conn { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--muted); }
 .conn i { width: .6rem; height: .6rem; border-radius: 50%; background: currentColor; }
 .conn.ok i { color: var(--ok); } .conn.bad { color: var(--bad); font-weight: 700; }
@@ -100,15 +103,15 @@ button:hover:not(:disabled) { border-color: var(--fg); }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:disabled { opacity: .45; cursor: default; }
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 750; }
-button.primary:hover:not(:disabled) { background: #ffc24f; border-color: #ffc24f; }
+button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 button.danger { background: var(--danger); border-color: #ff8a80; color: #fff; font-weight: 750; }
 button.quiet { background: none; border-color: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
 button.quiet:hover:not(:disabled) { color: var(--fg); border-color: transparent; }
 button.small { min-height: 44px; font-size: .95rem; }
 button.big { min-height: 60px; font-size: 1.15rem; }
 button.wide { width: 100%; }
-input:not([type=range]):not([type=checkbox]), select { min-height: var(--tap); width: 100%; background: #0e1013; border: 1.5px solid #565d69; border-radius: var(--radius); padding: 0 .75rem; min-width: 0; }
-select { appearance: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23f6f3ec' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat: no-repeat; background-position: right .8rem center; padding-right: 2.2rem; }
+input:not([type=range]):not([type=checkbox]), select { min-height: var(--tap); width: 100%; background: #080606; border: 1.5px solid #565d69; border-radius: var(--radius); padding: 0 .75rem; min-width: 0; }
+select { appearance: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat: no-repeat; background-position: right .8rem center; padding-right: 2.2rem; }
 input::placeholder { color: var(--faint); }
 input:focus-visible, select:focus-visible { box-shadow: var(--focus); }
 .btnrow { display: flex; gap: .5rem; align-items: center; margin-top: .75rem; }
@@ -142,7 +145,7 @@ h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: 
 
 /* segmented */
 .seg { display: flex; border: 1.5px solid #565d69; border-radius: var(--radius); overflow: hidden; margin: .75rem 0; }
-.seg button { flex: 1; border: 0; border-radius: 0; min-height: var(--tap); background: #0e1013; padding: 0 .4rem; font-size: .95rem; }
+.seg button { flex: 1; border: 0; border-radius: 0; min-height: var(--tap); background: #080606; padding: 0 .4rem; font-size: .95rem; }
 .seg button + button { border-left: 1.5px solid #565d69; }
 .seg button.on { background: var(--fg); color: #111; }
 .seg button:focus-visible { box-shadow: inset 0 0 0 3px var(--accent); border-radius: 0; }
@@ -182,7 +185,7 @@ input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--
 
 /* histogram */
 .hist { margin-bottom: .5rem; }
-.hist svg { width: 100%; height: 4.25rem; background: #0e1013; border: 1.5px solid var(--line); border-radius: 6px; display: block; }
+.hist svg { width: 100%; height: 4.25rem; background: #080606; border: 1.5px solid var(--line); border-radius: 6px; display: block; }
 .hist-msg { margin-top: .35rem; font-weight: 700; font-size: .95rem; }
 .hist-msg.ok { color: var(--ok); } .hist-msg.bad { color: var(--bad); }
 
@@ -221,7 +224,7 @@ progress.buf { height: .5rem; accent-color: #38bdf8; }
 .files { list-style: none; padding: 0; margin: 0; max-height: 16rem; overflow: auto; font-size: .9rem; display: grid; gap: .5rem; word-break: break-all; }
 
 .offset-move { font-size: 1rem; }
-.sticky-act { position: sticky; bottom: -1.5rem; margin: 1rem -1rem -1.5rem; padding: .75rem 1rem 1.5rem; background: linear-gradient(to bottom, #0b0c0e00, var(--bg) .75rem); z-index: 2; }
+.sticky-act { position: sticky; bottom: -1.5rem; margin: 1rem -1rem -1.5rem; padding: .75rem 1rem 1.5rem; background: linear-gradient(to bottom, #0E0C0B00, var(--bg) .75rem); z-index: 2; }
 @media (max-width: 699px) {
   .camname { display: none; }
   .chip { min-height: 36px; font-size: .85rem; padding: 0 .6rem; }
@@ -232,3 +235,66 @@ progress.buf { height: .5rem; accent-color: #38bdf8; }
   .offset .hint-text { display: none; }
 }
 .step-main button.quiet { padding-left: 0; min-height: 40px; }
+
+/* ---------- iPhone / Home Screen app ---------- */
+html { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+body { overscroll-behavior: none; }
+button, .live, .live *, .pad, .tabs { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.app { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.top { padding-top: max(.5rem, env(safe-area-inset-top)); }
+.tabs { padding-bottom: env(safe-area-inset-bottom); }
+.panel { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
+
+/* the few numbers that matter, large enough to read at arm's length in sunlight */
+.chip, .chips .chip { min-height: 44px; font-size: .85rem; padding: 0 .8rem; }
+.cv { font-size: 1.35rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.cl { font-size: .85rem; font-weight: 650; }
+.rec-text .cv { font-size: 1.35rem; }
+.rec-sub { font-size: .9rem; }
+.bignum { font-size: 1.6rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.step-main button.quiet { min-height: 44px; }
+.live-tools button { width: 48px; height: 48px; }
+
+/* device cards */
+.devcard { border-top: 1px solid var(--line); margin-top: 1rem; }
+.devcard summary { list-style: none; display: flex; align-items: center; gap: .75rem; min-height: 68px; cursor: pointer; padding: .5rem 0; }
+.devcard summary::-webkit-details-marker { display: none; }
+.dev-img { width: 72px; height: 45px; flex: none; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 8px; padding: 4px; }
+.dev-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.dev-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-facts { color: var(--muted); font-size: .88rem; }
+.devcard .chev { flex: none; color: var(--muted); transition: transform .15s; }
+.devcard[open] .chev { transform: rotate(180deg); }
+.devcard-body { padding-bottom: 1rem; }
+.specs { margin: 0; }
+.specs > div { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem 0; border-bottom: 1px solid var(--line-soft); }
+.specs dt { color: var(--muted); }
+.specs dd { margin: 0; text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.marks { position: relative; height: 1.7rem; margin: -.5rem 0 .25rem; }
+.marks span { position: absolute; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; font-size: .78rem; font-weight: 750; color: var(--accent); }
+.marks i { width: 3px; height: 9px; background: var(--accent); border-radius: 2px; }
+
+/* landscape phone: live view large, controls beside it */
+@media (max-height: 520px) and (orientation: landscape) {
+  .app { grid-template-columns: minmax(0, 1fr) clamp(300px, 40vw, 400px); }
+  .top { min-height: 34px; padding-top: max(.1rem, env(safe-area-inset-top)); padding-bottom: .1rem; }
+  .top h1 { font-size: 1rem; }
+  .mark { width: 20px; height: 20px; }
+  .camname { display: none; }
+  .view { padding: .4rem; gap: .35rem; }
+  .live { --vmax: calc(100dvh - 34px - 4.6rem); }
+  .strip { padding: 0; }
+  .tabs button { min-height: 44px; }
+  .panel { padding: .6rem .75rem calc(1rem + env(safe-area-inset-bottom)); }
+  .pad > * { min-height: 56px; }
+  .offset { padding: .4rem .75rem; margin-bottom: .6rem; }
+  .offset-big { font-size: 1.2rem; }
+  .offset .hint-text { display: none; }
+  .hist svg { height: 3.2rem; }
+}
+
+/* absolutely positioned helpers (visually hidden switch inputs) must stay inside the scrolling panel */
+.app, .panel, .view { position: relative; }
+.skip { min-height: 44px; display: inline-flex; align-items: center; }
+.files a, .lastfile a { display: inline-block; padding: .75rem 0; }
+.files { gap: 0; }

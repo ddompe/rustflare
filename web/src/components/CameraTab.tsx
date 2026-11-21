@@ -3,6 +3,8 @@ import { api, CameraInfo, Control, Status } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
 import { Histogram } from './Histogram'
+import { DeviceCard } from './DeviceCard'
+import { CameraCatalog, useDatasheet } from '../datasheet'
 
 const fmt = (c: Control, v: number) => {
   if (c.unit !== 'µs') return `${Math.round(v)}${c.unit ? ` ${c.unit}` : ''}`
@@ -30,7 +32,7 @@ function bestRange(v: number): number {
   return bestD === Infinity ? EXP_RANGES.length - 1 : best
 }
 
-function Slider({ c }: { c: Control }) {
+function Slider({ c, marks }: { c: Control; marks?: { v: number; label: string; title?: string }[] }) {
   const id = useId()
   const isExp = c.id === 'exposure_us'
   const [range, setRange] = useState(() => (isExp ? bestRange(c.value) : 0))
@@ -93,6 +95,14 @@ function Slider({ c }: { c: Control }) {
         <output htmlFor={id} className="ctl-val">{fmt(c, value)}</output>
       </div>
       <input id={id} type="range" min={c.log ? Math.log(lo) : c.min} max={c.log ? Math.log(hi) : c.max} step={c.log ? 0.002 : c.step} value={toPos(value)} onChange={(e) => change(parseFloat(e.target.value))} />
+      {marks && marks.length > 0 && (
+        <div className="marks" aria-hidden="true">
+          {marks.map((m) => {
+            const f = (toPos(m.v) - (c.log ? Math.log(lo) : c.min)) / ((c.log ? Math.log(hi) : c.max) - (c.log ? Math.log(lo) : c.min))
+            return f >= 0 && f <= 1 ? <span key={m.label} title={m.title} style={{ left: `calc(16px + (100% - 32px) * ${f})` }}><i />{m.label}</span> : null
+          })}
+        </div>
+      )}
       {isExp ? (
         <>
           <div className="fine fine5">
@@ -131,6 +141,8 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
   const [sel, setSel] = useSetting('camera.selected', '')
   const { err, busy, run } = useAction()
   const cam = status?.camera
+  const sheet = useDatasheet('camera', status, cam ? `${cam.driver}|${cam.id}` : null)
+  const cat: CameraCatalog | null | undefined = sheet.catalog
 
   const refresh = () => run(async () => {
     const l = await api<CameraInfo[]>('GET', '/cameras')
@@ -165,13 +177,17 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
     <>
       <Section error={err}>
         {cam.histogram.length > 0 && <Histogram bins={cam.histogram} saturated={cam.saturated} />}
-        {primary.map((c) => <Slider key={c.id} c={c} />)}
+        {primary.map((c) => {
+          const marks = c.id === 'gain' && cat ? [cat.hcg_gain != null ? { v: cat.hcg_gain, label: 'HCG', title: cat.hcg_note ?? 'High conversion gain starts here' } : null, cat.unity_gain != null ? { v: cat.unity_gain, label: 'Unity', title: 'Unity gain' } : null].filter((m): m is { v: number; label: string; title: string } => !!m) : undefined
+          return <Slider key={c.id} c={c} marks={marks} />
+        })}
       </Section>
       {rest.length > 0 && (
         <Disclosure title="More camera controls" summary={rest.map((c) => c.label.split(' (')[0]).join(', ')}>
           {rest.map((c) => <Slider key={c.id} c={c} />)}
         </Disclosure>
       )}
+      <DeviceCard kind="camera" data={sheet} />
       <div className="btnrow end">
         <button type="button" className="quiet" onClick={() => run(() => api('POST', '/camera/close'))}>Close camera</button>
         <button type="button" className="primary" onClick={next}>Next: Aim →</button>
