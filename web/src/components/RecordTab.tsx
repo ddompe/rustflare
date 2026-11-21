@@ -1,31 +1,10 @@
-import { useEffect, useState } from 'react'
 import { api, Status } from '../api'
 import { Disclosure, Empty, Field, Section, Segmented, useAction } from './ui'
 import { StorageLine } from './Storage'
+import { FileManager } from './FileManager'
 import { useSetting } from '../settings'
 
 const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`)
-const size = (b: number) => (b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} kB`)
-
-interface FileEntry { path: string; size: number; modified: number | null; folder_files: number | null }
-
-function Files({ last }: { last: string | null | undefined }) {
-  const [files, setFiles] = useState<FileEntry[]>([])
-  useEffect(() => { api<FileEntry[]>('GET', '/files').then(setFiles).catch(() => {}) }, [last])
-  return (
-    <Disclosure title="Recent captures" summary={files.length ? `${files.length}` : 'none yet'}>
-      {files.length === 0 && <span className="muted">Nothing captured yet</span>}
-      <ul className="files">
-        {files.slice(0, 40).map((f) => (
-          <li key={f.path}>
-            {f.folder_files != null ? <span>{f.path}/</span> : <a href={`/files/${f.path}`} download>{f.path}</a>}{' '}
-            <span className="muted">{f.folder_files != null ? `${f.folder_files} frames · ` : ''}{size(f.size)}</span>
-          </li>
-        ))}
-      </ul>
-    </Disclosure>
-  )
-}
 
 /** Live progress of whatever is being captured; also used in the status strip's Stop button. */
 export function Progress({ status, onStop }: { status: Status; onStop: () => void }) {
@@ -121,7 +100,7 @@ export function RecordTab({ status, goto }: { status: Status | null; goto: (t: '
         <button type="button" className="wide" onClick={() => run(() => api('POST', '/capture/single', { name: nm }))}>Save a single frame (PNG)</button>
       </Disclosure>
       {c.last_file && <div className="hint-text lastfile">Last: <a href={`/files/${c.last_file}`}>{c.last_file}</a> ({c.phase}{c.disk_mb_s > 0 ? `, written at ${c.disk_mb_s.toFixed(0)} MB/s` : ''})</div>}
-      <Files last={c.last_file} />
+      <FileManager status={status} />
     </>
   )
 }

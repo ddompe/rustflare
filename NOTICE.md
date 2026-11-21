@@ -17,4 +17,4 @@
 
 - Vidoxide `camera/drivers/asi.rs` and `ext/libasicamera-sys` (MIT, see above) — consulted for the ASI SDK call sequence (open, init, video capture). `crates/camera/src/asi.rs` is written from `ASICamera2.h` and declares its own minimal FFI; the vendor library is loaded at run time and not redistributed.
 - INDIGO `indigo_mount_asi.c` (<https://github.com/indigo-astronomy/indigo>) — consulted to confirm the ZWO `:TS#`/`:TQ#`/`:TL#` commands and the 0.1–0.9 guide-rate range.
-- `playerone-sdk` / `playerone-sdk-sys` crates — used as dependencies. `playerone-sdk-sys` bundles Player One's proprietary `libPlayerOneCamera`; check its licence before redistributing binaries.
+- `playerone-sdk` / `playerone-sdk-sys` crates — used as dependencies. `playerone-sdk-sys` bundles Player One's proprietary `libPlayerOneCamera`; redistributed under the SDK's licence ("any products without any restrictions", copyright notice kept): see `packaging/licenses/PlayerOne-SDK-LICENSE.txt`, installed in `/usr/share/doc/rustflare/`.

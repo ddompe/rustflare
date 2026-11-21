@@ -62,6 +62,8 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/files/*path", get(download))
         .route("/api/storage", get(storage_get).put(storage_put))
         .route("/api/storage/eject", post(storage_eject))
+        .route("/api/files/stats", get(file_stats))
+        .route("/api/files/delete", post(file_delete))
         .route("/api/optics", put(optics_put))
         .route("/api/startup", put(startup_put))
         .route("/api/ui", get(ui_get).put(ui_put))
@@ -312,6 +314,36 @@ async fn storage_put(State(st): State<AppState>, Json(b): Json<StoragePath>) -> 
     let s = st.storage.clone();
     match tokio::task::spawn_blocking(move || s.select(std::path::Path::new(&b.path))).await {
         Ok(Ok(info)) => Json(json!(info)).into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct PathQuery { path: String }
+/// Header, timing and brightness statistics of one SER file, with a "mostly dark" flag.
+async fn file_stats(State(st): State<AppState>, axum::extract::Query(q): axum::extract::Query<PathQuery>) -> Res {
+    let root = st.storage.dir();
+    match tokio::task::spawn_blocking(move || crate::files::resolve(&root, &q.path).and_then(|p| crate::files::ser_stats(&p, 12))).await {
+        Ok(Ok(s)) => Json(json!(s)).into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct DeleteBody { path: String, #[serde(default)] confirm: bool }
+/// Deletes one capture. Needs `confirm: true`; refused while recording (the file may be the one being written).
+async fn file_delete(State(st): State<AppState>, Json(b): Json<DeleteBody>) -> Res {
+    if !b.confirm {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "deleting is permanent: send {\"confirm\": true}" }))).into_response();
+    }
+    if st.engine.status.borrow().capture.state != "idle" {
+        return (StatusCode::CONFLICT, Json(json!({ "error": "a capture is running or still writing" }))).into_response();
+    }
+    let root = st.storage.dir();
+    match tokio::task::spawn_blocking(move || crate::files::delete(&root, &b.path)).await {
+        Ok(Ok(freed)) => Json(json!({ "freed": freed })).into_response(),
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }

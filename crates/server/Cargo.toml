@@ -59,4 +59,5 @@ assets = [
   ["../../LICENSE", "usr/share/doc/rustflare/", "644"],
   ["../../NOTICE.md", "usr/share/doc/rustflare/", "644"],
   ["../../LICENSE.vidoxide", "usr/share/doc/rustflare/", "644"],
+  ["../../packaging/licenses/PlayerOne-SDK-LICENSE.txt", "usr/share/doc/rustflare/", "644"],
 ]
