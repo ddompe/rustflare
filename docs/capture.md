@@ -30,7 +30,7 @@ Choose where captures go in the **Storage** panel: detected USB drives are liste
 
 - A removed drive is **never silently replaced by the SD card**: captures refuse to start until it is back, and a running capture stops cleanly and keeps its frames.
 - Capturing stops (cleanly) when less than 50 MB is free; starting needs 200 MB.
-- **FAT32** (most factory-formatted sticks): a file cannot exceed 4 GB. Rustflare detects this and **splits SER files into `_part2`, `_part3`…**; PNG folders are unaffected. For long sequences exFAT or ext4 is better (Rustflare never formats a drive).
+- **FAT32** (most factory-formatted sticks): a file cannot exceed 4 GB. RustFlare detects this and **splits SER files into `_part2`, `_part3`…**; PNG folders are unaffected. For long sequences exFAT or ext4 is better (RustFlare never formats a drive).
 - The service must be able to write to the drive: after `sudo apt install` it runs as the installing user, which owns auto-mounted drives. Otherwise: `sudo rustflare-user <your-login>`.
 
 ## Flats
@@ -40,7 +40,7 @@ Choose where captures go in the **Storage** panel: detected USB drives are liste
 
 1. Point at a uniform source (diffuser over the aperture, or defocused sky). Leave the optical train and focus as for your lights.
 2. Choose frame count and target level (default 50 % of full scale).
-3. Rustflare stops tracking/guiding, then adjusts exposure — measuring the mean level and rescaling exposure, backing off hard if the frame clips — until the mean is within ±5 % of the target. Then it records the frames, writes the master, and **restores your previous exposure**.
+3. RustFlare stops tracking/guiding, then adjusts exposure — measuring the mean level and rescaling exposure, backing off hard if the frame clips — until the mean is within ±5 % of the target. Then it records the frames, writes the master, and **restores your previous exposure**.
 4. If the level cannot be reached within the camera's exposure range it stops with an explanatory error (e.g. "too bright even at minimum exposure": add more diffusion or reduce gain).
 
 The sidecar JSON records the flat exposure and final mean level so lights and flats can be matched (same gain/offset/format!).

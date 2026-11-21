@@ -1,4 +1,11 @@
-# Rustflare
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/logo-mark-dark.svg">
+    <img src="docs/img/logo-mark-light.svg" alt="RustFlare" width="128">
+  </picture>
+</p>
+
+<h1 align="center">RustFlare</h1>
 
 Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi next to the telescope, open a web page from anywhere on your network, and:
 

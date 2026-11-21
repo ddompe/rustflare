@@ -2,7 +2,7 @@
 
 ## Player One cameras
 
-Player One cameras are **not** V4L2/UVC devices. Rustflare drives them through Player One's userspace library
+Player One cameras are **not** V4L2/UVC devices. RustFlare drives them through Player One's userspace library
 `libPlayerOneCamera`, using the `playerone-sdk` crate, which **bundles the library for Linux x86-64 and arm64** (and macOS).
 No separate vendor SDK install is needed. The package includes the library and depends on `libusb-1.0-0` (installed automatically). When building from source use `--features playerone`; the build copies the library next to the binary, keep them together. See [ADR 0006](adr/0006-playerone-via-vendor-sdk.md).
 
@@ -15,8 +15,8 @@ Controls exposed: exposure (µs), gain, offset, 8/16-bit output. Colour cameras 
 
 ## ZWO AM3 / AM5 mounts
 
-Connected over USB as a serial device (it appears as `/dev/ttyACM0`, and as a stable name under `/dev/serial/by-id/`, which the Mount panel suggests); Rustflare speaks the ZWO serial protocol directly (no ASCOM/INDI).
-The AM3 can run equatorial or alt-az; Rustflare calls the axes *primary/secondary* (RA/Dec in equatorial mode). See [Calibration](tracking-and-guiding.md#calibration) for what that means for guiding. Supported: solar tracking rate (`:TS#`), tracking on/off, manual slewing at the ten speeds the mount offers
+Connected over USB as a serial device (it appears as `/dev/ttyACM0`, and as a stable name under `/dev/serial/by-id/`, which the Mount panel suggests); RustFlare speaks the ZWO serial protocol directly (no ASCOM/INDI).
+The AM3 can run equatorial or alt-az; RustFlare calls the axes *primary/secondary* (RA/Dec in equatorial mode). See [Calibration](tracking-and-guiding.md#calibration) for what that means for guiding. Supported: solar tracking rate (`:TS#`), tracking on/off, manual slewing at the ten speeds the mount offers
 (0.25× … 1440× sidereal), pulse guiding. Guide rate is clamped to the mount's 0.1–0.9× range; the mount has one rate for both axes.
 See [ADR 0007](adr/0007-zwo-mount-serial-driver.md) for the fixes made relative to Vidoxide's driver.
 

@@ -4,7 +4,7 @@
 
 <https://github.com/GreatAttractor/vidoxide> — Copyright (c) 2020-2024 Filip Szczerek. Licence text: `LICENSE.vidoxide`.
 
-| Rustflare file | Derived from (Vidoxide `src/`) | What changed |
+| RustFlare file | Derived from (Vidoxide `src/`) | What changed |
 |---|---|---|
 | `crates/mount/src/zwo.rs` | `mount/zwo.rs` (also © 2024 Diego Dompe) | Generic I/O + unit tests; guide-rate clamp fix; solar/lunar/sidereal rate; `stop()` keeps tracking (ADR 0007) |
 | `crates/core/src/mount.rs` | `mount/mod.rs` | `RadPerSec`, `SlewSpeed`, `Axis`, sidereal constants; trait reshaped |

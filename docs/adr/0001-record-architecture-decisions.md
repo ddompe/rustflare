@@ -5,7 +5,7 @@
 
 ## Context
 
-Rustflare reuses ideas and code from another project, targets specific hardware, and is meant
+RustFlare reuses ideas and code from another project, targets specific hardware, and is meant
 to grow to more cameras and mounts. The reasons behind early choices will be forgotten unless written down.
 
 ## Decision
