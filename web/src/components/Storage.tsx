@@ -64,6 +64,7 @@ export function StorageSettings({ status }: { status: Status | null }) {
   const { data, load } = useStorage()
   const [sel, setSel] = useState('')
   const { err, run } = useAction()
+  const [ejected, setEjected] = useState<string | null>(null)
   const busy = status?.capture.state !== 'idle' && status?.capture.state !== undefined
   if (!data) return <div className="muted">Loading…</div>
   const cur = data.current
@@ -95,7 +96,11 @@ export function StorageSettings({ status }: { status: Status | null }) {
         </select>
       </div>
       <button type="button" className="wide" disabled={!sel || busy} onClick={() => run(async () => { await api('PUT', '/storage', { path: sel }); setSel(''); await load() })}>Use this drive</button>
-      {busy && <div className="hint-text">Can't change storage while capturing.</div>}
+      {cur.mount_point && data.candidates.some((c) => c.mount_point === cur.mount_point) && (
+        <button type="button" className="wide" disabled={busy} onClick={() => run(async () => { const r = await api<{ message: string }>('POST', '/storage/eject', { mount_point: cur.mount_point }); setEjected(r.message); await load() })}>Eject drive safely</button>
+      )}
+      {ejected && <div className="hint-text" role="status">{ejected}</div>}
+      {busy && <div className="hint-text">Can't change or eject storage while capturing or writing.</div>}
       <div className="hint-text">Captures go in a <code>rustflare</code> folder on the chosen drive. The choice is remembered.</div>
       <ErrorLine error={err} />
     </div>

@@ -195,6 +195,39 @@ impl Storage {
             .collect()
     }
 
+    /// Safely removes a drive: flushes it, unmounts it and (where possible) powers the port down. `mount_point` must
+    /// be one of `candidates()`. Returns a message for the user.
+    pub fn eject(&self, mount_point: &Path) -> Result<String, String> {
+        let mounts = read_mounts();
+        let m = mounts
+            .iter()
+            .find(|m| m.point == mount_point && self.candidates().iter().any(|c| Path::new(&c.path).parent() == Some(&m.point)))
+            .ok_or("that is not a removable drive")?
+            .clone();
+        // flush this filesystem only
+        if let Ok(f) = std::fs::File::open(&m.point) {
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::fd::AsRawFd;
+                unsafe { libc::syncfs(f.as_raw_fd()) };
+            }
+            #[cfg(not(target_os = "linux"))]
+            let _ = f;
+        }
+        let run = |prog: &str, args: &[&str]| -> Result<(), String> {
+            let o = std::process::Command::new(prog).args(args).output().map_err(|e| format!("{prog}: {e}"))?;
+            if o.status.success() { Ok(()) } else { Err(String::from_utf8_lossy(&o.stderr).trim().to_string()) }
+        };
+        run("udisksctl", &["unmount", "-b", &m.device])
+            .or_else(|_| run("sudo", &["-n", "umount", &m.point.display().to_string()]))
+            .map_err(|e| format!("could not unmount (is something still using the drive?): {e}"))?;
+        // best effort: power off the whole device so it can be pulled safely
+        let parent = std::process::Command::new("lsblk").args(["-no", "pkname", &m.device]).output().ok().and_then(|o| String::from_utf8(o.stdout).ok()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let powered = parent.as_deref().map(|p| run("udisksctl", &["power-off", "-b", &format!("/dev/{p}")]).is_ok()).unwrap_or(false);
+        log::info!("storage: ejected {} ({})", m.point.display(), if powered { "powered off" } else { "unmounted" });
+        Ok(if powered { "Safe to remove the drive.".into() } else { "Unmounted: safe to remove the drive.".into() })
+    }
+
     /// Selects a directory (created if missing) after verifying it is writable, and saves the choice.
     pub fn select(&self, path: &Path) -> Result<Info, String> {
         if !path.is_absolute() {

@@ -32,6 +32,13 @@ fi
 cargo zigbuild --release -p rustflare-server --features playerone,asi,ble --target "$TARGET.$GLIBC"
 
 mkdir -p dist
+# A local build without --version must sort ABOVE the released version it is based on (dpkg: 0.2.6 < 0.2.6+dev...
+# < 0.2.7), so it can be installed over it and rustflare-update still offers the next release.
+if [ -z "$VERSION" ]; then
+  WS=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+  VERSION="${WS}+dev$(date +%Y%m%d%H%M).$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
+  echo "using dev version $VERSION"
+fi
 DEB_ARGS=(--no-build --no-strip --target "$TARGET" -p rustflare-server --output dist/)
 [ -n "$VERSION" ] && DEB_ARGS+=(--deb-version "$VERSION")
 cargo deb "${DEB_ARGS[@]}"

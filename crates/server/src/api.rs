@@ -61,6 +61,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/snapshot.jpg", get(snapshot))
         .route("/files/*path", get(download))
         .route("/api/storage", get(storage_get).put(storage_put))
+        .route("/api/storage/eject", post(storage_eject))
         .route("/api/optics", put(optics_put))
         .route("/api/startup", put(startup_put))
         .route("/api/ui", get(ui_get).put(ui_put))
@@ -311,6 +312,21 @@ async fn storage_put(State(st): State<AppState>, Json(b): Json<StoragePath>) -> 
     let s = st.storage.clone();
     match tokio::task::spawn_blocking(move || s.select(std::path::Path::new(&b.path))).await {
         Ok(Ok(info)) => Json(json!(info)).into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct EjectBody { mount_point: String }
+/// Flush, unmount and power off a removable drive. Refused while anything is being recorded or written.
+async fn storage_eject(State(st): State<AppState>, Json(b): Json<EjectBody>) -> Res {
+    if st.engine.status.borrow().capture.state != "idle" {
+        return (StatusCode::CONFLICT, Json(json!({ "error": "a capture is running or still writing: wait until it finishes" }))).into_response();
+    }
+    let s = st.storage.clone();
+    match tokio::task::spawn_blocking(move || s.eject(std::path::Path::new(&b.mount_point))).await {
+        Ok(Ok(msg)) => Json(json!({ "message": msg })).into_response(),
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
