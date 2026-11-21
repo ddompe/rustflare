@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode } from 'react'
 import { api, Status } from '../api'
 import { Disclosure, Empty, Section, Segmented, useAction } from './ui'
 import { useSetting } from '../settings'
