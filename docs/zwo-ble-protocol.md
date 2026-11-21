@@ -2,7 +2,7 @@
 
 *Unofficial. Worked out from a packet capture of ZWO's own iPhone app talking to an AM3 and from read-only tests with a Raspberry Pi. Not affiliated with or endorsed by ZWO. Verified on **one** mount (AM3, firmware 1.8.8) only; other mounts (AM3N, AM5, AM5N) probably behave the same but nobody has checked.*
 
-**Summary.** The mount's Bluetooth Low Energy link is a plain *serial-over-BLE bridge*: the **same ASCII `:…#` command set** that the mount speaks over its USB serial port (see ZWO's *Serial Communication Protocol* v1.8 and INDIGO's `indigo_mount_asi` driver) is written to one GATT characteristic, and replies come back as notifications on the same characteristic. There is no BLE bonding or link encryption. The only extra step is a **session-opening command** (`:BS…#`) that the mount must receive before it answers anything else.
+**Summary.** The mount's Bluetooth Low Energy link is a plain *serial-over-BLE bridge*: the **same ASCII `:…#` command set** that the mount speaks over its USB serial port (see ZWO's *Serial Communication Protocol* v1.8 and INDIGO's `indigo_mount_asi` driver) is written to one GATT characteristic, and replies come back as notifications on the same characteristic. There is no BLE bonding or link encryption. The only extra step is a **session-opening command** (`:BS20240222071513#`) that the mount must receive before it answers anything else.
 
 ## 1. GATT layout
 
@@ -30,10 +30,10 @@
 Before any other command is answered, send:
 
 ```
-:BS<token>#      →  OK#
+:BS20240222071513#      →  OK#
 ```
 
-`<token>` is a **fixed 14-digit string that looks like a timestamp (`YYYYMMDDHHMMSS`)**. The official app sends the same value in every session, so it appears to be an application constant, not a per-device secret. It is deliberately **not written out in this repository**; one capture of the official app shows it. Without this command the mount ignores ordinary queries (a `:GVP#` sent first got no reply; after the opener it was answered immediately).
+The 14-digit token **looks like a timestamp (`YYYYMMDDHHMMSS`, here 2024-02-22 07:15:13)**. The official app sent exactly this value in the captured session, and it is the same for every device we could compare (one), so it appears to be an application constant rather than a per-device secret. Without the opener the mount ignores ordinary queries (a `:GVP#` sent first got no reply; after the opener it was answered immediately). It is unknown whether newer app versions use a different value.
 
 ## 4. Commands seen in the capture
 
@@ -99,7 +99,7 @@ connect <address>
 menu gatt
 select-attribute <device path>/service0028/char0029    # the 0000ff01 characteristic (BlueZ names may differ)
 notify on
-write "<hex of :BS<token>#>" 0 request    # → notification "OK#"
+write "<hex of :BS20240222071513#>" 0 request    # → notification "OK#"
 write "0x3a 0x47 0x56 0x50 0x23" 0 request   # ":GVP#" → "AM3#"
 notify off
 back
