@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, CameraInfo, Control, Status } from '../api'
 import { Panel, Row, useAction } from './ui'
 import { Histogram } from './Histogram'
+import { useSetting } from '../settings'
 
 const fmt = (c: Control, v: number) => {
   if (c.unit !== 'µs') return `${Math.round(v)}${c.unit ? ` ${c.unit}` : ''}`
@@ -106,7 +107,7 @@ function Slider({ c }: { c: Control }) {
 
 export function CameraPanel({ status }: { status: Status | null }) {
   const [list, setList] = useState<CameraInfo[]>([])
-  const [sel, setSel] = useState('')
+  const [sel, setSel] = useSetting('camera.selected', '')
   const { err, busy, run } = useAction()
   const cam = status?.camera
 

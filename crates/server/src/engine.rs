@@ -172,6 +172,9 @@ pub struct Engine {
     storage: Arc<Storage>,
     optics: OpticsSettings,
     startup: Startup,
+    /// Control values to re-apply when each camera is opened, keyed `driver/id`; written back lazily.
+    camera_controls: serde_json::Map<String, Value>,
+    controls_dirty: Option<Instant>,
     /// While set, keep trying to reconnect the remembered camera/mount (they may not be enumerated yet at boot).
     auto_until: Option<Instant>,
     last_auto_try: Instant,
@@ -214,6 +217,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         last_frame: None,
         optics: rustflare_config_optics(&storage),
         startup: crate::config::read(storage.config_file()).get("startup").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
+        camera_controls: crate::config::read(storage.config_file()).get("camera_controls").and_then(|v| v.as_object().cloned()).unwrap_or_default(),
+        controls_dirty: None,
         auto_until: Some(Instant::now() + Duration::from_secs(120)),
         last_auto_try: Instant::now() - Duration::from_secs(10),
         camera_pixel_um: None,
@@ -247,6 +252,7 @@ impl Engine {
         loop {
             self.poll_sink();
             self.auto_connect_tick();
+            self.flush_controls();
             if self.draining.is_some() && self.last_publish.elapsed() >= Duration::from_millis(200) {
                 self.publish();
             }
@@ -385,6 +391,16 @@ impl Engine {
                 cam.set_control(&id, value).map_err(s)?;
                 if let Some(c) = self.status.camera.as_mut().and_then(|c| c.controls.iter_mut().find(|c| c.id == id)) {
                     c.value = value.clamp(c.min, c.max);
+                }
+                if !id.starts_with("sim_") {
+                    if let Some(cs) = self.status.camera.as_ref() {
+                        let key = format!("{}/{}", cs.driver, cs.id);
+                        let entry = self.camera_controls.entry(key).or_insert_with(|| json!({}));
+                        if let Some(o) = entry.as_object_mut() {
+                            o.insert(id.clone(), json!(value.clamp(cs.controls.iter().find(|c| c.id == id).map_or(f64::MIN, |c| c.min), cs.controls.iter().find(|c| c.id == id).map_or(f64::MAX, |c| c.max))));
+                        }
+                        self.controls_dirty = Some(Instant::now()); // written to disk a moment later, not per slider tick
+                    }
                 }
                 Ok(json!({}))
             }
@@ -654,7 +670,20 @@ impl Engine {
         let d = self.drivers.iter().find(|d| d.name() == driver).ok_or(format!("unknown driver {driver}"))?;
         let mut cam = d.open(id).map_err(s)?;
         let info = cam.info();
-        let controls = cam.controls().map_err(s)?;
+        let mut controls = cam.controls().map_err(s)?;
+        // Re-apply what was last set on this camera (exposure, gain, ...), so a reboot comes back as it was.
+        if let Some(saved) = self.camera_controls.get(&format!("{}/{}", info.driver, info.id)).and_then(|v| v.as_object()) {
+            let mut ids: Vec<&String> = saved.keys().collect();
+            ids.sort_by_key(|k| k.as_str() != "high_bit_depth"); // the output format first: it can change the others' limits
+            for id in ids {
+                if let (Some(v), Some(c)) = (saved[id].as_f64(), controls.iter_mut().find(|c| &c.id == id)) {
+                    let v = v.clamp(c.min, c.max);
+                    if cam.set_control(id, v).is_ok() {
+                        c.value = v;
+                    }
+                }
+            }
+        }
         self.camera_pixel_um = cam.pixel_size_um();
         self.status.camera = Some(CameraStatus { driver: info.driver, id: info.id, name: info.name, controls, ..Default::default() });
         self.camera = Some(cam);
@@ -667,6 +696,14 @@ impl Engine {
         self.mount = Some(m);
         self.mount_tracking = false; // connecting never starts tracking: that moves the mount
         Ok(())
+    }
+
+    /// Writes changed camera control values to the settings file once they have settled for a moment.
+    fn flush_controls(&mut self) {
+        if self.controls_dirty.is_some_and(|t| t.elapsed() >= Duration::from_millis(1500)) {
+            self.controls_dirty = None;
+            let _ = crate::config::set(self.storage.config_file(), "camera_controls", Value::Object(self.camera_controls.clone()));
+        }
     }
 
     fn save_startup(&self) {
@@ -829,8 +866,9 @@ impl Engine {
         match &mut self.guide {
             GuideState::Off => {}
             GuideState::Guiding(g) => {
-                self.status.guiding.error_px = Some((g.target - pos).len());
                 cmd = g.step(now, pos);
+                // show the averaged offset the guider acts on (the instantaneous one is mostly seeing)
+                self.status.guiding.error_px = Some(g.filtered_error().map_or((g.target - pos).len(), |e| e.len()));
             }
             GuideState::Calibrating(c) => match c.step(now, pos) {
                 CalAction::None => {}

@@ -1,19 +1,20 @@
 import { useState } from 'react'
 import { api, Status } from '../api'
 import { Panel, Row, useAction } from './ui'
+import { useSetting } from '../settings'
 
 const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`)
 
 export function CapturePanel({ status }: { status: Status | null }) {
-  const [name, setName] = useState('')
-  const [mode, setMode] = useState<'sequence' | 'bursts'>('sequence')
-  const [format, setFormat] = useState<'ser' | 'png'>('ser')
-  const [frames, setFrames] = useState('1000')
-  const [seconds, setSeconds] = useState('')
-  const [every, setEvery] = useState('30')
-  const [bursts, setBursts] = useState('')
-  const [flatFrames, setFlatFrames] = useState('50')
-  const [level, setLevel] = useState('50')
+  const [name, setName] = useSetting('capture.name', '')
+  const [mode, setMode] = useSetting<'sequence' | 'bursts'>('capture.mode', 'sequence')
+  const [format, setFormat] = useSetting<'ser' | 'png'>('capture.format', 'ser')
+  const [frames, setFrames] = useSetting('capture.frames', '1000')
+  const [seconds, setSeconds] = useSetting('capture.seconds', '')
+  const [every, setEvery] = useSetting('capture.every', '30')
+  const [bursts, setBursts] = useSetting('capture.bursts', '')
+  const [flatFrames, setFlatFrames] = useSetting('capture.flat_frames', '50')
+  const [level, setLevel] = useSetting('capture.flat_level', '50')
   const [bufMb, setBufMb] = useState('')
   const { err, run } = useAction()
   const c = status?.capture

@@ -1,20 +1,21 @@
 import { useEffect, useState } from 'react'
 import { api, Status } from '../api'
 import { Panel, Row, useAction } from './ui'
+import { useSetting } from '../settings'
 
 // Speeds the ZWO AM3/AM5 supports, as multiples of the sidereal rate.
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 20, 60, 720, 1440]
 
 export function MountPanel({ status }: { status: Status | null }) {
   const [drivers, setDrivers] = useState<string[]>([])
-  const [driver, setDriver] = useState('zwo')
-  const [device, setDevice] = useState('')
+  const [driver, setDriver] = useSetting('mount.driver', 'zwo')
+  const [device, setDevice] = useSetting('mount.device', '')
   const [ports, setPorts] = useState<{ path: string; label: string }[]>([])
-  const [speed, setSpeed] = useState(8)
+  const [speed, setSpeed] = useSetting('mount.slew_speed', 8)
   const { err, run } = useAction()
   const m = status?.mount
   useEffect(() => { api<string[]>('GET', '/mount/drivers').then(setDrivers).catch(() => {}) }, [])
-  const scan = () => api<{ path: string; label: string }[]>('GET', '/mount/ports').then((p) => { setPorts(p); setDevice((d) => d || p[0]?.path || '/dev/ttyACM0') }).catch(() => {})
+  const scan = () => api<{ path: string; label: string }[]>('GET', '/mount/ports').then((p) => { setPorts(p); if (!device) setDevice(p[0]?.path || '/dev/ttyACM0') }).catch(() => {})
   useEffect(() => { scan() }, [])
 
   const slew = (axis: 'primary' | 'secondary', dir: 1 | -1) => ({

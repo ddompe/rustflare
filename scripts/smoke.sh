@@ -10,8 +10,9 @@ if [ -n "${SMOKE_URL:-}" ]; then
   BASE="$SMOKE_URL"; REMOTE=1
 else
   BASE="http://127.0.0.1:$PORT"; REMOTE=0
-  rm -rf "$DATA"
-  "$BIN" --bind "127.0.0.1:$PORT" --data-dir "$DATA" >"$DATA.log" 2>&1 &
+  rm -rf "$DATA" "$DATA.config.json"
+  # own settings file: the server remembers camera settings etc., and a test must start from a clean slate
+  "$BIN" --bind "127.0.0.1:$PORT" --data-dir "$DATA" --config-file "$DATA.config.json" >"$DATA.log" 2>&1 &
   PID=$!
   trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
   sleep 1.5

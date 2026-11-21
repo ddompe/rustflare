@@ -59,6 +59,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/storage", get(storage_get).put(storage_put))
         .route("/api/optics", put(optics_put))
         .route("/api/startup", put(startup_put))
+        .route("/api/ui", get(ui_get).put(ui_put))
         .route("/api/preview", get(preview_get).put(preview_put))
         .fallback_service(spa)
         .with_state(state)
@@ -327,4 +328,36 @@ async fn mount_ports() -> Json<Value> {
 struct StartupBody { enabled: bool }
 async fn startup_put(s: State<AppState>, Json(b): Json<StartupBody>) -> Res {
     run(s, Command::SetStartup { enabled: b.enabled }).await
+}
+
+/// UI preferences (slew speed, form fields, ...) kept on the Pi so they survive reboots and follow the user
+/// between devices. Stored under the `ui` key of the settings file.
+async fn ui_get(State(st): State<AppState>) -> Json<Value> {
+    let file = st.storage.config_file().to_path_buf();
+    let v = tokio::task::spawn_blocking(move || crate::config::read(&file).get("ui").cloned().unwrap_or_else(|| json!({}))).await.unwrap_or_default();
+    Json(v)
+}
+
+#[derive(Deserialize)]
+struct UiSetting { key: String, value: Value }
+async fn ui_put(State(st): State<AppState>, Json(b): Json<UiSetting>) -> Res {
+    let ok_key = !b.key.is_empty() && b.key.len() <= 64 && b.key.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c));
+    if !ok_key || b.value.to_string().len() > 4096 {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "invalid key or value too large" }))).into_response();
+    }
+    let file = st.storage.config_file().to_path_buf();
+    let r = tokio::task::spawn_blocking(move || {
+        let mut ui = crate::config::read(&file).get("ui").cloned().and_then(|v| v.as_object().cloned()).unwrap_or_default();
+        if ui.len() >= 200 && !ui.contains_key(&b.key) {
+            return Err("too many settings".to_string());
+        }
+        ui.insert(b.key, b.value);
+        crate::config::set(&file, "ui", Value::Object(ui))
+    })
+    .await;
+    match r {
+        Ok(Ok(())) => Json(json!({})).into_response(),
+        Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
 }

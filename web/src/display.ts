@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useSetting } from './settings'
 
 /** How the live image is presented in the browser. Purely client-side except `stretch` (server) and `fps` (stream). */
 export interface Display {
@@ -23,14 +24,23 @@ export const DEFAULT_DISPLAY: Display = {
   crosshair: true, rings: 3, ringSize: 15, grid: false, sunOutline: true, zoom: 1, panX: 0, panY: 0,
 }
 
-const KEY = 'rustflare.display'
+type Prefs = Omit<Display, 'zoom' | 'panX' | 'panY'>
+const { zoom: _z, panX: _x, panY: _y, ...DEFAULT_PREFS } = DEFAULT_DISPLAY
+void _z; void _x; void _y
 
+/** Display preferences live on the Pi (see settings.ts); zoom and pan are per-visit and always start reset. */
 export function useDisplay(): [Display, (patch: Partial<Display>) => void, () => void] {
-  const [d, setD] = useState<Display>(() => {
-    try { return { ...DEFAULT_DISPLAY, ...JSON.parse(localStorage.getItem(KEY) ?? '{}'), zoom: 1, panX: 0, panY: 0 } } catch { return DEFAULT_DISPLAY }
-  })
-  useEffect(() => { localStorage.setItem(KEY, JSON.stringify(d)) }, [d])
-  return [d, (p) => setD((x) => ({ ...x, ...p })), () => setD(DEFAULT_DISPLAY)]
+  const [prefs, setPrefs] = useSetting<Prefs>('display', DEFAULT_PREFS)
+  const [view, setView] = useState({ zoom: 1, panX: 0, panY: 0 })
+  const set = (p: Partial<Display>) => {
+    const { zoom, panX, panY, ...rest } = p
+    if (zoom !== undefined || panX !== undefined || panY !== undefined) {
+      setView((v) => ({ zoom: zoom ?? v.zoom, panX: panX ?? v.panX, panY: panY ?? v.panY }))
+    }
+    if (Object.keys(rest).length) setPrefs({ ...prefs, ...rest })
+  }
+  const reset = () => { setPrefs(DEFAULT_PREFS); setView({ zoom: 1, panX: 0, panY: 0 }) }
+  return [{ ...prefs, ...view }, set, reset]
 }
 
 /** CSS filter chain for the image; the SVG filter `#rf-look` (see LiveView) does gamma and tint. */

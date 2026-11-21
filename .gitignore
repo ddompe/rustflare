@@ -6,3 +6,5 @@ web/dist
 *.ser
 /dist
 /data-smoke*
+rustflare.json
+*.config.json

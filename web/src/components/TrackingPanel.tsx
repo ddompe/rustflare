@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import { api, Status } from '../api'
 import { Panel, Row, useAction } from './ui'
+import { useSetting } from '../settings'
 
 const MODES = [
   { id: 'limb', label: 'Disc edge (limb): whole or partial disc', help: 'Fits the visible solar edge, so it works when only part of the disc is in frame (typical for H-alpha). Needs some limb in view.' },
@@ -11,8 +11,8 @@ const MODES = [
 const angle = (v: { x: number; y: number }) => `${((Math.atan2(v.y, v.x) * 180) / Math.PI).toFixed(0)}°`
 
 export function TrackingPanel({ status, anchorPick, setAnchorPick }: { status: Status | null; anchorPick: boolean; setAnchorPick: (b: boolean) => void }) {
-  const [mode, setMode] = useState('limb')
-  const [radius, setRadius] = useState('')
+  const [mode, setMode] = useSetting('tracking.mode', 'limb')
+  const [radius, setRadius] = useSetting('tracking.radius', '')
   const { err, run } = useAction()
   const t = status?.tracking
   const g = status?.guiding

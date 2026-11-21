@@ -12,7 +12,11 @@ pub fn read(file: &Path) -> Map<String, Value> {
         .unwrap_or_default()
 }
 
+/// Serialises read-modify-write cycles: the engine and the API both write this file.
+static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub fn set(file: &Path, key: &str, value: Value) -> Result<(), String> {
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut m = read(file);
     m.insert(key.to_string(), value);
     let tmp = file.with_extension("json.tmp");
