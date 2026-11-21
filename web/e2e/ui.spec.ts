@@ -55,8 +55,8 @@ test('Go to Sun: needs a site, asks for confirmation, ends with solar tracking o
 
 test('record a short sequence, check it, delete it', async ({ page }) => {
   await page.goto('/')
-  const r = await post(page, '/capture/sequence', { name: 'e2e', frames: 10, format: 'ser' })
-  expect(await r.text()).toContain('buffer_frames')
+  // the first frame can still be on its way after the camera was (re)opened
+  await expect.poll(async () => (await post(page, '/capture/sequence', { name: 'e2e', frames: 10, format: 'ser' })).text(), { timeout: 10_000 }).toContain('buffer_frames')
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 15_000 }).toBe('idle')
   await page.getByRole('tab', { name: /^Record/ }).click()
   await page.getByText('Captures').click()
