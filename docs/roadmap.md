@@ -1,46 +1,47 @@
 # Roadmap & status
 
-Work is tracked on the [GitHub project board](https://github.com/users/ddompe/projects/1) (one issue per item, closed = done); this page is the narrative summary. `scripts/create-project-board.py` created the board from this list.
+Work is tracked on the [GitHub project board](https://github.com/users/ddompe/projects/1) (one issue per item; closed = done). This page is the narrative summary.
 
-## Verified
+**Where we are:** version 0.2.x, the first usable build. It has captured real H-alpha data with the owner's Player One Apollo-M MINI and ZWO AM3 on a Raspberry Pi 5. The next milestone is **v0.3.0**, the first release, once the open items under *Before v0.3.0* are done.
 
-- **Unit tests** across all crates (trackers incl. H-alpha-like discs, calibration and guiding in closed loop, ZWO protocol on a mock port, SER/PNG, the asynchronous frame writer, storage logic, flats, solar geometry).
-- **End to end on the simulators**, on a laptop and on a real Raspberry Pi 5 (Debian 13, aarch64): open camera, mount, solar tracking, tracking, automatic calibration, guiding, centre & guide, single PNG, sequences, scheduled bursts through the RAM buffer, PNG-folder output, flats (exposure converged and restored), error responses, preview.
-- **Packaging on the Pi**: install, service start/enable, upgrade `0.1.0-1 → -2` preserving config and captures, `rustflare-update` (check, tampered-checksum abort, upgrade, up-to-date), the Player One library resolving via rpath next to libusb.
-- Web UI checked visually on the simulators for the first version of the layout (live view, overlay, panels). Later panels (display controls, storage, optics, bursts) are type-checked and served but were not visually reviewed.
+## Verified on the real system (first session, 2026-11-21)
 
-## Not verified yet: do these first on real hardware
+Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-alpha scope showing part of the disc (350 mm × 3 Barlow), FAT32 USB stick.
 
-1. **Player One camera** (partly verified): enumeration, opening, controls and the udev rule are verified on an Apollo-M MINI. Frame rate with continuous mode **measured: 57 fps 16-bit / 82 fps 8-bit** (was a constant 8.4 with one-shot capture). A 100-frame, 572 MB burst was captured through the RAM buffer with no frames lost and flushed to the SD card at ≈ 65 MB/s; camera auto-reconnect after a service restart works. **Still to check:** longer runs and scheduled bursts under real load, and the USB stick.
-2. **ZWO AM3**: model reply, `:TS#` solar rate, slew and guide directions, pulse behaviour, calibration result, guiding quality.
-3. **Tracking on real H-alpha images**: Otsu separation, limb fit with a partial disc and the Optics radius, anchor on a sunspot or filament.
-4. **USB drive**: selecting the FAT32 drive from the UI, writing, FAT32 rollover of SER files, behaviour when it is unplugged mid-capture.
-5. **GitHub Actions** workflows (`ci.yml`, `release.yml`) and the first published release.
-6. Sustained CPU and frame rate on the Pi with a real camera, preview and recording together.
+- **Camera:** enumeration, opening, controls, 1944×1472 16-bit frames, pixel size and temperature readout; the USB vendor id `a0a0` and the udev rule. **57 fps at 16-bit / 82 fps at 8-bit** in continuous mode (the one-shot mode gave a constant 8.4 fps).
+- **Mount:** the AM3 connects over USB serial, solar tracking works, automatic calibration and guiding ran.
+- **Tracking on real H-alpha frames** (offline, from the recordings): with the Optics radius the located limb centre is stable to ~2 px (σ) over a 100-frame burst, which is the seeing; frame-to-frame step ≈ 1.4–2 px mean. **Without the radius hint a free limb fit on this short arc is biased** (radius +11 %, centre ≈ 140 px off), which confirms why the Optics setting matters (a geometric refinement of the free fit is planned).
+- **Bursts:** ten 100-frame bursts exactly 20 s apart, each file byte-exact (no frames lost), written to the FAT32 stick; auto-reconnect of camera and mount after a service restart; settings and camera exposure/gain persisted across restarts.
+- **Packaging on the Pi:** install, upgrade, `rustflare-update` (including tampered-checksum abort), config and captures preserved.
+- **CI:** tests, simulator smoke test and the arm64 package build pass on GitHub.
+
+## Before v0.3.0 (first release)
+
+1. **Open the recorded SER files in an independent tool** (SER Player, AutoStakkert, Siril) to confirm compatibility.
+2. **Test the new drift-correcting guider on the real sky** (it replaced a guider that overshot at 0.88″/px; see [ADR 0008](adr/0008-solar-tracking-and-guiding.md)). Unit tests show it ignores seeing and corrects drift; the real mount has not seen it yet.
+3. **FAT32 4 GB split and unplug behaviour** on the real stick.
+4. **UI redesign** (a side agent is working on a simpler, responsive, iPhone-friendly UI), then deploy and check it on the phone.
+5. **Decide on publishing the release**: the package bundles Player One's proprietary library ([issue #10](https://github.com/ddompe/rustflare/issues/10)).
 
 ## Planned
 
-- **UI design review** with the `impeccable` design skill in a side agent, **after image capture is stable on the real system**: layout and hierarchy, a task-oriented flow, outdoor legibility, phone layout, touch targets, overlays. Uses real screenshots (see Playwright below).
-
-- *(done in 0.2.1, unverified)* Streaming capture via the SDK's continuous mode, auto-reconnect of camera and mount at startup, red adjustable bullseye, serial-port suggestions for the mount.
-
-- **Guided flats.** Flats work today but start instantly. Planned workflow: *Flats* opens a step-by-step dialog: (1) "Put the flat cap/diffuser on and make sure the field is uniform", showing the live view and histogram; (2) adjust gain/exposure (with a suggested exposure and a clipping/underexposure indicator), tracking and guiding paused; (3) **OK** captures N flats; (4) results are summarised (level, frames, file, master) and the previous settings restored, with a reminder to remove the cap. Also to decide: matching darks/dark flats, naming that ties flats to the lights' settings (gain/offset/format/exposure), and flats per filter/position. Deferred until the base setup is stable on real hardware.
-
-- **User guide.** A task-oriented guide for observers (not just reference docs): *setting up at the scope; getting the Sun in view and centred; an H-alpha session from first light to files; planning bursts and storage; flats; reading the screen (overlays, histogram, status); troubleshooting and FAQ*, with screenshots from real sessions. It should live in `docs/guide/` and be linked from the README and the UI.
-- **Browser-level UI tests** (Playwright) in CI against the simulator, with screenshots as artifacts; an opt-in profile to run the same checks against a real Pi (never moving the mount without an explicit flag).
-- Signed apt repository (GitHub Pages) so `apt upgrade` works without `rustflare-update`.
-- Streaming capture with the SDK's `stream` mode for higher frame rates.
-- Optional drop-frames policy for full-buffer situations (lucky imaging); FITS output; dark frames.
-- ROI, binning and cooler/temperature controls; colour (Bayer) cameras.
-- Authentication (token) and HTTPS; configurable guiding parameters; refreshable anchor template.
-- More drivers: ZWO ASI, V4L2 cameras; ASCOM/INDI bridges; AM3/AM5 position readout and GoTo.
+- **ZWO ASI camera support** (the owner has one to test): port Vidoxide's ASI driver to our camera trait.
+- **EAF support and seeing-robust autofocus**: drive a ZWO EAF; compute a focus metric on an *average of several frames* (aligned on the limb) so turbulence does not corrupt the metric.
+- **Device datasheets and inventory**: images and spec sheets (including the HCG point) for ZWO and Player One planetary/solar cameras and the AM3, shown in the Camera and Mount panels.
+- **Keep mount tracking on across service restarts** (today connecting sends `:Td#`, switching tracking off).
+- **iPhone web app**: responsive layout, Home Screen app (part of the UI redesign); HTTPS later enables a service worker and wake lock.
+- **Field networking**: Pi hotspot / access-point mode for use away from Wi-Fi.
+- **Guided flats** (cap-on, adjust, OK, capture, restore); darks; FITS output.
+- **User guide** for observers (`docs/guide/`), with screenshots from real sessions.
+- **Browser-level UI tests** (Playwright, Chromium and WebKit) in CI, with an opt-in profile for the real Pi.
+- Signed apt repository; authentication and HTTPS; configurable guiding parameters; ROI/binning/cooler controls; colour cameras; more drivers.
 
 ## Known limitations
 
-- Frame rate is limited by per-frame exposure start/stop (one SDK call per frame) until streaming mode is used.
 - Mono only (colour cameras deliver Bayer, treated as mono).
-- Day-of-year solar radius model is good to ≈ 0.1 %: fine for tracking, not for astrometry.
+- The day-of-year solar radius model is good to ≈ 0.1 %: fine for tracking, not for astrometry.
 - Limb fitting needs some limb in view; thresholds assume the sky is darker than the disc.
+- Restarting the service switches the mount's tracking off (see Planned).
 - No authentication; keep the Pi on a trusted network.
 - The SER header's local-time field carries UTC.
 - Released packages redistribute Player One's proprietary library (see [ADR 0006](adr/0006-playerone-via-vendor-sdk.md), [0010](adr/0010-debian-package-and-updates.md)).
