@@ -16,7 +16,668 @@
       "hcg_note": "High conversion gain switches on automatically above gain 71 (vendor page).",
       "qe_peak_pct": 79,
       "notes": "84 fps is the vendor figure for RAW8 at full resolution on USB 3.0; read noise 5.6 e- to 1.45 e- depending on gain; exposure 32 us to 2000 s; weight 160 g.",
-      "sources": ["https://player-one-astronomy.com/product/apollo-m-mini-usb3-0-mono-camera/"]
+      "sources": [
+        "https://player-one-astronomy.com/product/apollo-m-mini-usb3-0-mono-camera/"
+      ]
+    },
+    {
+      "match": "ASI585MC",
+      "vendor": "ZWO",
+      "model": "ASI585MC",
+      "sensor": "Sony IMX585, 1/1.2-inch CMOS, colour or monochrome, STARVIS 2, rolling shutter",
+      "sensor_size_mm": "11.2 x 6.3 mm",
+      "resolution": "3840 x 2160",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 46.9,
+      "full_well_e": 40000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution figure; USB 3.0; MC full well 40Ke, MM 38.7Ke.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi585mc-mm/"
+      ]
+    },
+    {
+      "match": "ASI585MM",
+      "vendor": "ZWO",
+      "model": "ASI585MM",
+      "sensor": "Sony IMX585, 1/1.2-inch CMOS, monochrome, STARVIS 2, rolling shutter",
+      "sensor_size_mm": "11.2 x 6.3 mm",
+      "resolution": "3840 x 2160",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 46.9,
+      "full_well_e": 38700,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution figure; USB 3.0; mono full well 38.7Ke.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi585mc-mm/"
+      ]
+    },
+    {
+      "match": "ASI715MC",
+      "vendor": "ZWO",
+      "model": "ASI715MC",
+      "sensor": "Sony IMX715, 1/2.8-inch CMOS, colour, rolling shutter",
+      "sensor_size_mm": "5.6 x 3.2 mm",
+      "resolution": "3864 x 2192",
+      "pixel_um": 1.45,
+      "adc_bits": 12,
+      "max_fps_full_res": 45.1,
+      "full_well_e": 6030,
+      "read_noise_e": 0.72,
+      "qe_peak_pct": 80,
+      "notes": "Full-resolution figure; USB 3.0.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi715mc/"
+      ]
+    },
+    {
+      "match": "ASI676MC",
+      "vendor": "ZWO",
+      "model": "ASI676MC",
+      "sensor": "Sony IMX676, 1/1.6-inch CMOS, colour or monochrome, rolling shutter",
+      "sensor_size_mm": "7.1 x 7.1 mm",
+      "resolution": "3552 x 3552",
+      "pixel_um": 2,
+      "adc_bits": 12,
+      "max_fps_full_res": 31.2,
+      "full_well_e": 10550,
+      "read_noise_e": 0.56,
+      "qe_peak_pct": 83,
+      "notes": "Full-resolution figure; USB 3.0; HCG at gain 180.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi676/"
+      ],
+      "hcg_gain": 180,
+      "hcg_note": "High conversion gain switches on automatically at gain 180."
+    },
+    {
+      "match": "ASI676MM",
+      "vendor": "ZWO",
+      "model": "ASI676MM",
+      "sensor": "Sony IMX676, 1/1.6-inch CMOS, monochrome, rolling shutter",
+      "sensor_size_mm": "7.1 x 7.1 mm",
+      "resolution": "3552 x 3552",
+      "pixel_um": 2,
+      "adc_bits": 12,
+      "max_fps_full_res": 31.2,
+      "full_well_e": 10550,
+      "read_noise_e": 0.56,
+      "qe_peak_pct": 83,
+      "notes": "Full-resolution figure; USB 3.0; HCG at gain 180.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi676/"
+      ],
+      "hcg_gain": 180,
+      "hcg_note": "High conversion gain switches on automatically at gain 180."
+    },
+    {
+      "match": "ASI678MC",
+      "vendor": "ZWO",
+      "model": "ASI678MC",
+      "sensor": "Sony IMX678, 1/1.8-inch CMOS, colour or monochrome, STARVIS 2, rolling shutter",
+      "sensor_size_mm": "7.7 x 4.3 mm",
+      "resolution": "3840 x 2160",
+      "pixel_um": 2,
+      "adc_bits": 12,
+      "max_fps_full_res": 47.5,
+      "full_well_e": 11270,
+      "read_noise_e": 0.6,
+      "qe_peak_pct": 83,
+      "notes": "Full-resolution figure; USB 3.0.",
+      "sources": [
+        "https://www.zwoastro.com/product/zwo-asi678mc/"
+      ]
+    },
+    {
+      "match": "ASI678MM",
+      "vendor": "ZWO",
+      "model": "ASI678MM",
+      "sensor": "Sony IMX678, 1/1.8-inch CMOS, monochrome, STARVIS 2, rolling shutter",
+      "sensor_size_mm": "7.7 x 4.3 mm",
+      "resolution": "3840 x 2160",
+      "pixel_um": 2,
+      "adc_bits": 12,
+      "max_fps_full_res": 47.5,
+      "full_well_e": 11270,
+      "read_noise_e": 0.6,
+      "qe_peak_pct": 83,
+      "notes": "Full-resolution figure; USB 3.0.",
+      "sources": [
+        "https://www.zwoastro.com/product/zwo-asi678mc/"
+      ]
+    },
+    {
+      "match": "ASI664MC",
+      "vendor": "ZWO",
+      "model": "ASI664MC",
+      "sensor": "Sony IMX664, 1/1.8-inch CMOS, colour, rolling shutter",
+      "adc_bits": 12,
+      "notes": "Manufacturer page only provides the product listing and no key-specification table in the fetched page.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi664mc/"
+      ]
+    },
+    {
+      "match": "ASI174MM",
+      "vendor": "ZWO",
+      "model": "ASI174MM",
+      "sensor": "Sony Exmor IMX174, Type 1/1.2-inch CMOS, monochrome, global shutter",
+      "sensor_size_mm": "11.3 x 7.1 mm",
+      "resolution": "1936 x 1216",
+      "pixel_um": 5.86,
+      "adc_bits": 12,
+      "max_fps_full_res": 164,
+      "full_well_e": 32000,
+      "read_noise_e": 3.5,
+      "qe_peak_pct": 77,
+      "notes": "Full resolution: 164 fps as key-spec value; 128 fps at 12-bit and 164.5 fps at 10-bit stated in USB 3.0 text.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi174mm-mono/"
+      ]
+    },
+    {
+      "match": "ASI183MC",
+      "vendor": "ZWO",
+      "model": "ASI183MC",
+      "sensor": "Sony IMX183CQJ-J, 1-inch CMOS, colour, back-illuminated rolling shutter",
+      "resolution": "5496 x 3672",
+      "pixel_um": 2.4,
+      "adc_bits": 12,
+      "max_fps_full_res": 19,
+      "full_well_e": 15000,
+      "read_noise_e": 1.6,
+      "qe_peak_pct": 84,
+      "notes": "Full-resolution 12-bit: 19 fps on USB 3.0.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi183mm-mc/"
+      ]
+    },
+    {
+      "match": "ASI183MM",
+      "vendor": "ZWO",
+      "model": "ASI183MM",
+      "sensor": "Sony IMX183CLK-J, 1-inch CMOS, monochrome, back-illuminated rolling shutter",
+      "resolution": "5496 x 3672",
+      "pixel_um": 2.4,
+      "adc_bits": 12,
+      "max_fps_full_res": 19,
+      "full_well_e": 15000,
+      "read_noise_e": 1.6,
+      "qe_peak_pct": 84,
+      "notes": "Full-resolution 12-bit: 19 fps on USB 3.0.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi183mm-mc/"
+      ]
+    },
+    {
+      "match": "ASI432MM",
+      "vendor": "ZWO",
+      "model": "ASI432MM",
+      "sensor": "Sony IMX432, 1.1-inch CMOS, monochrome, rolling shutter",
+      "adc_bits": 12,
+      "notes": "No key-specification table was present in the fetched manufacturer page.",
+      "sources": [
+        "https://www.zwoastro.com/product/zwo-asi432mm/"
+      ]
+    },
+    {
+      "match": "ASI294MC",
+      "vendor": "ZWO",
+      "model": "ASI294MC",
+      "sensor": "Sony IMX294CJK, Type 4/3-inch CMOS, colour, back-illuminated, rolling shutter",
+      "sensor_size_mm": "19.1 x 13.0 mm",
+      "resolution": "4144 x 2822",
+      "pixel_um": 4.64,
+      "adc_bits": 14,
+      "max_fps_full_res": 25,
+      "full_well_e": 66387,
+      "read_noise_e": 2.0,
+      "qe_peak_pct": 90,
+      "notes": "HCG above gain 120. 4K 10-bit mode may reach 25 fps.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi294mm-mc/"
+      ],
+      "hcg_gain": 120,
+      "hcg_note": "HCG mode is on above gain 120."
+    },
+    {
+      "match": "ASI294MM",
+      "vendor": "ZWO",
+      "model": "ASI294MM",
+      "sensor": "Sony IMX294, Type 4/3-inch CMOS, monochrome, back-illuminated, rolling shutter",
+      "sensor_size_mm": "19.1 x 13.0 mm",
+      "resolution": "4144 x 2822",
+      "pixel_um": 4.64,
+      "adc_bits": 14,
+      "full_well_e": 66387,
+      "read_noise_e": 1.2,
+      "qe_peak_pct": 90,
+      "notes": "Standard Bin2; HCG at gain 120; 14-bit ADC.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi294mm-mc/"
+      ],
+      "hcg_gain": 120,
+      "hcg_note": "HCG mode is on at gain 120."
+    },
+    {
+      "match": "ASI662MC",
+      "vendor": "ZWO",
+      "model": "ASI662MC",
+      "sensor": "Sony IMX662, 1/2.8-inch CMOS, colour or monochrome, rolling shutter",
+      "resolution": "1920 x 1080",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 107.6,
+      "full_well_e": 54000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution 12-bit high-speed mode; USB 3.0; HCG at gain 200.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi662mc/"
+      ],
+      "hcg_gain": 200,
+      "hcg_note": "HCG mode is automatically turned on at gain 200."
+    },
+    {
+      "match": "ASI662MM",
+      "vendor": "ZWO",
+      "model": "ASI662MM",
+      "sensor": "Sony IMX662, 1/2.8-inch CMOS, monochrome, rolling shutter",
+      "resolution": "1920 x 1080",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 107.6,
+      "full_well_e": 54000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution 12-bit high-speed mode; USB 3.0; HCG at gain 200.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi662mc/"
+      ],
+      "hcg_gain": 200,
+      "hcg_note": "HCG mode is automatically turned on at gain 200."
+    },
+    {
+      "match": "ASI2600MC Pro",
+      "vendor": "ZWO",
+      "model": "ASI2600MC Pro",
+      "sensor": "Sony IMX571, APS-C CMOS, colour, back-illuminated, rolling shutter",
+      "sensor_size_mm": "23.5 x 15.7 mm",
+      "resolution": "6248 x 4176",
+      "pixel_um": 3.76,
+      "adc_bits": 16,
+      "full_well_e": 50000,
+      "qe_peak_pct": 80,
+      "notes": "Native 16-bit sensor ADC; HCG at gain 100; cooled.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi2600/"
+      ],
+      "hcg_gain": 100,
+      "hcg_note": "HCG high-gain mode turns on at gain 100."
+    },
+    {
+      "match": "ASI533MC Pro",
+      "vendor": "ZWO",
+      "model": "ASI533MC Pro",
+      "sensor": "Sony IMX533, 1-inch CMOS, colour, back-illuminated, rolling shutter",
+      "sensor_size_mm": "11.31 x 11.31 mm",
+      "resolution": "3008 x 3008",
+      "pixel_um": 3.76,
+      "adc_bits": 14,
+      "max_fps_full_res": 20,
+      "full_well_e": 50000,
+      "read_noise_e": 1.0,
+      "qe_peak_pct": 80,
+      "notes": "Full-resolution; USB 3.0; cooled to 35°C delta.",
+      "sources": [
+        "https://www.zwoastro.com/product/asi533-pro-series/"
+      ]
+    },
+    {
+      "match": "Saturn-M SQR",
+      "vendor": "Player One Astronomy",
+      "model": "Saturn-M SQR",
+      "sensor": "Sony IMX533, 1-inch CMOS, monochrome, rolling shutter",
+      "sensor_size_mm": "11.31 x 11.31 mm",
+      "resolution": "3008 x 3008",
+      "pixel_um": 3.76,
+      "adc_bits": 14,
+      "max_fps_full_res": 43,
+      "full_well_e": 73000,
+      "read_noise_e": 1.0,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Saturn-C SQR",
+      "vendor": "Player One Astronomy",
+      "model": "Saturn-C SQR",
+      "sensor": "Sony IMX533, 1-inch CMOS, colour, rolling shutter",
+      "sensor_size_mm": "11.31 x 11.31 mm",
+      "resolution": "3008 x 3008",
+      "pixel_um": 3.76,
+      "adc_bits": 14,
+      "max_fps_full_res": 43,
+      "full_well_e": 73000,
+      "read_noise_e": 1.0,
+      "qe_peak_pct": 80,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Uranus-M",
+      "vendor": "Player One Astronomy",
+      "model": "Uranus-M",
+      "sensor": "Sony IMX585, 1/1.2-inch CMOS, monochrome, rolling shutter",
+      "sensor_size_mm": "11.2 x 6.3 mm",
+      "resolution": "3856 x 2180",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 47,
+      "full_well_e": 47000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Uranus-C",
+      "vendor": "Player One Astronomy",
+      "model": "Uranus-C",
+      "sensor": "Sony IMX585, 1/1.2-inch CMOS, colour, rolling shutter",
+      "sensor_size_mm": "11.2 x 6.3 mm",
+      "resolution": "3856 x 2180",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 47,
+      "full_well_e": 47000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Neptune 664C",
+      "vendor": "Player One Astronomy",
+      "model": "NEPTUNE 664C",
+      "sensor": "Sony IMX664, 1/1.8-inch CMOS, colour, rolling shutter",
+      "sensor_size_mm": "7.8 x 4.5 mm",
+      "resolution": "2704 x 1540",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 93,
+      "full_well_e": 38500,
+      "read_noise_e": 0.67,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Neptune-C II",
+      "vendor": "Player One Astronomy",
+      "model": "Neptune-C II",
+      "sensor": "Sony IMX464, 1/1.8-inch CMOS, colour, rolling shutter",
+      "sensor_size_mm": "7.9 x 4.5 mm",
+      "resolution": "2712 x 1538",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 93,
+      "full_well_e": 12000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 90,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Neptune-M",
+      "vendor": "Player One Astronomy",
+      "model": "Neptune-M",
+      "sensor": "Sony IMX178, 1/1.8-inch CMOS, monochrome, rolling shutter",
+      "sensor_size_mm": "7.4 x 5.0 mm",
+      "resolution": "3096 x 2078",
+      "pixel_um": 2.4,
+      "adc_bits": 14,
+      "max_fps_full_res": 60,
+      "full_well_e": 15000,
+      "read_noise_e": 1.3,
+      "qe_peak_pct": 80,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Neptune-C",
+      "vendor": "Player One Astronomy",
+      "model": "Neptune-C",
+      "sensor": "Sony IMX178, 1/1.8-inch CMOS, colour, rolling shutter",
+      "sensor_size_mm": "7.4 x 5.0 mm",
+      "resolution": "3096 x 2078",
+      "pixel_um": 2.4,
+      "adc_bits": 14,
+      "max_fps_full_res": 60,
+      "full_well_e": 15000,
+      "read_noise_e": 1.3,
+      "qe_peak_pct": 80,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Mars-M II",
+      "vendor": "Player One Astronomy",
+      "model": "Mars-M II",
+      "sensor": "Sony IMX462, 1/2.8-inch CMOS, monochrome, rolling shutter",
+      "sensor_size_mm": "5.6 x 3.2 mm",
+      "resolution": "1944 x 1096",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 136,
+      "full_well_e": 12000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Mars 662M",
+      "vendor": "Player One Astronomy",
+      "model": "Mars 662M",
+      "sensor": "Sony IMX662, 1/2.8-inch CMOS, monochrome, rolling shutter",
+      "sensor_size_mm": "5.6 x 3.2 mm",
+      "resolution": "1936 x 1100",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 108,
+      "full_well_e": 54000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Mars-C II",
+      "vendor": "Player One Astronomy",
+      "model": "Mars-C II",
+      "sensor": "Sony IMX662, 1/2.8-inch CMOS, colour, rolling shutter",
+      "sensor_size_mm": "5.6 x 3.2 mm",
+      "resolution": "1936 x 1100",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 108,
+      "full_well_e": 54000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 91,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Mars-M",
+      "vendor": "Player One Astronomy",
+      "model": "Mars-M",
+      "sensor": "Sony IMX290, 1/2.8-inch CMOS, monochrome, rolling shutter",
+      "sensor_size_mm": "5.6 x 3.2 mm",
+      "resolution": "1944 x 1096",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 136,
+      "full_well_e": 14600,
+      "read_noise_e": 0.98,
+      "qe_peak_pct": 80,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Mars-C",
+      "vendor": "Player One Astronomy",
+      "model": "Mars-C",
+      "sensor": "Sony IMX462, 1/2.8-inch CMOS, colour, rolling shutter",
+      "sensor_size_mm": "5.6 x 3.2 mm",
+      "resolution": "1944 x 1096",
+      "pixel_um": 2.9,
+      "adc_bits": 12,
+      "max_fps_full_res": 136,
+      "full_well_e": 12000,
+      "read_noise_e": 0.7,
+      "qe_peak_pct": 90,
+      "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/planetary-camera/"
+      ]
+    },
+    {
+      "match": "Apollo 428M MAX PRO",
+      "vendor": "Player One Astronomy",
+      "model": "Apollo 428M MAX PRO",
+      "sensor": "Sony IMX428, 1.1-inch CMOS, monochrome, global shutter",
+      "sensor_size_mm": "14.5 x 9.9 mm",
+      "resolution": "3216 x 2208",
+      "pixel_um": 4.5,
+      "adc_bits": 12,
+      "max_fps_full_res": 51,
+      "full_well_e": 25300,
+      "read_noise_e": 1.4,
+      "qe_peak_pct": 79,
+      "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/solar-camera/"
+      ]
+    },
+    {
+      "match": "Apollo-M MAX PRO",
+      "vendor": "Player One Astronomy",
+      "model": "Apollo-M MAX PRO",
+      "sensor": "Sony IMX432, 1.1-inch CMOS, monochrome, global shutter",
+      "sensor_size_mm": "14.5 x 9.9 mm",
+      "resolution": "1608 x 1104",
+      "pixel_um": 9.0,
+      "adc_bits": 12,
+      "max_fps_full_res": 126,
+      "full_well_e": 100000,
+      "read_noise_e": 2.6,
+      "qe_peak_pct": 79,
+      "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/solar-camera/"
+      ]
+    },
+    {
+      "match": "Apollo 428M MAX",
+      "vendor": "Player One Astronomy",
+      "model": "Apollo 428M MAX",
+      "sensor": "Sony IMX428, 1.1-inch CMOS, monochrome, global shutter",
+      "sensor_size_mm": "14.5 x 9.9 mm",
+      "resolution": "3216 x 2208",
+      "pixel_um": 4.5,
+      "adc_bits": 12,
+      "max_fps_full_res": 51,
+      "full_well_e": 25000,
+      "read_noise_e": 1.4,
+      "qe_peak_pct": 79,
+      "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/solar-camera/"
+      ]
+    },
+    {
+      "match": "Apollo-M MAX",
+      "vendor": "Player One Astronomy",
+      "model": "Apollo-M MAX",
+      "sensor": "Sony IMX432, 1.1-inch CMOS, monochrome, global shutter",
+      "sensor_size_mm": "14.5 x 9.9 mm",
+      "resolution": "1608 x 1104",
+      "pixel_um": 9.0,
+      "adc_bits": 12,
+      "max_fps_full_res": 126,
+      "full_well_e": 100000,
+      "read_noise_e": 2.6,
+      "qe_peak_pct": 79,
+      "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/solar-camera/"
+      ]
+    },
+    {
+      "match": "Apollo-M",
+      "vendor": "Player One Astronomy",
+      "model": "Apollo-M",
+      "sensor": "Sony IMX174, 1/1.2-inch CMOS, monochrome, global shutter",
+      "sensor_size_mm": "11.3 x 7.1 mm",
+      "resolution": "1936 x 1216",
+      "pixel_um": 5.86,
+      "adc_bits": 12,
+      "max_fps_full_res": 164,
+      "full_well_e": 24800,
+      "read_noise_e": 3.5,
+      "qe_peak_pct": 77,
+      "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/solar-camera/"
+      ]
+    },
+    {
+      "match": "Apollo-C",
+      "vendor": "Player One Astronomy",
+      "model": "Apollo-C",
+      "sensor": "Sony IMX174, 1/1.2-inch CMOS, colour, global shutter",
+      "sensor_size_mm": "11.3 x 7.1 mm",
+      "resolution": "1936 x 1216",
+      "pixel_um": 5.86,
+      "adc_bits": 12,
+      "max_fps_full_res": 164,
+      "full_well_e": 24800,
+      "read_noise_e": 3.5,
+      "qe_peak_pct": 77,
+      "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
+      "sources": [
+        "https://player-one-astronomy.com/solar-camera/"
+      ]
     }
   ],
   "mounts": [
@@ -24,12 +685,25 @@
       "match": "AM3",
       "vendor": "ZWO",
       "model": "AM3",
-      "modes": ["Equatorial", "Alt-azimuth"],
-      "tracking_rates": ["Sidereal", "Lunar", "Solar"],
+      "modes": [
+        "Equatorial",
+        "Alt-azimuth"
+      ],
+      "tracking_rates": [
+        "Sidereal",
+        "Lunar",
+        "Solar"
+      ],
       "guide_rates": "0.1x to 0.9x sidereal (single guide rate)",
-      "ports": ["USB-C", "Bluetooth", "Wi-Fi"],
+      "ports": [
+        "USB-C",
+        "Bluetooth",
+        "Wi-Fi"
+      ],
       "notes": "Values from ZWO's serial protocol and tests with this project; mechanical specifications are not listed here because the figures found were for the AM3N.",
-      "sources": ["https://www.zwoastro.com/product/am3n/"]
+      "sources": [
+        "https://www.zwoastro.com/product/am3n/"
+      ]
     }
   ]
 }

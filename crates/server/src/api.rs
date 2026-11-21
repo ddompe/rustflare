@@ -356,7 +356,9 @@ async fn datasheet(State(st): State<AppState>, axum::extract::Path(kind): axum::
         }
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
-    let entry = cat[list].as_array().and_then(|a| a.iter().find(|e| e["match"].as_str().is_some_and(|m| name.to_lowercase().contains(&m.to_lowercase())))).cloned();
+    // the longest matching name wins ("Apollo-M MINI" beats "Apollo-M")
+    let lname = name.to_lowercase();
+    let entry = cat[list].as_array().and_then(|a| a.iter().filter(|e| e["match"].as_str().is_some_and(|m| lname.contains(&m.to_lowercase()))).max_by_key(|e| e["match"].as_str().map_or(0, str::len))).cloned();
     Json(json!({ "live": live, "catalog": entry })).into_response()
 }
 
