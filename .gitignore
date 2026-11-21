@@ -1,0 +1,8 @@
+/target
+/.local
+node_modules
+web/dist
+/data
+*.ser
+/dist
+/data-smoke*

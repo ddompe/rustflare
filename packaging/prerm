@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+case "$1" in
+remove|deconfigure)
+    systemctl stop rustflare.service || true
+    systemctl disable rustflare.service >/dev/null 2>&1 || true
+    ;;
+esac
+exit 0

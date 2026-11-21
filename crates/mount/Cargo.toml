@@ -1,0 +1,11 @@
+[package]
+name = "rustflare-mount"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rustflare-core.workspace = true
+# default-features = false: avoids the libudev dependency on Linux (no port enumeration;
+# the device path comes from configuration, e.g. /dev/ttyACM0 or /dev/serial/by-id/...).
+serialport = { version = "4", default-features = false }

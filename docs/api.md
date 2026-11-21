@@ -1,0 +1,60 @@
+# HTTP API
+
+JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API, so you can script a session with `curl` (see `scripts/smoke.sh`).
+
+## State
+
+| | |
+|---|---|
+| `GET /api/status` | full `Status` snapshot |
+| `GET /api/ws` | WebSocket; pushes `Status` JSON on change (≤ ~7/s) |
+| `GET /stream.mjpg[?fps=N]` | live preview (multipart MJPEG), optionally capped to N fps per viewer |
+| `GET /snapshot.jpg` | latest preview frame |
+| `GET /api/files`, `GET /files/<path>` | list / download captures (a PNG burst is listed as a folder with its frame count) |
+| `GET /api/storage` | current storage location (free space, filesystem, availability) and candidate drives |
+| `PUT /api/storage` | `{"path"}`: choose a location (a folder on a drive); refused while capturing |
+| `PUT /api/optics` | `{"focal_length_mm"?,"pixel_size_um"?,"binning"}` |
+| `GET/PUT /api/preview` | `{"stretch"}`: auto-stretch of the live view |
+
+`Status` has `optics`, `sun` (located Sun: pos, radius, partial), `camera` (name, controls, fps, mean, saturation, histogram, size), `mount`, `tracking` (mode, x, y, radius, lost), `guiding` (state, calibration, target, error_px), `capture` (state, phase, done, total, file, last_file), `error`.
+
+## Camera
+
+| | body |
+|---|---|
+| `GET /api/cameras` | — |
+| `POST /api/camera/open` | `{"driver","id"}` |
+| `POST /api/camera/close` | |
+| `PUT /api/camera/control` | `{"id","value"}` (ids come from `status.camera.controls`) |
+
+## Mount
+
+| | body |
+|---|---|
+| `GET /api/mount/drivers` | |
+| `POST /api/mount/connect` | `{"driver":"zwo","device":"/dev/ttyACM0"}` or `{"driver":"simulator"}` |
+| `POST /api/mount/disconnect` | |
+| `POST /api/mount/tracking` | `{"enabled":true}` (selects the solar rate when enabling) |
+| `POST /api/mount/slew` | `{"axis":"primary"\|"secondary","speed":8}` — signed multiples of sidereal; `0` stops |
+| `POST /api/mount/stop` | stops all motion (does not change sky tracking) |
+
+## Tracking & guiding
+
+| | body |
+|---|---|
+| `POST /api/tracking/start` | `{"mode":"limb"}` (optional `"radius"` px; default from Optics), `{"mode":"sun_disc"}`, `{"mode":"anchor","x":640,"y":480}` |
+| `POST /api/tracking/stop` | |
+| `POST /api/guiding/calibrate` | needs tracking + mount sky tracking |
+| `POST /api/guiding/start` | `{"center":true}` moves the target to the frame centre, otherwise holds the current position; needs calibration |
+| `POST /api/guiding/stop` | |
+
+## Capture
+
+| | body |
+|---|---|
+| `POST /api/capture/single` | `{"name"?}` |
+| `POST /api/capture/sequence` | `{"name"?,"frames"?,"seconds"?,"format"?}` (`format`: `ser` or `png`; at least one limit) |
+| `POST /api/capture/bursts` | `{"name"?,"frames"?,"seconds"?,"interval_s","bursts"?,"format"?}`: a burst every `interval_s` (start to start); `bursts` omitted = until stopped |
+| `PUT /api/capture/buffer` | `{"mb"}`: RAM buffer size (64–8192) |
+| `POST /api/capture/flats` | `{"name"?,"frames","level"?}` (`level` 0.1–0.9, default 0.5) |
+| `POST /api/capture/stop` | |

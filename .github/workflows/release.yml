@@ -1,0 +1,48 @@
+name: Release
+
+# Push a tag like v0.2.0 to publish a GitHub Release containing the Raspberry Pi package.
+# The tag must match the version in Cargo.toml ([workspace.package] version).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches Cargo.toml
+        id: ver
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          CARGO="$(sed -n '/^\[workspace.package\]/,/^\[/{s/^version = "\(.*\)"/\1/p}' Cargo.toml | head -1)"
+          echo "tag=$TAG cargo=$CARGO"
+          [ "$TAG" = "$CARGO" ] || { echo "tag $TAG does not match Cargo.toml version $CARGO"; exit 1; }
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild,cargo-deb
+      - run: sudo apt-get update && sudo apt-get install -y libclang-dev
+      - name: Build package
+        run: scripts/build-deb.sh --version "${{ steps.ver.outputs.version }}-1"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/rustflare_*_arm64.deb dist/SHA256SUMS \
+            --title "Rustflare $GITHUB_REF_NAME" --generate-notes

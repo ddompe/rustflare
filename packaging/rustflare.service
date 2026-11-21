@@ -1,0 +1,24 @@
+[Unit]
+Description=Rustflare solar capture server
+Documentation=https://github.com/ddompe/rustflare
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Settings (listen address, data directory) live in /etc/default/rustflare.
+EnvironmentFile=-/etc/default/rustflare
+User=rustflare
+Group=rustflare
+# dialout: serial mounts (ZWO shows up as /dev/ttyACM*); plugdev: USB cameras.
+SupplementaryGroups=dialout plugdev
+StateDirectory=rustflare
+WorkingDirectory=/var/lib/rustflare
+ExecStart=/opt/rustflare/rustflare-server --web-dir /opt/rustflare/web
+Restart=on-failure
+RestartSec=3
+# Sending SIGTERM lets the server stop the mount before exiting.
+# Stopping flushes any frames still buffered in RAM to disk first, which can take a while.
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

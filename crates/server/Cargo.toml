@@ -1,0 +1,59 @@
+[package]
+name = "rustflare-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless web-controlled solar capture server"
+
+
+[features]
+default = []
+playerone = ["rustflare-camera/playerone"]
+
+[dependencies]
+rustflare-core.workspace = true
+rustflare-camera.workspace = true
+rustflare-mount.workspace = true
+rustflare-tracking.workspace = true
+rustflare-capture.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+env_logger = "0.11"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["fs"] }
+futures-util = "0.3"
+clap = { version = "4", features = ["derive", "env"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+jpeg-encoder = "0.6"
+libc = "0.2"
+tower = { version = "0.4", features = ["util"] }
+
+# ---- Debian package (cargo deb), see docs/adr/0010 ----
+[package.metadata.deb]
+name = "rustflare"
+maintainer = "Rustflare contributors"
+copyright = "2026, Rustflare contributors (portions Filip Szczerek, MIT)"
+license-file = ["../../LICENSE", "0"]
+extended-description = "Headless web-controlled solar capture: Player One camera, ZWO mount, Sun tracking, guiding, flats."
+section = "science"
+priority = "optional"
+depends = "libc6 (>= 2.36), libusb-1.0-0, python3, curl, ca-certificates"
+maintainer-scripts = "../../packaging/"
+conf-files = ["/etc/default/rustflare"]
+assets = [
+  ["target/release/rustflare-server", "opt/rustflare/", "755"],
+  ["target/release/libPlayerOneCamera.so.3", "opt/rustflare/", "755"],
+  ["../../web/dist/**/*", "opt/rustflare/web/", "644"],
+  ["../../packaging/rustflare.service", "lib/systemd/system/", "644"],
+  ["../../packaging/rustflare-update.service", "lib/systemd/system/", "644"],
+  ["../../packaging/rustflare-update.timer", "lib/systemd/system/", "644"],
+  ["../../packaging/rustflare.default", "etc/default/rustflare", "644"],
+  ["../../packaging/99-rustflare.rules", "lib/udev/rules.d/", "644"],
+  ["../../packaging/rustflare-update", "usr/bin/", "755"],
+  ["../../packaging/rustflare-user", "usr/bin/", "755"],
+  ["../../LICENSE", "usr/share/doc/rustflare/", "644"],
+  ["../../NOTICE.md", "usr/share/doc/rustflare/", "644"],
+  ["../../LICENSE.vidoxide", "usr/share/doc/rustflare/", "644"],
+]

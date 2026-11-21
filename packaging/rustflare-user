@@ -1,0 +1,34 @@
+#!/bin/sh
+# Show or change the account the Rustflare service runs as.
+#   rustflare-user              show the current account
+#   rustflare-user pi           run as "pi" (needed to write to USB drives auto-mounted for that login)
+#   rustflare-user rustflare    back to the dedicated service account
+# Options: --no-restart (used by the package scripts).
+set -eu
+DROPIN_DIR=/etc/systemd/system/rustflare.service.d
+DROPIN="$DROPIN_DIR/user.conf"
+RESTART=1
+[ "${1:-}" = "--no-restart" ] && { RESTART=0; shift; }
+
+if [ $# -eq 0 ]; then
+    if [ -r "$DROPIN" ]; then sed -n 's/^User=//p' "$DROPIN"; else echo rustflare; fi
+    exit 0
+fi
+[ "$(id -u)" = 0 ] || { echo "run as root: sudo rustflare-user $1" >&2; exit 1; }
+USER_NAME="$1"
+id "$USER_NAME" >/dev/null 2>&1 || { echo "no such user: $USER_NAME" >&2; exit 1; }
+
+if [ "$USER_NAME" = rustflare ]; then
+    rm -f "$DROPIN"
+else
+    mkdir -p "$DROPIN_DIR"
+    printf '[Service]\nUser=%s\nGroup=%s\n' "$USER_NAME" "$(id -gn "$USER_NAME")" > "$DROPIN"
+    for g in dialout plugdev; do
+        getent group "$g" >/dev/null && usermod -aG "$g" "$USER_NAME" || true
+    done
+fi
+mkdir -p /var/lib/rustflare
+chown -R "$USER_NAME:$(id -gn "$USER_NAME")" /var/lib/rustflare
+systemctl daemon-reload
+if [ "$RESTART" = 1 ]; then systemctl restart rustflare.service || true; fi
+echo "Rustflare now runs as: $USER_NAME"

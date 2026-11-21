@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+case "$1" in
+configure)
+    if ! getent passwd rustflare >/dev/null; then
+        adduser --system --group --home /var/lib/rustflare --no-create-home --gecos "Rustflare" rustflare
+    fi
+    for g in dialout plugdev; do
+        getent group "$g" >/dev/null && adduser --quiet rustflare "$g" || true
+    done
+    install -d -o rustflare -g rustflare -m 0755 /var/lib/rustflare /var/lib/rustflare/captures
+    # First install via `sudo apt install`: run as the person installing, so USB drives that the desktop
+    # auto-mounts for that login are writable. Not applied again on upgrades or unattended updates.
+    if [ ! -e /etc/systemd/system/rustflare.service.d/user.conf ] && [ -n "${SUDO_USER:-}" ] \
+       && [ "$SUDO_USER" != root ] && [ "$(id -u "$SUDO_USER" 2>/dev/null || echo 0)" -ge 1000 ]; then
+        /usr/bin/rustflare-user --no-restart "$SUDO_USER" || true
+    fi
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules 2>/dev/null || true
+        udevadm trigger --subsystem-match=usb 2>/dev/null || true
+    fi
+    systemctl daemon-reload || true
+    systemctl enable rustflare.service >/dev/null 2>&1 || true
+    # restart (not start) so an upgrade runs the new binary
+    systemctl restart rustflare.service || true
+    ;;
+esac
+exit 0

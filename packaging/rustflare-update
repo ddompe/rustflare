@@ -1,0 +1,61 @@
+#!/bin/sh
+# Install the latest Rustflare release from GitHub.
+#   rustflare-update           install the newest release if it is newer than the installed one
+#   rustflare-update --check   only report
+# Reads RUSTFLARE_REPO and (for private repos) RUSTFLARE_GITHUB_TOKEN from /etc/default/rustflare.
+# RUSTFLARE_API_URL overrides https://api.github.com (GitHub Enterprise, or testing).
+set -eu
+
+[ -r /etc/default/rustflare ] && . /etc/default/rustflare
+REPO="${RUSTFLARE_REPO:-ddompe/rustflare}"
+TOKEN="${RUSTFLARE_GITHUB_TOKEN:-}"
+API="${RUSTFLARE_API_URL:-https://api.github.com}"
+CHECK_ONLY=0
+[ "${1:-}" = "--check" ] && CHECK_ONLY=1
+[ "$CHECK_ONLY" = 0 ] && [ "$(id -u)" != 0 ] && { echo "run as root: sudo rustflare-update" >&2; exit 1; }
+
+ARCH="$(dpkg --print-architecture)"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+api() { # url [accept]
+    if [ -n "$TOKEN" ]; then
+        curl -fsSL -H "Authorization: Bearer $TOKEN" -H "Accept: ${2:-application/vnd.github+json}" "$1"
+    else
+        curl -fsSL -H "Accept: ${2:-application/vnd.github+json}" "$1"
+    fi
+}
+
+api "$API/repos/$REPO/releases/latest" > "$TMP/release.json" ||
+    { echo "cannot read releases of $REPO (private repo? set RUSTFLARE_GITHUB_TOKEN in /etc/default/rustflare)" >&2; exit 1; }
+
+# prints: <version> <deb asset api url> <sha256 asset api url> <deb file name>
+# The version comes from the package file name (rustflare_<version>_<arch>.deb), the same string dpkg compares.
+python3 - "$ARCH" "$TMP/release.json" > "$TMP/info" <<'PY'
+import json, sys
+arch, path = sys.argv[1], sys.argv[2]
+r = json.load(open(path))
+deb = next((a for a in r["assets"] if a["name"].startswith("rustflare_") and a["name"].endswith(f"_{arch}.deb")), None)
+sums = next((a["url"] for a in r["assets"] if a["name"] == "SHA256SUMS"), "")
+if deb:
+    print(deb["name"].split("_")[1], deb["url"], sums or "-", deb["name"])
+PY
+read -r LATEST DEB_URL SUMS_URL DEB_NAME < "$TMP/info" || { echo "latest release has no $ARCH package" >&2; exit 1; }
+[ "$SUMS_URL" = "-" ] && SUMS_URL=""
+
+INSTALLED="$(dpkg-query -W -f='${Version}' rustflare 2>/dev/null || echo none)"
+echo "installed: $INSTALLED   latest: $LATEST"
+if [ "$INSTALLED" != none ] && dpkg --compare-versions "$INSTALLED" ge "$LATEST"; then
+    echo "already up to date"; exit 0
+fi
+[ "$CHECK_ONLY" = 1 ] && { echo "update available"; exit 0; }
+
+api "$DEB_URL" application/octet-stream > "$TMP/$DEB_NAME"
+if [ -n "$SUMS_URL" ]; then
+    api "$SUMS_URL" application/octet-stream > "$TMP/SHA256SUMS"
+    (cd "$TMP" && grep " $DEB_NAME\$" SHA256SUMS | sha256sum -c -) || { echo "checksum mismatch, aborting" >&2; exit 1; }
+else
+    echo "warning: release has no SHA256SUMS; skipping verification" >&2
+fi
+apt-get install -y "$TMP/$DEB_NAME"
+echo "updated to $LATEST"

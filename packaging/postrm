@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+case "$1" in
+remove|purge)
+    systemctl daemon-reload || true
+    ;;
+esac
+# Captures in /var/lib/rustflare and the "rustflare" user are deliberately kept, even on purge.
+exit 0

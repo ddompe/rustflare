@@ -1,0 +1,13 @@
+# Rustflare settings (systemd EnvironmentFile). Restart after editing:  sudo systemctl restart rustflare
+
+# Address and port to listen on. There is NO authentication: only use a trusted network.
+RUSTFLARE_BIND=0.0.0.0:8080
+
+# Default capture directory (on the SD card). You normally choose a USB drive in the web UI
+# (Storage panel); that choice is saved in /var/lib/rustflare/rustflare.json and takes precedence over this.
+RUSTFLARE_DATA_DIR=/var/lib/rustflare/captures
+
+# Updates (rustflare-update): GitHub repository to read releases from, and a token
+# if the repository is private (a fine-grained token with read access to contents).
+RUSTFLARE_REPO=ddompe/rustflare
+#RUSTFLARE_GITHUB_TOKEN=

@@ -1,0 +1,15 @@
+[package]
+name = "rustflare-camera"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# Player One cameras via the vendor SDK (bundled .so for linux x64/arm64, macOS dylib).
+# Needs libclang at build time (bindgen).
+playerone = ["dep:playerone-sdk"]
+
+[dependencies]
+rustflare-core.workspace = true
+playerone-sdk = { version = "0.2.3", optional = true }
