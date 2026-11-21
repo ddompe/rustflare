@@ -1,5 +1,5 @@
 use rustflare_core::sim::SimSky;
-use rustflare_core::{Axis, Mount, RadPerSec, Result, SlewSpeed, TrackingRate, SIDEREAL_RATE};
+use rustflare_core::{Axis, Mount, MountState, ParkState, RadPerSec, Result, SlewSpeed, TrackingRate, SIDEREAL_RATE};
 
 pub struct SimMount {
     sky: SimSky,
@@ -19,6 +19,15 @@ impl SimMount {
 
 impl Mount for SimMount {
     fn info(&self) -> String { "Simulated mount".into() }
+
+    fn state(&mut self) -> Result<MountState> {
+        Ok(MountState { tracking: Some(self.tracking), slewing: Some(false), at_home: Some(false), park: Some(ParkState::Unparked), alt_az: Some(false) })
+    }
+
+    fn go_home(&mut self) -> Result<()> {
+        self.stop()?;
+        self.set_tracking(false) // like the real mount, it does not track at home
+    }
 
     fn set_tracking(&mut self, enabled: bool) -> Result<()> {
         self.tracking = enabled;

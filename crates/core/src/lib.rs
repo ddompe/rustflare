@@ -14,4 +14,4 @@ pub use camera::{Camera, CameraDriver, CameraInfo, ControlDesc};
 pub use error::{Error, Result};
 pub use frame::{Frame, PixelFormat};
 pub use geom::{Mat2, Vec2};
-pub use mount::{Axis, Mount, RadPerSec, SlewSpeed, TrackingRate, SIDEREAL_RATE};
+pub use mount::{Axis, Mount, MountState, ParkState, RadPerSec, SlewSpeed, TrackingRate, SIDEREAL_RATE};

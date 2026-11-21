@@ -21,3 +21,7 @@ Enabling tracking from the UI first selects the **solar** rate. The serial path 
 - The mount has one guide rate for both axes; the guider's per-axis proportions are therefore approximate, but guiding is closed-loop so this is acceptable.
 - Disconnecting sends `:Q#` (stop motion) but leaves sky tracking as it was.
 - On first use with real hardware, verify: model reply to `:GVP#`, the `:TS#` rate, and guide direction via the calibration routine.
+
+## Addendum: the mount's own state is read back (2026-11-21)
+
+The first version assumed the mount only ever changes through RustFlare and forced tracking off when connecting (`:Td#`). In use, the owner sent the mount home with its own button and the app still believed it was tracking. Now `state()` asks the mount (`:GU#`: `n` tracking off, `N` not slewing, `H` at home, `Z` alt-az; `:Gps#`: 0/1/2 not parked/parking/parked), the engine polls it every 2 s, stops guiding if tracking stops, and refuses motion commands while the mount reports parked. Connecting leaves the mount's state alone. A *Send home* command (`:hC#`, explicit confirmation in the API) exists; **park/unpark are not implemented** (on ZWO mounts they are a separate concept from home and are not wanted). Protocol details were taken from INDIGO's ZWO driver and checked read-only against a real AM3; moving to home has not yet been exercised on the real mount.
