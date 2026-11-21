@@ -65,12 +65,17 @@ pub fn encode(frame: &Frame, stretch: bool) -> Option<Vec<u8>> {
 }
 
 /// Returns a sender; frames are dropped (never queued) while the encoder is busy.
-pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>) -> SyncSender<Frame> {
+pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::SharedFlat) -> SyncSender<Frame> {
     let (ftx, frx) = sync_channel::<Frame>(1);
     std::thread::Builder::new()
         .name("preview".into())
         .spawn(move || {
-            while let Ok(frame) = frx.recv() {
+            while let Ok(mut frame) = frx.recv() {
+                // flat-field correction is for display only: recordings stay raw
+                let field = { let s = flat.lock().unwrap(); if s.enabled { s.field.clone() } else { None } };
+                if let Some(ff) = field.filter(|ff| ff.matches(&frame)) {
+                    ff.apply(&mut frame);
+                }
                 if let Some(jpg) = encode(&frame, stretch.load(Ordering::Relaxed)) {
                     tx.send_replace(Some(Arc::new(jpg)));
                 }

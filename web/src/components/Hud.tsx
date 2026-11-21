@@ -40,15 +40,18 @@ export interface HudApi {
   move: (id: HudId, fx: number, fy: number) => void
   setMin: (id: HudId, min: boolean) => void
   reset: () => void
+  opacity: number
+  setOpacity: (v: number) => void
 }
 
 export function useHudLayout(): HudApi {
   const phone = useRef(small()).current
   const [layout, setLayout] = useSetting<Layout>(phone ? 'hud.layout.phone' : 'hud.layout.wide', defaults(!phone))
+  const [opacity, setOpacity] = useSetting<number>('hud.opacity', 0.55)
   const def = defaults(!phone)
   const get = (id: HudId): W => ({ ...def[id], ...layout[id] })
   const patch = (id: HudId, p: Partial<W>) => setLayout({ ...layout, [id]: { ...get(id), ...p } })
-  return { get, toggle: (id) => patch(id, { on: !get(id).on }), move: (id, fx, fy) => patch(id, { fx, fy }), setMin: (id, min) => patch(id, { min }), reset: () => setLayout(defaults(!phone)) }
+  return { get, toggle: (id) => patch(id, { on: !get(id).on }), move: (id, fx, fy) => patch(id, { fx, fy }), setMin: (id, min) => patch(id, { min }), reset: () => { setLayout(defaults(!phone)); setOpacity(0.55) }, opacity, setOpacity }
 }
 
 const clamp = (v: number) => Math.max(0, Math.min(1, v))
@@ -225,7 +228,7 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
       </Widget>,
     )
   }
-  return <div className="hud-layer">{out}</div>
+  return <div className="hud-layer" style={{ '--hud-a': api.opacity } as React.CSSProperties}>{out}</div>
 }
 
 /** The menu button (for the live-view tool column) and its popover with one switch per widget. */
@@ -255,6 +258,8 @@ export function HudMenu({ api }: { api: HudApi }) {
               </button>
             ))}
           </div>
+          <div className="ctl"><div className="ctl-head"><label htmlFor="hud-op">Opacity</label><output htmlFor="hud-op" className="ctl-val">{Math.round(api.opacity * 100)}%</output></div>
+            <input id="hud-op" type="range" min={0.2} max={1} step={0.05} value={api.opacity} onChange={(e) => api.setOpacity(parseFloat(e.target.value))} /></div>
           <p className="hint-text">Drag to move, tap to shrink to one line. Recording and guiding widgets appear when there is something to show.</p>
           <button type="button" className="wide" onClick={api.reset}>Reset layout</button>
         </div>

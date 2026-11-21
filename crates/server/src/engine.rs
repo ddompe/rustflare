@@ -5,7 +5,7 @@ use crate::preview;
 use crate::storage::Storage;
 use crate::status::*;
 use rustflare_camera as cams;
-use rustflare_capture::{write_png, BurstSpec, FlatAccumulator, FlatDecision, FlatTarget, Format, FrameSink, SerWriter};
+use rustflare_capture::{read_png, write_png, BurstSpec, FlatAccumulator, FlatDecision, FlatTarget, Format, FrameSink, SerWriter};
 use rustflare_core::camera::CTRL_EXPOSURE_US;
 use rustflare_core::sim::SimSky;
 use rustflare_core::{Axis, Camera, CameraDriver, Error, Frame, Mount, MountState, ParkState, RadPerSec, SiteTime, SlewSpeed, TrackingRate, Vec2, SIDEREAL_RATE};
@@ -79,6 +79,8 @@ pub enum Command {
     MountGotoSun { allow_unsynced_clock: bool },
     /// Observer site (decimal degrees, east-positive longitude).
     SetSite { latitude: f64, longitude: f64 },
+    /// Switch flat-field correction of the live view on or off (a master flat must exist).
+    SetFlatApplied { enabled: bool },
     StartTracking { mode: String, x: Option<f64>, y: Option<f64>, radius: Option<f64> },
     StopTracking,
     Calibrate,
@@ -218,6 +220,7 @@ pub struct Engine {
     status: Status,
     status_tx: watch::Sender<Status>,
     preview_tx: SyncSender<Frame>,
+    flat: rustflare_capture::SharedFlat,
     last_preview: Instant,
     last_publish: Instant,
     last_temp: Instant,
@@ -231,6 +234,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
     let (status_tx, status_rx) = watch::channel(Status::default());
     let (jpeg_tx, jpeg_rx) = watch::channel(None);
     let sky = SimSky::new();
+    let flat: rustflare_capture::SharedFlat = Default::default();
+    load_saved_flat(&storage, &flat);
     let engine = Engine {
         drivers: cams::drivers(sky.clone()),
         sky,
@@ -270,7 +275,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         storage,
         status: Status::default(),
         status_tx,
-        preview_tx: preview::spawn(jpeg_tx, stretch),
+        preview_tx: preview::spawn(jpeg_tx, stretch, flat.clone()),
+        flat,
         last_preview: Instant::now(),
         last_publish: Instant::now(),
         last_temp: Instant::now(),
@@ -289,6 +295,23 @@ fn rustflare_config_optics(storage: &Storage) -> OpticsSettings {
 
 fn sanitize(name: &str) -> String {
     name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).take(40).collect()
+}
+
+/// Restores the master flat chosen last time (config key `flat`: master path relative to the storage folder).
+fn load_saved_flat(storage: &Storage, flat: &rustflare_capture::SharedFlat) {
+    let cfg = crate::config::read(storage.config_file());
+    let Some(f) = cfg.get("flat") else { return };
+    let (Some(rel), enabled) = (f.get("master").and_then(|v| v.as_str()), f.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true)) else { return };
+    match crate::files::resolve(&storage.dir(), rel).and_then(|p| read_png(&p).map_err(|e| e.to_string())).and_then(|m| rustflare_capture::FlatField::from_master(&m).map_err(|e| e.to_string())) {
+        Ok(ff) => {
+            let mut s = flat.lock().unwrap();
+            s.field = Some(std::sync::Arc::new(ff));
+            s.enabled = enabled;
+            s.name = Some(rel.to_string());
+            log::info!("flat: loaded {rel} (enabled: {enabled})");
+        }
+        Err(e) => log::warn!("flat: cannot load {rel}: {e}"),
+    }
 }
 
 impl Engine {
@@ -458,6 +481,10 @@ impl Engine {
     fn publish(&mut self) {
         self.refresh_optics();
         self.refresh_ntp(false);
+        {
+            let s = self.flat.lock().unwrap();
+            self.status.flats = FlatsStatus { available: s.field.is_some(), applied: s.enabled && s.field.is_some(), name: s.name.clone() };
+        }
         self.status.clock = ClockStatus { ntp_synchronized: self.ntp_sync };
         self.status.site = self.site.map(|s| SiteStatus { latitude: s.latitude, longitude: s.longitude });
         self.status.sky_sun = self.site.map(|s| {
@@ -619,6 +646,17 @@ impl Engine {
                 self.stop_guiding_quietly();
                 self.mount.as_mut().ok_or("no mount connected")?.go_home().map_err(s)?;
                 self.mount_tracking = false; // the mount stops tracking to go home; the next poll confirms
+                Ok(json!({}))
+            }
+            Command::SetFlatApplied { enabled } => {
+                {
+                    let mut s = self.flat.lock().unwrap();
+                    if enabled && s.field.is_none() {
+                        return Err("no master flat yet: capture flats first (Camera tab)".into());
+                    }
+                    s.enabled = enabled;
+                }
+                self.save_flat_choice();
                 Ok(json!({}))
             }
             Command::SetSite { latitude, longitude } => {
@@ -1508,7 +1546,12 @@ impl Engine {
                 let FlatPhase::Collect { writer, acc } = phase else { unreachable!() };
                 let n = writer.finalize().unwrap_or(frames);
                 let master = stem.with_file_name(format!("{}_master", stem.file_name().unwrap().to_string_lossy())).with_extension("png");
-                let master_res = acc.master().map_err(s).and_then(|m| write_png(&master, &m).map_err(s));
+                let master_frame = acc.master().map_err(s);
+                let master_res = master_frame.as_ref().map_err(|e| e.clone()).and_then(|m| write_png(&master, m).map_err(s));
+                if let (Ok(m), Ok(())) = (&master_frame, &master_res) {
+                    let rel_png = rel(&self.data_dir(), &master);
+                    self.install_flat(m, rel_png);
+                }
                 self.set_exposure(original_exposure);
                 if let Err(e) = master_res {
                     self.status.error = Some(format!("master flat failed: {e}"));
@@ -1518,6 +1561,29 @@ impl Engine {
                 self.finish_capture(Some(rel(&self.data_dir(), &stem.with_extension("ser"))), "saved");
                 Job::Idle
             }
+        }
+    }
+
+    fn save_flat_choice(&self) {
+        let s = self.flat.lock().unwrap();
+        if let Some(name) = &s.name {
+            let _ = crate::config::set(self.storage.config_file(), "flat", json!({ "master": name, "enabled": s.enabled }));
+        }
+    }
+
+    /// Installs a freshly captured master flat and turns the correction on.
+    fn install_flat(&mut self, master: &Frame, rel_png: String) {
+        match rustflare_capture::FlatField::from_master(master) {
+            Ok(ff) => {
+                {
+                    let mut s = self.flat.lock().unwrap();
+                    s.field = Some(std::sync::Arc::new(ff));
+                    s.enabled = true;
+                    s.name = Some(rel_png);
+                }
+                self.save_flat_choice();
+            }
+            Err(e) => self.status.error = Some(format!("master flat unusable: {e}")),
         }
     }
 

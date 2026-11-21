@@ -3,6 +3,23 @@ use std::io::BufWriter;
 use std::path::Path;
 use rustflare_core::{Error, Frame, PixelFormat, Result};
 
+/// Reads a grayscale 8 or 16-bit PNG (the format `write_png` produces) back into a frame.
+pub fn read_png(path: &Path) -> Result<Frame> {
+    let dec = png::Decoder::new(std::io::BufReader::new(File::open(path)?));
+    let mut r = dec.read_info().map_err(|e| Error::Io(std::io::Error::other(e)))?;
+    let mut buf = vec![0; r.output_buffer_size()];
+    let info = r.next_frame(&mut buf).map_err(|e| Error::Io(std::io::Error::other(e)))?;
+    if info.color_type != png::ColorType::Grayscale {
+        return Err(Error::Invalid("expected a grayscale PNG".into()));
+    }
+    buf.truncate(info.buffer_size());
+    match info.bit_depth {
+        png::BitDepth::Eight => Ok(Frame::new(info.width, info.height, PixelFormat::Mono8, buf)),
+        png::BitDepth::Sixteen => Ok(Frame::new(info.width, info.height, PixelFormat::Mono16, buf.chunks_exact(2).flat_map(|c| [c[1], c[0]]).collect())),
+        _ => Err(Error::Invalid("unsupported PNG bit depth".into())),
+    }
+}
+
 /// Writes a grayscale PNG (8 or 16 bit). 16-bit PNG samples are big-endian, so swap.
 pub fn write_png(path: &Path, frame: &Frame) -> Result<()> {
     let file = BufWriter::new(File::create(path)?);

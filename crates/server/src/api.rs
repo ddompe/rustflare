@@ -62,6 +62,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/files/*path", get(download))
         .route("/api/storage", get(storage_get).put(storage_put))
         .route("/api/storage/eject", post(storage_eject))
+        .route("/api/flats/applied", put(flats_applied))
         .route("/api/files/stats", get(file_stats))
         .route("/api/files/delete", post(file_delete))
         .route("/api/optics", put(optics_put))
@@ -317,6 +318,12 @@ async fn storage_put(State(st): State<AppState>, Json(b): Json<StoragePath>) -> 
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
+}
+
+#[derive(Deserialize)]
+struct FlatApplied { enabled: bool }
+async fn flats_applied(s: State<AppState>, Json(b): Json<FlatApplied>) -> Res {
+    run(s, Command::SetFlatApplied { enabled: b.enabled }).await
 }
 
 #[derive(Deserialize)]

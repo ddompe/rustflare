@@ -308,7 +308,7 @@ button, .live, .live *, .pad, .tabs { -webkit-user-select: none; user-select: no
 .hud-layer { position: absolute; inset: 6px; z-index: 3; pointer-events: none; }
 .hud-w { position: absolute; left: calc(var(--fx) * 100%); top: calc(var(--fy) * 100%); transform: translate(calc(var(--fx) * -100%), calc(var(--fy) * -100%));
   pointer-events: auto; touch-action: none; cursor: grab; max-width: 62%; min-height: 44px; display: flex; flex-direction: column; justify-content: center; gap: .1rem;
-  padding: .35rem .65rem; background: rgba(14, 12, 11, .82); border: 1.5px solid rgba(255, 255, 255, .38); border-radius: 10px; color: #fff; font-size: .85rem; line-height: 1.25; font-variant-numeric: tabular-nums; }
+  padding: .35rem .65rem; background: rgba(14, 12, 11, var(--hud-a, .55)); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); border: 1.5px solid rgba(255, 255, 255, .28); text-shadow: 0 1px 2px #000a; border-radius: 10px; color: #fff; font-size: .85rem; line-height: 1.25; font-variant-numeric: tabular-nums; }
 .hud-w:active { cursor: grabbing; border-color: var(--accent); }
 .hud-w.min { flex-direction: row; align-items: center; white-space: nowrap; }
 .hud-w .muted { color: #d6cfca; }

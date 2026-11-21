@@ -96,6 +96,65 @@ impl FlatAccumulator {
     }
 }
 
+/// Flat-field correction: per-pixel gains (Q12 fixed point) that even out vignetting and dust shadows.
+/// Applying is one integer multiply per pixel in a branch-free loop the compiler vectorises (NEON on the Pi 5).
+pub struct FlatField {
+    pub width: u32,
+    pub height: u32,
+    gain: Vec<u16>,
+}
+
+const GAIN_ONE: u32 = 4096;
+
+impl FlatField {
+    /// Gains are `mean / pixel`, limited to 0.25..8 so dead pixels and cap leaks cannot blow up.
+    pub fn from_master(m: &Frame) -> Result<FlatField> {
+        if m.format != PixelFormat::Mono16 {
+            return Err(Error::Invalid("master flat must be 16-bit".into()));
+        }
+        let px: Vec<u16> = m.data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let (sum, n) = px.iter().filter(|v| **v > 0).fold((0f64, 0u64), |(s, n), v| (s + *v as f64, n + 1));
+        if n == 0 {
+            return Err(Error::Invalid("master flat is black".into()));
+        }
+        let mean = sum / n as f64;
+        let gain = px.iter().map(|v| ((mean / (*v).max(1) as f64) * GAIN_ONE as f64).clamp(GAIN_ONE as f64 / 4.0, GAIN_ONE as f64 * 8.0) as u16).collect();
+        Ok(FlatField { width: m.width, height: m.height, gain })
+    }
+
+    pub fn matches(&self, f: &Frame) -> bool {
+        (f.width, f.height) == (self.width, self.height)
+    }
+
+    /// Corrects `f` in place (Mono16 or Mono8). Caller checks `matches` first.
+    pub fn apply(&self, f: &mut Frame) {
+        match f.format {
+            PixelFormat::Mono16 => {
+                for (c, g) in f.data.chunks_exact_mut(2).zip(&self.gain) {
+                    let v = u16::from_le_bytes([c[0], c[1]]) as u32;
+                    let o = ((v * *g as u32 + GAIN_ONE / 2) >> 12).min(65535) as u16;
+                    c.copy_from_slice(&o.to_le_bytes());
+                }
+            }
+            PixelFormat::Mono8 => {
+                for (p, g) in f.data.iter_mut().zip(&self.gain) {
+                    *p = ((*p as u32 * *g as u32 + GAIN_ONE / 2) >> 12).min(255) as u8;
+                }
+            }
+        }
+    }
+}
+
+/// What the preview applies, shared between the engine (sets it) and the preview thread (reads it each frame).
+#[derive(Default)]
+pub struct FlatSetting {
+    pub field: Option<std::sync::Arc<FlatField>>,
+    pub enabled: bool,
+    pub name: Option<String>,
+}
+
+pub type SharedFlat = std::sync::Arc<std::sync::Mutex<FlatSetting>>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +195,21 @@ mod tests {
         a.add(&Frame::new(2, 1, PixelFormat::Mono8, vec![20, 40])).unwrap();
         let m = a.master().unwrap();
         assert_eq!((m.pixel(0, 0), m.pixel(1, 0)), (15 * 257, 30 * 257));
+    }
+
+    #[test]
+    fn flat_field_removes_vignetting() {
+        // 4x1 sensor: edges see 80% of the centre
+        let flat = Frame::new(4, 1, PixelFormat::Mono16, [40000u16, 50000, 50000, 40000].iter().flat_map(|v| v.to_le_bytes()).collect());
+        let ff = FlatField::from_master(&flat).unwrap();
+        let mut img = Frame::new(4, 1, PixelFormat::Mono16, [20000u16, 25000, 25000, 20000].iter().flat_map(|v| v.to_le_bytes()).collect());
+        ff.apply(&mut img);
+        let out: Vec<u16> = (0..4).map(|x| img.pixel(x, 0)).collect();
+        let spread = (*out.iter().max().unwrap() as f64 - *out.iter().min().unwrap() as f64) / 25000.0;
+        assert!(spread < 0.01, "{out:?}");
+        // 8-bit works and never overflows
+        let mut b = Frame::new(4, 1, PixelFormat::Mono8, vec![255, 255, 255, 255]);
+        ff.apply(&mut b);
+        assert!(b.data.iter().all(|v| *v <= 255));
     }
 }

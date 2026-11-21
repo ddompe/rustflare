@@ -142,7 +142,16 @@ pub struct GotoStatus {
 }
 
 #[derive(Clone, Serialize)]
+pub struct FlatsStatus {
+    pub available: bool,
+    /// The live view is flat-corrected right now.
+    pub applied: bool,
+    pub name: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
 pub struct Status {
+    pub flats: FlatsStatus,
     pub site: Option<SiteStatus>,
     pub sky_sun: Option<SkySun>,
     pub clock: ClockStatus,
@@ -164,6 +173,7 @@ pub struct Status {
 impl Default for Status {
     fn default() -> Self {
         Status {
+            flats: FlatsStatus { available: false, applied: false, name: None },
             site: None,
             sky_sun: None,
             clock: ClockStatus::default(),
