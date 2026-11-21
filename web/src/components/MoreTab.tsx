@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useId, useState } from 'react'
-import { api, Status } from '../api'
+import { api, Optics, Status } from '../api'
 import { Display } from '../display'
 import { Disclosure, ErrorLine, Field, Switch, useAction } from './ui'
 import { StorageSettings } from './Storage'
@@ -51,6 +51,31 @@ function DisplaySettings({ d, set, reset }: { d: Display; set: (p: Partial<Displ
   )
 }
 
+const differs = (o: Optics) => o.suggested_multiplier != null && o.focal_length_mm != null && Math.abs(o.suggested_multiplier / o.focal_multiplier - 1) > 0.03
+
+/** Compares the Barlow/reducer factor entered with the one the Sun's measured size implies, and offers to adopt it. */
+function BarlowCheck({ o, onApply }: { o: Optics; onApply: (focal: number | null, mult: number) => void }) {
+  const sm = o.suggested_multiplier
+  const eff = o.suggested_effective_focal_mm
+  if (o.focal_length_mm == null) {
+    return eff != null ? (
+      <div className="measure">
+        <p className="hint-text">No focal length entered, but the Sun's measured size implies an effective focal length of about {eff.toFixed(0)} mm.</p>
+        <button type="button" className="wide" onClick={() => onApply(Math.round(eff), 1)}>Set effective focal length to {eff.toFixed(0)} mm</button>
+      </div>
+    ) : null
+  }
+  if (sm == null) return null
+  if (!differs(o)) return <p className="hint-text measure ok-line">Barlow/reducer matches the Sun's size ({o.focal_multiplier}×).</p>
+  return (
+    <div className="measure">
+      <p className="measure-line">Barlow/reducer: entered <b>{o.focal_multiplier}×</b>, measured <b>{sm.toFixed(2)}×</b>{eff != null && <> (effective about {eff.toFixed(0)} mm)</>}</p>
+      <p className="hint-text">A Barlow's real factor depends on the spacing between the lens and the sensor: extension tubes raise it, and a reducer gives its stated factor only at its specified back-focus distance. The measured value is the one to trust.</p>
+      <button type="button" className="primary wide" onClick={() => onApply(o.focal_length_mm, Math.round(sm * 1000) / 1000)}>Use measured {sm.toFixed(2)}×</button>
+    </div>
+  )
+}
+
 /** Telescope focal length and pixel size → image scale → expected size of the Sun in pixels. */
 function OpticsSettings({ status }: { status: Status | null }) {
   const o = status?.optics
@@ -96,6 +121,7 @@ function OpticsSettings({ status }: { status: Status | null }) {
       ) : (
         <p className="hint-text">Enter the telescope's focal length, plus the Barlow or reducer factor if you use one (and pixel size if the camera doesn't report it) so partial-disc tracking knows how big the Sun is. Needed for an H-alpha view that doesn't show the whole disc.</p>
       )}
+      <BarlowCheck o={o} onApply={(focal, mult) => run(async () => { await api('PUT', '/optics', { focal_length_mm: focal, focal_multiplier: mult, pixel_size_um: o.pixel_size_override_um, binning: o.binning }); setDirty(false) })} />
       {mismatch && <div className="warn">Measured radius {sun!.radius.toFixed(0)} px differs from expected {o.expected_radius_px!.toFixed(0)} px: check focal length, reducer/barlow and binning.</div>}
       <ErrorLine error={err} />
     </div>
@@ -173,7 +199,7 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus }: { 
     <>
       <p className="hint-text">At the telescope: set the phone's Auto-Lock to Never (Settings, Display and Brightness) for the session, and use Share, Add to Home Screen for a full-screen app.</p>
       {item('display', 'Display', `${display.tint === 'none' ? 'grayscale' : display.tint === 'orange' ? 'H-alpha orange' : 'deep red'} · ${display.rings ? `${display.rings} rings` : 'no rings'}`, <DisplaySettings d={display} set={setDisplay} reset={resetDisplay} />)}
-      {item('optics', 'Optics', mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set', <OpticsSettings status={status} />)}
+      {item('optics', 'Optics', o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set', <OpticsSettings status={status} />)}
       {item('storage', 'Storage', 'drive for captures', <StorageSettings status={status} />)}
       {item('buffer', 'RAM buffer', status?.capture ? `${status.capture.buffer_mb} MB` : '', <BufferSettings status={status} />)}
       {item('flats', 'Flats', 'rarely needed', <Flats status={status} />)}

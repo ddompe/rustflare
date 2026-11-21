@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { api, Status } from '../api'
 import { Display, cssFilter } from '../display'
+import { HudLayer, HudMenu, useHudLayout } from './Hud'
 
 /** Live image (MJPEG) with display filters, zoom/pan and a measurement overlay in frame-pixel coordinates. */
 export function LiveView({ status, display, setDisplay, anchorPick, onPicked, onDisplay }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; anchorPick: boolean; onPicked: () => void; onDisplay: () => void }) {
@@ -13,6 +14,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
   const g = status?.guiding
   const sun = status?.sun
   const d = display
+  const hud = useHudLayout()
 
   const clampPan = (zoom: number, px: number, py: number) => {
     const r = box.current!.getBoundingClientRect()
@@ -103,10 +105,12 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
           </g>
         </svg>
       </div>
+      <HudLayer status={status} api={hud} />
       {t?.lost && <div className="lost-badge" role="alert">TARGET LOST</div>}
       <div className="live-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
         <button type="button" aria-label="Zoom in" onClick={() => { const zoom = Math.min(8, d.zoom * 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>+</button>
         <button type="button" aria-label="Zoom out" disabled={d.zoom <= 1} onClick={() => { const zoom = Math.max(1, d.zoom / 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>−</button>
+        <HudMenu api={hud} />
         <button type="button" aria-label="Display settings" onClick={onDisplay}>
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h8M15 15h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /><circle cx="13" cy="5" r="2" fill="currentColor" /><circle cx="7" cy="10" r="2" fill="currentColor" /><circle cx="13" cy="15" r="2" fill="currentColor" /></svg>
         </button>
