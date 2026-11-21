@@ -57,3 +57,9 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 - **M2 UI for the telescope**: overlays, one control scale, phone layout, file manager, user guide, datasheets (built); real iPhone check and the second UI review (open).
 - **M3 More gear** (last): ASI174MM, colour cameras, EAF/autofocus.
 - **M4 Workflows and release**: flats (done), coronagraph, HTTPS/auth, signed apt repository, performance audit (first pass done).
+
+## Reading the project board
+
+- **Todo**: not built yet.
+- **In Progress**: built and tested on the simulators, waiting for a check on real hardware (the issues labelled `hardware-verification`; the steps are in [hardware-checklist.md](hardware-checklist.md)).
+- **Done**: built, and verified where it needed hardware.
