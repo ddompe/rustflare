@@ -59,7 +59,7 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app" data-tab={tab}>
       <a className="skip" href="#panel">Skip to controls</a>
       <header className="top">
         <img className="mark" src="/logo-mark.svg" alt="" width="26" height="26" />
@@ -73,7 +73,7 @@ export function App() {
 
       <section className="view" aria-label="Live view">
         <LiveView status={status} display={display} setDisplay={setDisplay} anchorPick={anchorPick} onPicked={() => setAnchorPick(false)} onDisplay={() => openMore('display')} />
-        <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} />
+        <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} hide={tab === 'aim' ? ['sun'] : []} />
       </section>
 
       <nav className="tabs" role="tablist" aria-label="Session steps" onKeyDown={onKey}>

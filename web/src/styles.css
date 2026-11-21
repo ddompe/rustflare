@@ -344,3 +344,36 @@ button, .live, .live *, .pad, .tabs { -webkit-user-select: none; user-select: no
 .confirm { background: var(--surface); border: 1.5px solid var(--bad); border-radius: var(--radius); padding: .75rem; }
 .confirm p { margin: 0 0 .75rem; font-weight: 600; }
 .pad-btn:disabled { opacity: .35; }
+
+/* Status overlay: label/value grid */
+.hud-grid { display: grid; grid-template-columns: auto auto; gap: .1rem .8rem; margin: 0; align-items: baseline; }
+.hud-grid dt { color: #d6cfca; font-size: .8rem; }
+.hud-grid dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---- Control scale (UX critique 1): one height, one radius, one type scale; aligned rows ---- */
+:root { --radius: 8px; --tap: 44px; }
+button { min-height: var(--tap); padding: 0 .9rem; font-size: .95rem; line-height: 1; }
+button.big { min-height: 52px; font-size: 1.05rem; }
+.pad { max-width: 17rem; gap: .4rem; }
+.pad > * { min-height: 56px; }
+.pad-btn { font-size: 1.2rem; font-weight: 750; }
+.pad-stop { font-size: .9rem; }
+.pad-foot { display: grid; grid-template-columns: auto 1fr; gap: .6rem; align-items: center; max-width: 17rem; margin: .75rem auto .25rem; }
+.pad-foot label { font-size: .9rem; }
+.tags { align-items: center; gap: .4rem; }
+.tag { display: inline-flex; align-items: center; height: 28px; padding: 0 .65rem; line-height: 1; font-size: .8rem; white-space: nowrap; box-sizing: border-box; }
+.home .wide, .step-main .wide { min-height: var(--tap); }
+.confirm .btnrow { margin-top: .5rem; }
+.confirm .btnrow .grow { flex: 1; }
+.hint-text { font-size: .85rem; }
+
+/* Aim needs the pad on screen next to the picture (issue #49): a smaller picture on phones while aiming */
+@media (max-width: 699px) { .app[data-tab='aim'] .live { --vmax: 26dvh; } }
+.strip:empty { display: none; }
+.hud-w .cv { font-size: 1.05rem; }
+.hud-w.min { min-height: 36px; padding: .2rem .55rem; }
+@media (max-width: 699px) {
+  .app[data-tab='aim'] .live-tools { flex-direction: row; top: auto; bottom: .4rem; right: auto; left: .4rem; }
+  .app[data-tab='aim'] .live-tools button { width: 40px; height: 40px; }
+  .app[data-tab='aim'] .hud { display: none; }
+}

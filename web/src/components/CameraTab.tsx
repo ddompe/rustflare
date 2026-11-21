@@ -4,6 +4,7 @@ import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
 import { Histogram } from './Histogram'
 import { DeviceCard } from './DeviceCard'
+import { Flats } from './Flats'
 import { CameraCatalog, useDatasheet } from '../datasheet'
 
 const fmt = (c: Control, v: number) => {
@@ -187,6 +188,9 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
           {rest.map((c) => <Slider key={c.id} c={c} />)}
         </Disclosure>
       )}
+      <Disclosure title="Flats" summary={status?.flats?.applied ? 'applied' : 'not applied'}>
+        <Flats status={status} />
+      </Disclosure>
       <DeviceCard kind="camera" data={sheet} />
       <div className="btnrow end">
         <button type="button" className="quiet" onClick={() => run(() => api('POST', '/camera/close'))}>Close camera</button>

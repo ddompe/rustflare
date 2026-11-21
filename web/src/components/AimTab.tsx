@@ -227,6 +227,9 @@ function Pad({ status, locked }: { status: Status; locked: boolean }) {
 
 type MountSt = NonNullable<Status['mount']>
 
+/** "ZWO AM3 on /dev/serial/by-id/usb-ZWO_…" -> "ZWO AM3": the device path is noise on a phone. */
+const shortInfo = (s: string) => s.replace(/ on \/dev\/\S+/, '')
+
 /** What the mount itself reports. The tracking switch above follows the same field, so pressing park or home on the mount flips it. */
 function MountState({ m }: { m: MountSt }) {
   const tags: { t: string; tone?: string }[] = [
@@ -302,7 +305,7 @@ function GoToSun({ status, disabled }: { status: Status; disabled: boolean }) {
 export function AimTab({ status, next }: { status: Status | null; next: () => void }) {
   const { err, run } = useAction()
   const m = status?.mount
-  const sheet = useDatasheet('mount', status, m ? m.info : null)
+  const sheet = useDatasheet('mount', status, m ? shortInfo(m.info) : null)
   if (!status || !m) return <MountConnect />
   const parked = m.park === 'parked' || m.park === 'parking'
   return (
@@ -312,7 +315,7 @@ export function AimTab({ status, next }: { status: Status | null; next: () => vo
       <Pad status={status} locked={parked} />
       <GoToSun status={status} disabled={parked || !!status.goto} />
       <Section error={err}>
-        <Switch label="Solar tracking" checked={m.tracking} disabled={parked} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? m.info : `${m.info}. Off: the Sun will drift out of view.`} />
+        <Switch label="Solar tracking" checked={m.tracking} disabled={parked} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? shortInfo(m.info) : `${shortInfo(m.info)}. Off: the Sun will drift out of view.`} />
         <MountState m={m} />
       </Section>
       <SendHome status={status} disabled={parked || status.capture.state !== 'idle'} reason={parked ? 'The mount is parked.' : status.capture.state !== 'idle' ? 'Not while recording.' : null} />

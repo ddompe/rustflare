@@ -13,22 +13,16 @@ export function chipsFor(status: Status | null): ChipSpec[] {
   const chips: ChipSpec[] = []
   const g = status.guiding
   const t = status.tracking
-  chips.push({ key: 'fps', tone: 'info', value: cam.fps.toFixed(1), label: 'fps', tab: 'camera', title: `${cam.name} · ${cam.width}×${cam.height} ${cam.bits}-bit · mean ${(cam.mean * 100).toFixed(0)}%` })
   if (cam.saturated > 0.001) chips.push({ key: 'clip', tone: 'bad', value: `${(cam.saturated * 100).toFixed(1)}%`, label: 'clipping', tab: 'camera', title: 'Pixels at full scale: reduce exposure or gain' })
   if (!status.sun) chips.push({ key: 'sun', tone: 'warn', label: 'No Sun found', tab: 'camera', title: 'Too dark? Try more exposure' })
   if (status.mount?.park === 'parked' || status.mount?.park === 'parking') chips.push({ key: 'park', tone: 'warn', label: 'Mount parked', tab: 'aim', title: 'Parked on the mount: motion is disabled' })
-  if (status.mount?.slewing) chips.push({ key: 'slew', tone: 'info', label: 'Slewing', tab: 'aim', title: 'The mount is moving' })
-  if (status.mount && !status.mount.tracking && !(status.mount.park === 'parked' || status.mount.park === 'parking')) chips.push({ key: 'mount', tone: 'warn', label: 'Mount tracking off', tab: 'aim', title: status.mount.info })
   if (t?.lost) chips.push({ key: 'trk', tone: 'bad', label: 'TARGET LOST', tab: 'track', title: 'The tracked target left the frame' })
-  else if (g.state === 'guiding') chips.push({ key: 'trk', tone: 'ok', value: g.error_px?.toFixed(1) ?? '–', label: 'px · holding', tab: 'track', title: 'Guiding error (averaged)' })
   else if (g.state === 'calibrating') chips.push({ key: 'trk', tone: 'warn', label: 'Calibrating…', tab: 'track', title: 'Calibration in progress' })
-  else if (t) chips.push({ key: 'trk', tone: 'info', label: `Tracking ${t.mode}`, tab: 'track', title: 'Tracking, not holding position yet' })
-  if (cam.temperature_c != null) chips.push({ key: 'temp', tone: 'off', value: cam.temperature_c.toFixed(1), label: '°C', tab: 'camera', title: 'Sensor temperature' })
   return chips
 }
 
-export function StatusStrip({ status, goto, onStop, hideRec }: { status: Status | null; goto: (t: TabId) => void; onStop: () => void; hideRec?: boolean }) {
-  const chips = chipsFor(status)
+export function StatusStrip({ status, goto, onStop, hideRec, hide = [] }: { status: Status | null; goto: (t: TabId) => void; onStop: () => void; hideRec?: boolean; hide?: string[] }) {
+  const chips = chipsFor(status).filter((x) => !hide.includes(x.key))
   const c = status?.capture
   const recording = !!c && c.state !== 'idle' && !hideRec
   const alerts = chips.filter((x) => x.tone === 'bad').map((x) => `${x.value ?? ''} ${x.label}`.trim()).join('. ')

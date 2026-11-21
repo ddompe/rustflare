@@ -15,6 +15,7 @@ export interface Status {
   sky_sun?: { altitude_deg: number; azimuth_deg: number; ra_hours: number; dec_deg: number } | null
   clock?: { ntp_synchronized: boolean | null }
   goto?: { target: string; phase: string } | null
+  flats?: { applied: boolean }
   startup: Startup
   optics: Optics
   camera: CameraStatus | null

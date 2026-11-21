@@ -20,7 +20,7 @@ export const HUD_ITEMS: { id: HudId; label: string; short: string; when: string 
   { id: 'buffer', label: 'RAM buffer and disk', short: 'Buffer', when: 'shows while recording' },
   { id: 'guide', label: 'Guiding error', short: 'Guiding', when: 'shows while tracking' },
   { id: 'hist', label: 'Histogram', short: 'Histogram', when: '' },
-  { id: 'strip', label: 'fps, exposure, gain', short: 'Readout', when: '' },
+  { id: 'strip', label: 'Status: fps, disk, exposure, mount, flats', short: 'Status', when: '' },
 ]
 
 /** Corners and edges, so nothing sits over the middle of the picture by default. Phones start with none. */
@@ -29,7 +29,7 @@ const defaults = (on: boolean): Layout => ({
   rec: { on, fx: 0, fy: 1, min: false },
   buffer: { on, fx: 1, fy: 0.9, min: false },
   hist: { on: false, fx: 0, fy: 0.3, min: false },
-  strip: { on: false, fx: 0.5, fy: 0, min: false },
+  strip: { on: true, fx: 0.5, fy: 0, min: !on },
 })
 
 const small = () => typeof matchMedia === 'function' && matchMedia('(max-width: 699px), (max-height: 520px)').matches
@@ -139,7 +139,7 @@ function Spark({ v }: { v: number[] }) {
 
 const expo = (us: number) => (us >= 1e6 ? `${(us / 1e6).toFixed(2)} s` : us >= 1000 ? `${(us / 1000).toFixed(2)} ms` : `${Math.round(us)} µs`)
 
-export function HudLayer({ status, api }: { status: Status | null; api: HudApi }) {
+export function HudLayer({ status, api, previewFps }: { status: Status | null; api: HudApi; previewFps?: number }) {
   const errHist = useErrorHistory(status)
   const cam = status?.camera
   const c = status?.capture
@@ -205,11 +205,23 @@ export function HudLayer({ status, api }: { status: Status | null; api: HudApi }
   }
   if (w('strip').on) {
     const e = cam.controls.find((x) => x.id === 'exposure_us'), gn = cam.controls.find((x) => x.id === 'gain')
+    const m = status.mount
+    const mountText = !m ? null : m.slewing ? 'slewing' : m.park === 'parked' ? 'parked' : m.tracking ? 'tracking' : m.at_home ? 'at home' : 'stopped'
+    const flats = status.flats?.applied
+    const shown = previewFps ? Math.min(previewFps, cam.fps) : cam.fps
     out.push(
-      <Widget key="strip" id="strip" label="Camera readout" w={w('strip')} api={api} mini={<b className="cv">{cam.fps.toFixed(0)} fps</b>}>
-        <div><b className="cv">{cam.fps.toFixed(1)}</b> <span className="cl">fps</span>
-        {e && <> · <b>{expo(e.value)}</b></>}
-        {gn && <> · gain <b>{Math.round(gn.value)}</b></>}</div>
+      <Widget key="strip" id="strip" label="Status" w={w('strip')} api={api}
+        mini={<span><b className="cv">{cam.fps.toFixed(0)}</b> fps{recording && <> · <b className="cv">{c.disk_mb_s.toFixed(0)}</b> MB/s</>}</span>}>
+        <dl className="hud-grid">
+          <dt>Camera</dt><dd><b className="cv">{cam.fps.toFixed(1)}</b> fps</dd>
+          <dt>Screen</dt><dd><b className="cv">{shown.toFixed(0)}</b> fps</dd>
+          <dt>Disk</dt><dd>{recording ? <><b className="cv">{c.disk_mb_s.toFixed(0)}</b> MB/s</> : <span className="muted">idle</span>}</dd>
+          {e && <><dt>Exposure</dt><dd><b>{expo(e.value)}</b></dd></>}
+          {gn && <><dt>Gain</dt><dd><b>{Math.round(gn.value)}</b></dd></>}
+          {cam.temperature_c != null && <><dt>Sensor</dt><dd><b>{cam.temperature_c.toFixed(1)}</b> °C</dd></>}
+          {mountText && <><dt>Mount</dt><dd><b>{mountText}</b></dd></>}
+          <dt>Flat</dt><dd className={flats ? 'ok' : 'muted'}>{flats ? 'applied' : 'none'}</dd>
+        </dl>
       </Widget>,
     )
   }

@@ -105,7 +105,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
           </g>
         </svg>
       </div>
-      <HudLayer status={status} api={hud} />
+      <HudLayer status={status} api={hud} previewFps={d.fps} />
       {t?.lost && <div className="lost-badge" role="alert">TARGET LOST</div>}
       <div className="live-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
         <button type="button" aria-label="Zoom in" onClick={() => { const zoom = Math.min(8, d.zoom * 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>+</button>
@@ -115,7 +115,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h8M15 15h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /><circle cx="13" cy="5" r="2" fill="currentColor" /><circle cx="7" cy="10" r="2" fill="currentColor" /><circle cx="13" cy="15" r="2" fill="currentColor" /></svg>
         </button>
       </div>
-      <div className="hud">{W}×{H} · {cam.fps.toFixed(1)} fps{hint && ` · ${hint}`}</div>
+      <div className="hud">{W}×{H}{hint && ` · ${hint}`}</div>
       {anchorPick && <div className="hint" role="status">Tap a feature (sunspot, filament, plage) to track it</div>}
     </div>
   )
