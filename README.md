@@ -15,7 +15,7 @@ Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi nex
 - **Go to Sun**: slews to the Sun's current position from your site and the Pi's clock, then switches on solar tracking. **Send home**, a slew pad with remembered speed, and the state the mount itself reports (it follows changes made with the mount's own buttons).
 - USB re-enumeration and Bluetooth link loss are detected; the mount is found again automatically.
 
-**Camera** (Player One, ZWO ASI on the roadmap)
+**Cameras** (Player One, and ZWO ASI through the vendor library; the ASI driver is written but not yet run on a real camera)
 - Exposure, gain, offset and 8/16-bit with a logarithmic exposure slider, histogram with clipping warning, sensor temperature, device datasheet card.
 - **Darks** (cap on, same exposure and gain) and **flats**: guided workflow (cap on, check level, capture), automatic exposure to about 50 %, master flat applied to the live view (recordings stay raw) and remembered across restarts.
 
@@ -70,7 +70,7 @@ Developed against a Raspberry Pi 5, a Player One Apollo-M MINI and a ZWO AM3.
 | Capture path: camera and USB stick on separate USB 3 controllers (~57 fps at 1944x1472, 3.4 GB sequence) | **Verified on the Pi** |
 | Storage, 4 GB FAT32 split, camera settings restore, package install and upgrade | **Verified on the Pi** |
 | Flats, guider on a real sky, tracking on real H-alpha images, prominence tools, safe eject, USB recovery, iPhone app, HTTPS on the phone | Built and tested on the simulators; **waiting for a real-hardware check** ([checklist](docs/hardware-checklist.md)) |
-| ZWO ASI cameras | Driver written, not yet run with a camera |
+| ZWO ASI cameras (e.g. ASI174MM Mini) | Driver built into the package (loads `libasi` at run time); **waiting for a real camera on a USB 3 cable** |
 
 See [docs/roadmap.md](docs/roadmap.md) for the plan and milestones.
 
