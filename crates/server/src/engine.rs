@@ -79,6 +79,8 @@ pub enum Command {
     MountGotoSun { allow_unsynced_clock: bool },
     /// Observer site (decimal degrees, east-positive longitude).
     SetSite { latitude: f64, longitude: f64 },
+    /// Guiding tuning; takes effect the next time guiding starts.
+    SetGuideParams { window_s: f64, deadband_px: f64, gain: f64, speed: f64, fast_speed: f64, fast_above_px: f64 },
     /// Switch flat-field correction of the live view on or off (a master flat must exist).
     SetFlatApplied { enabled: bool },
     StartTracking { mode: String, x: Option<f64>, y: Option<f64>, radius: Option<f64> },
@@ -182,6 +184,7 @@ pub struct Engine {
     last_mount_poll: Instant,
     mount_poll_failures: u32,
     site: Option<Site>,
+    guide_params: GuideParams,
     goto: Option<GotoState>,
     ntp_sync: Option<bool>,
     last_ntp_check: Instant,
@@ -231,7 +234,10 @@ pub struct Engine {
 /// Starts the engine thread.
 pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>) -> (Handle, std::thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
-    let (status_tx, status_rx) = watch::channel(Status::default());
+    let guide_params = load_guide_params(&storage);
+    let mut first_status = Status::default();
+    first_status.guide_params = GuideParamsStatus { window_s: guide_params.window.as_secs_f64(), deadband_px: guide_params.deadband_px, gain: guide_params.gain, speed: guide_params.speed, fast_speed: guide_params.fast_speed, fast_above_px: guide_params.fast_above_px };
+    let (status_tx, status_rx) = watch::channel(first_status.clone());
     let (jpeg_tx, jpeg_rx) = watch::channel(None);
     let sky = SimSky::new();
     let flat: rustflare_capture::SharedFlat = Default::default();
@@ -247,6 +253,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         mount_poll_failures: 0,
         site: crate::config::read(storage.config_file()).get("site").and_then(|v| serde_json::from_value(v.clone()).ok()),
         goto: None,
+        guide_params,
         ntp_sync: None,
         last_ntp_check: Instant::now() - Duration::from_secs(120),
         pending_mount: None,
@@ -273,7 +280,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         radius_samples: Default::default(),
         measured_radius: None,
         storage,
-        status: Status::default(),
+        status: first_status,
         status_tx,
         preview_tx: preview::spawn(jpeg_tx, stretch, flat.clone()),
         flat,
@@ -297,6 +304,21 @@ fn sanitize(name: &str) -> String {
     name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).take(40).collect()
 }
 
+/// Guiding tuning saved in the settings file (key `guide`); anything missing or out of range keeps the default.
+fn load_guide_params(storage: &Storage) -> GuideParams {
+    let mut p = GuideParams::default();
+    if let Some(g) = crate::config::read(storage.config_file()).get("guide") {
+        let f = |k: &str| g.get(k).and_then(|v| v.as_f64());
+        if let Some(v) = f("window_s").filter(|v| (2.0..=60.0).contains(v)) { p.window = Duration::from_secs_f64(v); }
+        if let Some(v) = f("deadband_px").filter(|v| (0.0..=30.0).contains(v)) { p.deadband_px = v; }
+        if let Some(v) = f("gain").filter(|v| (0.05..=1.0).contains(v)) { p.gain = v; }
+        if let Some(v) = f("speed").filter(|v| (0.1..=0.9).contains(v)) { p.speed = v; }
+        if let Some(v) = f("fast_speed").filter(|v| (0.1..=0.9).contains(v)) { p.fast_speed = v; }
+        if let Some(v) = f("fast_above_px").filter(|v| (2.0..=200.0).contains(v)) { p.fast_above_px = v; }
+    }
+    p
+}
+
 /// Restores the master flat chosen last time (config key `flat`: master path relative to the storage folder).
 fn load_saved_flat(storage: &Storage, flat: &rustflare_capture::SharedFlat) {
     let cfg = crate::config::read(storage.config_file());
@@ -316,6 +338,8 @@ fn load_saved_flat(storage: &Storage, flat: &rustflare_capture::SharedFlat) {
 
 impl Engine {
     fn run(mut self, rx: Receiver<Request>) {
+        // saved settings (site, flat, guiding) are in the status from the first request, not only after the first event
+        self.publish();
         loop {
             self.poll_sink();
             self.auto_connect_tick();
@@ -485,6 +509,8 @@ impl Engine {
             let s = self.flat.lock().unwrap();
             self.status.flats = FlatsStatus { available: s.field.is_some(), applied: s.enabled && s.field.is_some(), name: s.name.clone() };
         }
+        let gp = self.guide_params;
+        self.status.guide_params = GuideParamsStatus { window_s: gp.window.as_secs_f64(), deadband_px: gp.deadband_px, gain: gp.gain, speed: gp.speed, fast_speed: gp.fast_speed, fast_above_px: gp.fast_above_px };
         self.status.clock = ClockStatus { ntp_synchronized: self.ntp_sync };
         self.status.site = self.site.map(|s| SiteStatus { latitude: s.latitude, longitude: s.longitude });
         self.status.sky_sun = self.site.map(|s| {
@@ -659,6 +685,15 @@ impl Engine {
                 self.save_flat_choice();
                 Ok(json!({}))
             }
+            Command::SetGuideParams { window_s, deadband_px, gain, speed, fast_speed, fast_above_px } => {
+                let ok = (2.0..=60.0).contains(&window_s) && (0.0..=30.0).contains(&deadband_px) && (0.05..=1.0).contains(&gain) && (0.1..=0.9).contains(&speed) && (0.1..=0.9).contains(&fast_speed) && (2.0..=200.0).contains(&fast_above_px);
+                if !ok {
+                    return Err("out of range: window 2-60 s, dead band 0-30 px, gain 0.05-1, speeds 0.1-0.9, fast above 2-200 px".into());
+                }
+                self.guide_params = GuideParams { window: Duration::from_secs_f64(window_s), deadband_px, gain, speed, fast_speed, fast_above_px, ..self.guide_params };
+                crate::config::set(self.storage.config_file(), "guide", json!({ "window_s": window_s, "deadband_px": deadband_px, "gain": gain, "speed": speed, "fast_speed": fast_speed, "fast_above_px": fast_above_px }))?;
+                Ok(json!({}))
+            }
             Command::SetSite { latitude, longitude } => {
                 if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
                     return Err("latitude must be -90..90 and longitude -180..180 (east positive)".into());
@@ -730,7 +765,7 @@ impl Engine {
                     self.tracker.as_ref().unwrap().position().pos
                 };
                 self.status.guiding.target = Some((pos.x, pos.y));
-                self.guide = GuideState::Guiding(Guider::new(pos, self.calibration.unwrap(), GuideParams::default()));
+                self.guide = GuideState::Guiding(Guider::new(pos, self.calibration.unwrap(), self.guide_params));
                 Ok(json!({}))
             }
             Command::StopGuiding => {

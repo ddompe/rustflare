@@ -2,6 +2,7 @@ import { ReactNode } from 'react'
 import { api, Status } from '../api'
 import { Disclosure, Empty, Section, Segmented, useAction } from './ui'
 import { useSetting } from '../settings'
+import { GuideSettings } from './GuideSettings'
 
 type Mode = 'limb' | 'anchor' | 'sun_disc'
 const MODES: { id: Mode; label: string; help: string }[] = [
@@ -118,6 +119,9 @@ export function TrackTab({ status, anchorPick, setAnchorPick, goto, next }: { st
       <Disclosure title="Centre the disc instead">
         <p className="hint-text">Moves the disc centre to the middle of the frame and holds it there. For a partial disc you usually want <b>Hold position</b> instead.</p>
         <button type="button" className="wide" disabled={!ready} onClick={() => run(() => api('POST', '/guiding/start', { center: true }))}>Centre and hold</button>
+      </Disclosure>
+      <Disclosure title="Guiding settings" summary="drift only, not seeing">
+        <GuideSettings status={status} />
       </Disclosure>
       <Disclosure title="When to recalibrate">
         <p className="hint-text">Redo it after rotating the camera, after a meridian flip, or (alt-az) as the Sun moves. It needs the mount's solar tracking on and moves each axis for a few seconds.</p>

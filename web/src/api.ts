@@ -15,6 +15,7 @@ export interface Status {
   sky_sun?: { altitude_deg: number; azimuth_deg: number; ra_hours: number; dec_deg: number } | null
   clock?: { ntp_synchronized: boolean | null }
   goto?: { target: string; phase: string } | null
+  guide_params?: { window_s: number; deadband_px: number; gain: number; speed: number; fast_speed: number; fast_above_px: number }
   flats?: { applied: boolean; available: boolean; name: string | null }
   startup: Startup
   optics: Optics

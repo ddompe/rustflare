@@ -63,6 +63,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/storage", get(storage_get).put(storage_put))
         .route("/api/storage/eject", post(storage_eject))
         .route("/api/flats/applied", put(flats_applied))
+        .route("/api/guiding/params", put(guide_params))
         .route("/api/datasheet/:kind", get(datasheet))
         .route("/api/files/stats", get(file_stats))
         .route("/api/files/delete", post(file_delete))
@@ -340,6 +341,12 @@ async fn datasheet(State(st): State<AppState>, axum::extract::Path(kind): axum::
     };
     let entry = cat[list].as_array().and_then(|a| a.iter().find(|e| e["match"].as_str().is_some_and(|m| name.to_lowercase().contains(&m.to_lowercase())))).cloned();
     Json(json!({ "live": live, "catalog": entry })).into_response()
+}
+
+#[derive(Deserialize)]
+struct GuideParamsBody { window_s: f64, deadband_px: f64, gain: f64, speed: f64, fast_speed: f64, fast_above_px: f64 }
+async fn guide_params(s: State<AppState>, Json(b): Json<GuideParamsBody>) -> Res {
+    run(s, Command::SetGuideParams { window_s: b.window_s, deadband_px: b.deadband_px, gain: b.gain, speed: b.speed, fast_speed: b.fast_speed, fast_above_px: b.fast_above_px }).await
 }
 
 #[derive(Deserialize)]
