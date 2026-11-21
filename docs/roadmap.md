@@ -49,3 +49,11 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 - No authentication; keep the Pi on a trusted network.
 - The SER header's local-time field carries UTC.
 - Released packages redistribute Player One's proprietary library (see [ADR 0006](adr/0006-playerone-via-vendor-sdk.md), [0010](adr/0010-debian-package-and-updates.md)).
+
+
+## Milestones (GitHub)
+
+- **M1 Hardware-verified field use**: Go to Sun, Bluetooth and USB mount links, USB 3 capture path (done and verified); safe eject, USB recovery, flats, guider on a real sky, H-alpha tracking (built; see [hardware-checklist.md](hardware-checklist.md)).
+- **M2 UI for the telescope**: overlays, one control scale, phone layout, file manager, user guide, datasheets (built); real iPhone check and the second UI review (open).
+- **M3 More gear** (last): ASI174MM, colour cameras, EAF/autofocus.
+- **M4 Workflows and release**: flats (done), coronagraph, HTTPS/auth, signed apt repository, performance audit (first pass done).
