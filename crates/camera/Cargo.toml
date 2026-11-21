@@ -11,10 +11,10 @@ default = []
 playerone = ["dep:playerone-sdk"]
 
 # ZWO ASI cameras: the vendor library (libASICamera2, Debian package libasi) is dlopen-ed at run time.
-asi = ["dep:libloading"]
+asi = ["dep:libloading", "dep:log"]
 
 [dependencies]
 rustflare-core.workspace = true
 libloading = { version = "0.8", optional = true }
-log.workspace = true
+log = { workspace = true, optional = true }
 playerone-sdk = { version = "0.2.3", optional = true }
