@@ -9,7 +9,7 @@
 //!   * `stop()` no longer disables tracking (matches the `Mount` trait contract);
 //!   * generic over the I/O object so the protocol is unit-testable.
 
-use rustflare_core::{Axis, Error, LinkInfo, Mount, MountState, ParkState, RadPerSec, Result, SlewSpeed, TrackingRate, SIDEREAL_RATE};
+use rustflare_core::{Axis, Error, LinkInfo, Mount, MountState, ParkState, RadPerSec, Result, SiteTime, SlewSpeed, TrackingRate, SIDEREAL_RATE};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -129,6 +129,26 @@ impl<P: Read + Write + Send> Mount for Zwo<P> {
         Ok(MountState { tracking: Some(self.tracking), slewing: Some(slewing), at_home: Some(at_home), park, alt_az: Some(has(b'Z')) })
     }
 
+    /// `:SMGE<lat>&<lon>#` and `:SMTI<MM/DD/YY>&<hh:mm:ss>&<offset>#`, as the official app sends them. Longitude is
+    /// west-positive; the UTC offset is sent with the opposite sign (a site at UTC-6 as `+06:00`).
+    fn set_site_time(&mut self, st: &SiteTime) -> Result<()> {
+        send(&mut self.port, &format!(":SMGE{}&{}#", fmt_dms(st.latitude_deg, 2), fmt_dms(-st.longitude_east_deg, 3)), Reply::Exactly("1"))?;
+        let (y, mo, d, h, mi, s) = civil(st.unix_secs + st.utc_offset_minutes as i64 * 60);
+        let off = -st.utc_offset_minutes;
+        let time = format!("{mo:02}/{d:02}/{:02}&{h:02}:{mi:02}:{s:02}&{}{:02}:{:02}", y.rem_euclid(100), if off >= 0 { '+' } else { '-' }, off.abs() / 60, off.abs() % 60);
+        send(&mut self.port, &format!(":SMTI{time}#"), Reply::Exactly("1")).map(|_| ())
+    }
+
+    /// LX200 GoTo as INDIGO does it: `:Sr<hh:mm:ss>#` -> `1`, `:Sd<sdd*mm:ss>#` -> `1`, `:MS#` -> `0` (slewing).
+    fn goto_equatorial(&mut self, ra_hours: f64, dec_deg: f64) -> Result<()> {
+        let secs = (ra_hours.rem_euclid(24.0) * 3600.0).round() as u32 % 86400;
+        send(&mut self.port, &format!(":Sr{:02}:{:02}:{:02}#", secs / 3600, secs % 3600 / 60, secs % 60), Reply::Exactly("1"))?;
+        send(&mut self.port, &format!(":Sd{}#", fmt_dms(dec_deg, 2)), Reply::Exactly("1"))?;
+        send(&mut self.port, ":MS#", Reply::Exactly("0")).map_err(|e| Error::Mount(format!("the mount refused the GoTo: {e}")))?;
+        self.tracking = false; // a GoTo ends with the mount stopped until tracking is switched on again
+        Ok(())
+    }
+
     fn go_home(&mut self) -> Result<()> {
         self.cmd(":hC#")?;
         self.tracking = false;
@@ -196,6 +216,28 @@ impl<P: Read + Write + Send> Mount for Zwo<P> {
     fn stop(&mut self) -> Result<()> {
         self.cmd(":Q#")
     }
+}
+
+/// `±dd*mm:ss` (`deg_width` digits of degrees), rounded to the nearest arcsecond.
+fn fmt_dms(deg: f64, deg_width: usize) -> String {
+    let total = (deg.abs() * 3600.0).round() as u32;
+    format!("{}{:0w$}*{:02}:{:02}", if deg < 0.0 { '-' } else { '+' }, total / 3600, total % 3600 / 60, total % 60, w = deg_width)
+}
+
+/// Civil date and time (UTC arithmetic) of a Unix timestamp: (year, month, day, hour, minute, second).
+fn civil(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
+    let days = secs.div_euclid(86400);
+    let rem = secs.rem_euclid(86400) as u32;
+    let z = days + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
+    (y, m, d, rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 fn send<T: Read + Write>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec<u8>> {
@@ -319,5 +361,34 @@ mod tests {
         m.go_home().unwrap();
         assert_eq!(m.port.written, ":hC#");
         assert!(!m.tracking);
+    }
+
+    #[test]
+    fn site_and_time_use_the_official_app_format() {
+        // site 40.5 N, 105.25 W; 2026-11-21 21:20:38 UTC, local time UTC-6 => 15:20:38 and offset sent as +06:00
+        let mut m = mount("11");
+        m.port.written.clear();
+        let st = SiteTime { latitude_deg: 40.5, longitude_east_deg: -105.25, unix_secs: 1_795_296_038, utc_offset_minutes: -360 };
+        m.set_site_time(&st).unwrap();
+        assert_eq!(m.port.written, ":SMGE+40*30:00&+105*15:00#:SMTI11/21/26&15:20:38&+06:00#");
+    }
+
+    #[test]
+    fn goto_sends_target_then_slew_and_clears_the_tracking_flag() {
+        let mut m = mount("110");
+        m.port.written.clear();
+        m.goto_equatorial(15.7981, -19.974).unwrap();
+        assert_eq!(m.port.written, ":Sr15:47:53#:Sd-19*58:26#:MS#");
+        assert!(!m.tracking);
+        // a refused slew (anything but 0) is an error
+        let mut m = mount("11e4");
+        assert!(m.goto_equatorial(1.0, 1.0).is_err());
+    }
+
+    #[test]
+    fn civil_dates_are_right() {
+        assert_eq!(civil(0), (1970, 1, 1, 0, 0, 0));
+        assert_eq!(civil(1_795_296_038), (2026, 11, 21, 21, 20, 38));
+        assert_eq!(fmt_dms(-0.5, 2), "-00*30:00");
     }
 }

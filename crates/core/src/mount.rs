@@ -79,7 +79,22 @@ pub struct LinkInfo {
     pub up: bool,
 }
 
+/// Observer site and clock, as the mount needs them to turn sky coordinates into a pointing.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct SiteTime {
+    pub latitude_deg: f64,
+    /// East positive (a site west of Greenwich is negative).
+    pub longitude_east_deg: f64,
+    pub unix_secs: i64,
+    /// Local time minus UTC, minutes (UTC-6 is -360).
+    pub utc_offset_minutes: i32,
+}
+
 pub trait Mount: Send {
+    /// Tells the mount where and when it is (the official app does this on every connect).
+    fn set_site_time(&mut self, _st: &SiteTime) -> Result<()> { Err(crate::Error::Unsupported("set site/time".into())) }
+    /// Starts a GoTo slew to equatorial coordinates of date (RA in hours, Dec in degrees). Moves the mount.
+    fn goto_equatorial(&mut self, _ra_hours: f64, _dec_deg: f64) -> Result<()> { Err(crate::Error::Unsupported("goto".into())) }
     /// The transport and its health; `None` for drivers without a physical link (the simulator).
     fn link(&self) -> Option<LinkInfo> { None }
     /// Asks the mount for its current state (read-only).

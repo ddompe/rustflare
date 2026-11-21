@@ -8,7 +8,7 @@ use rustflare_camera as cams;
 use rustflare_capture::{write_png, BurstSpec, FlatAccumulator, FlatDecision, FlatTarget, Format, FrameSink, SerWriter};
 use rustflare_core::camera::CTRL_EXPOSURE_US;
 use rustflare_core::sim::SimSky;
-use rustflare_core::{Axis, Camera, CameraDriver, Error, Frame, Mount, MountState, ParkState, RadPerSec, SlewSpeed, TrackingRate, Vec2, SIDEREAL_RATE};
+use rustflare_core::{Axis, Camera, CameraDriver, Error, Frame, Mount, MountState, ParkState, RadPerSec, SiteTime, SlewSpeed, TrackingRate, Vec2, SIDEREAL_RATE};
 use rustflare_tracking::*;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -30,6 +30,20 @@ pub struct Startup {
 
 impl Default for Startup {
     fn default() -> Self { Startup { enabled: true, camera: None, mount: None } }
+}
+
+/// Observer site, saved in the settings file under `site`. Longitude is east-positive.
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Site {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+struct GotoState {
+    started: Instant,
+    /// The mount has been seen slewing.
+    moved: bool,
+    last_check: Instant,
 }
 
 /// Optical setup, persisted in the settings file; gives the expected solar radius in pixels.
@@ -61,6 +75,10 @@ pub enum Command {
     MountStop,
     /// Moves the mount to its home (zero) position; the API asks for explicit confirmation.
     MountHome,
+    /// Sync site and time, slew to the Sun's current position, then switch solar tracking on. Moves the mount.
+    MountGotoSun { allow_unsynced_clock: bool },
+    /// Observer site (decimal degrees, east-positive longitude).
+    SetSite { latitude: f64, longitude: f64 },
     StartTracking { mode: String, x: Option<f64>, y: Option<f64>, radius: Option<f64> },
     StopTracking,
     Calibrate,
@@ -161,6 +179,10 @@ pub struct Engine {
     mount_state: MountState,
     last_mount_poll: Instant,
     mount_poll_failures: u32,
+    site: Option<Site>,
+    goto: Option<GotoState>,
+    ntp_sync: Option<bool>,
+    last_ntp_check: Instant,
     /// A Bluetooth connection attempt running on its own thread (auto-reconnect must not stall the engine).
     pending_mount: Option<Receiver<Result<Box<dyn Mount>, String>>>,
     tracker: Option<Tracker>,
@@ -218,6 +240,10 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         mount_state: MountState::default(),
         last_mount_poll: Instant::now(),
         mount_poll_failures: 0,
+        site: crate::config::read(storage.config_file()).get("site").and_then(|v| serde_json::from_value(v.clone()).ok()),
+        goto: None,
+        ntp_sync: None,
+        last_ntp_check: Instant::now() - Duration::from_secs(120),
         pending_mount: None,
         tracker: None,
         lost: false,
@@ -271,6 +297,7 @@ impl Engine {
             self.poll_sink();
             self.auto_connect_tick();
             self.poll_mount();
+            self.step_goto();
             self.flush_controls();
             if self.draining.is_some() && self.last_publish.elapsed() >= Duration::from_millis(200) {
                 self.publish();
@@ -372,8 +399,74 @@ impl Engine {
         };
     }
 
+    /// Is the Pi's clock synchronised to a time server? (`timedatectl`; None where it cannot be read.) Checked at most
+    /// once a minute unless forced.
+    fn refresh_ntp(&mut self, force: bool) {
+        if !force && self.last_ntp_check.elapsed() < Duration::from_secs(60) {
+            return;
+        }
+        self.last_ntp_check = Instant::now();
+        self.ntp_sync = std::process::Command::new("timedatectl")
+            .args(["show", "-p", "NTPSynchronized", "--value"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| match String::from_utf8_lossy(&o.stdout).trim() {
+                "yes" => Some(true),
+                "no" => Some(false),
+                _ => None,
+            });
+    }
+
+    /// Follows a GoTo: once the mount has slewed and stopped, switch solar tracking on (the point of "Go to Sun").
+    fn step_goto(&mut self) {
+        let (started, moved) = match self.goto.as_mut() {
+            Some(g) if g.last_check.elapsed() >= Duration::from_secs(1) => {
+                g.last_check = Instant::now();
+                (g.started, g.moved)
+            }
+            _ => return,
+        };
+        let Some(m) = self.mount.as_mut() else {
+            self.goto = None;
+            return;
+        };
+        let Ok(st) = m.state() else { return };
+        let moved = moved || st.slewing == Some(true);
+        if let Some(g) = self.goto.as_mut() {
+            g.moved = moved;
+        }
+        if started.elapsed() > Duration::from_secs(300) {
+            self.goto = None;
+            self.status.error = Some("the GoTo did not finish within 5 minutes".into());
+            return;
+        }
+        if st.slewing == Some(false) && (moved || started.elapsed() > Duration::from_secs(8)) {
+            self.goto = None;
+            let r = m.set_tracking_rate(TrackingRate::Solar).and_then(|_| m.set_tracking(true));
+            match r {
+                Ok(()) => {
+                    self.mount_tracking = true;
+                    log::info!("GoTo Sun finished; solar tracking is on");
+                }
+                Err(e) => self.status.error = Some(format!("the mount arrived, but solar tracking could not be switched on: {e}")),
+            }
+            self.publish();
+        }
+    }
+
     fn publish(&mut self) {
         self.refresh_optics();
+        self.refresh_ntp(false);
+        self.status.clock = ClockStatus { ntp_synchronized: self.ntp_sync };
+        self.status.site = self.site.map(|s| SiteStatus { latitude: s.latitude, longitude: s.longitude });
+        self.status.sky_sun = self.site.map(|s| {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+            let (ra, dec) = rustflare_tracking::solar::sun_equatorial(now);
+            let (alt, az) = rustflare_tracking::solar::alt_az(ra, dec, now, s.latitude, s.longitude);
+            SkySun { altitude_deg: alt, azimuth_deg: az, ra_hours: ra, dec_deg: dec }
+        });
+        self.status.goto = self.goto.as_ref().map(|g| GotoStatus { target: "sun", phase: if g.moved { "slewing" } else { "starting" } });
         self.status.startup = StartupStatus {
             enabled: self.startup.enabled,
             camera: self.startup.camera.as_ref().map(|(d, id)| format!("{d} {id}")),
@@ -492,6 +585,9 @@ impl Engine {
                 Ok(json!({}))
             }
             Command::MountSlew { axis, speed } => {
+                if speed != 0.0 && self.goto.is_some() {
+                    return Err("a GoTo is running: press STOP first".into());
+                }
                 if speed != 0.0 {
                     self.require_not_parked()?;
                 }
@@ -511,17 +607,53 @@ impl Engine {
                 Ok(json!({}))
             }
             Command::MountStop => {
+                self.goto = None; // STOP also cancels a GoTo
                 self.stop_guiding_quietly();
                 self.mount.as_mut().ok_or("no mount connected")?.stop().map_err(s)?;
                 Ok(json!({}))
             }
             Command::MountHome => {
+                self.goto = None;
                 self.require_idle()?;
                 self.require_not_parked()?;
                 self.stop_guiding_quietly();
                 self.mount.as_mut().ok_or("no mount connected")?.go_home().map_err(s)?;
                 self.mount_tracking = false; // the mount stops tracking to go home; the next poll confirms
                 Ok(json!({}))
+            }
+            Command::SetSite { latitude, longitude } => {
+                if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
+                    return Err("latitude must be -90..90 and longitude -180..180 (east positive)".into());
+                }
+                self.site = Some(Site { latitude, longitude });
+                crate::config::set(self.storage.config_file(), "site", json!({ "latitude": latitude, "longitude": longitude }))?;
+                Ok(json!({}))
+            }
+            Command::MountGotoSun { allow_unsynced_clock } => {
+                self.require_idle()?;
+                self.require_not_parked()?;
+                if self.mount.is_none() {
+                    return Err("no mount connected".into());
+                }
+                let site = self.site.ok_or("set your site first: More > Site (latitude and longitude)")?;
+                self.refresh_ntp(true);
+                if self.ntp_sync == Some(false) && !allow_unsynced_clock {
+                    return Err("the Pi's clock is not synchronised to a time server, so the Sun's position and the time given to the mount may be off: check the clock, or go anyway".into());
+                }
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+                let (ra, dec) = rustflare_tracking::solar::sun_equatorial(now);
+                let (alt, _az) = rustflare_tracking::solar::alt_az(ra, dec, now, site.latitude, site.longitude);
+                if alt < -1.0 {
+                    return Err(format!("the Sun is below the horizon (altitude {alt:.0} degrees)"));
+                }
+                self.stop_guiding_quietly();
+                let st = SiteTime { latitude_deg: site.latitude, longitude_east_deg: site.longitude, unix_secs: now as i64, utc_offset_minutes: chrono::Local::now().offset().local_minus_utc() / 60 };
+                let m = self.mount.as_mut().ok_or("no mount connected")?;
+                m.set_site_time(&st).map_err(s)?;
+                m.goto_equatorial(ra, dec).map_err(s)?;
+                self.mount_tracking = false; // the mount stops for the slew; tracking is switched on at arrival
+                self.goto = Some(GotoState { started: Instant::now(), moved: false, last_check: Instant::now() });
+                Ok(json!({ "ra_hours": ra, "dec_deg": dec, "altitude_deg": alt }))
             }
             Command::StartTracking { mode, x, y, radius } => {
                 self.require_not_flats()?;
@@ -717,7 +849,18 @@ impl Engine {
             Some(Err(e)) => {
                 self.mount_poll_failures += 1;
                 if self.mount_poll_failures == 3 {
-                    self.status.error = Some(format!("lost contact with the mount: {e}"));
+                    // A dead link (e.g. the mount re-enumerated on USB and our handle is stale): drop it and keep
+                    // retrying the remembered device, instead of showing a mount that no longer answers.
+                    log::warn!("lost contact with the mount: {e}");
+                    self.stop_guiding_quietly();
+                    self.mount = None;
+                    self.mount_tracking = false;
+                    self.mount_state = MountState::default();
+                    self.mount_poll_failures = 0;
+                    self.status.error = Some(format!("lost contact with the mount ({e}); reconnecting"));
+                    if self.startup.enabled && self.startup.mount.is_some() {
+                        self.auto_until = Some(Instant::now() + Duration::from_secs(600));
+                    }
                 }
             }
             None => {}

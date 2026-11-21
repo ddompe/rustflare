@@ -17,6 +17,30 @@ function RangeField({ label, value, min, max, step, show, onChange }: { label: s
   )
 }
 
+function SiteSettings({ status }: { status: Status | null }) {
+  const [lat, setLat] = useState(status?.site ? String(status.site.latitude) : '')
+  const [lon, setLon] = useState(status?.site ? String(status.site.longitude) : '')
+  const { err, busy, run } = useAction()
+  const save = () => run(() => api('PUT', '/site', { latitude: parseFloat(lat), longitude: parseFloat(lon) }))
+  const here = () => navigator.geolocation.getCurrentPosition(
+    (p) => { setLat(p.coords.latitude.toFixed(5)); setLon(p.coords.longitude.toFixed(5)) },
+    (e) => alert(`Location unavailable (${e.message}). Browsers only share location over HTTPS; type the coordinates instead.`),
+  )
+  const ntp = status?.clock?.ntp_synchronized
+  return (
+    <div>
+      <Field label="Latitude (degrees, north positive)">{(id) => <input id={id} inputMode="decimal" value={lat} onChange={(e) => setLat(e.target.value)} />}</Field>
+      <Field label="Longitude (degrees, east positive)">{(id) => <input id={id} inputMode="decimal" value={lon} onChange={(e) => setLon(e.target.value)} />}</Field>
+      <div className="btnrow tight">
+        <button type="button" onClick={here}>Use this device's location</button>
+        <button type="button" className="grow" disabled={busy || isNaN(parseFloat(lat)) || isNaN(parseFloat(lon))} onClick={save}>Save site</button>
+      </div>
+      <div className="hint-text">Clock: {ntp === true ? 'synchronised to a time server' : ntp === false ? 'NOT synchronised: the Sun position may be off' : 'unknown'}. The site stays on the Pi and is used for Go to Sun.</div>
+      <ErrorLine error={err} />
+    </div>
+  )
+}
+
 function DisplaySettings({ d, set, reset }: { d: Display; set: (p: Partial<Display>) => void; reset: () => void }) {
   const [stretch, setStretch] = useState(false)
   useEffect(() => { api<{ stretch: boolean }>('GET', '/preview').then((r) => setStretch(r.stretch)).catch(() => {}) }, [])
@@ -200,6 +224,7 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus }: { 
       <p className="hint-text">At the telescope: set the phone's Auto-Lock to Never (Settings, Display and Brightness) for the session, and use Share, Add to Home Screen for a full-screen app.</p>
       {item('display', 'Display', `${display.tint === 'none' ? 'grayscale' : display.tint === 'orange' ? 'H-alpha orange' : 'deep red'} · ${display.rings ? `${display.rings} rings` : 'no rings'}`, <DisplaySettings d={display} set={setDisplay} reset={resetDisplay} />)}
       {item('optics', 'Optics', o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set', <OpticsSettings status={status} />)}
+      {item('site', 'Site', status?.site ? `${status.site.latitude.toFixed(2)}°, ${status.site.longitude.toFixed(2)}°` : 'not set', <SiteSettings status={status} />)}
       {item('storage', 'Storage', 'drive for captures', <StorageSettings status={status} />)}
       {item('buffer', 'RAM buffer', status?.capture ? `${status.capture.buffer_mb} MB` : '', <BufferSettings status={status} />)}
       {item('flats', 'Flats', 'rarely needed', <Flats status={status} />)}

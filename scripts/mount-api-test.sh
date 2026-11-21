@@ -34,4 +34,17 @@ expect "state after home (read back from the mount)" "$(mount_state)" "tracking=
 expect "tracking can be switched on again" "$(call POST /mount/tracking '{"enabled":true}')" "{}"
 sleep 2.5
 expect "and is read back as on" "$(mount_state)" "tracking=True"
+
+# Go to Sun on the simulator: a site where it is local solar noon right now, so the Sun is high at any hour
+LON=$(python3 -c "import datetime as d; n=d.datetime.utcnow(); h=n.hour+n.minute/60; print(round(((12-h)*15+180)%360-180,3))")
+BODY="{\"latitude\":0,\"longitude\":$LON}"
+expect "site is saved" "$(curl -s -X PUT -H 'content-type: application/json' --data "$BODY" $A/site)" "{}"
+expect "Go to Sun needs explicit confirmation" "$(call POST /mount/goto-sun)" "confirm"
+expect "Go to Sun is accepted and reports the Sun's position" "$(call POST /mount/goto-sun '{"confirm":true}')" "altitude_deg"
+sleep 1.5
+expect "status shows the GoTo while slewing" "$(curl -s $A/status | python3 -c 'import sys,json; print(json.load(sys.stdin)["goto"])')" "sun"
+expect "manual slews are refused during a GoTo" "$(call POST /mount/slew '{"axis":"primary","speed":4}')" "GoTo"
+sleep 6
+expect "after arrival solar tracking is ON and the GoTo is finished" "$(curl -s $A/status | python3 -c 'import sys,json; s=json.load(sys.stdin); print(s["mount"]["tracking"], s["goto"])')" "True None"
+expect "the Sun's position is reported for the site" "$(curl -s $A/status | python3 -c 'import sys,json; print(json.load(sys.stdin)["sky_sun"]["altitude_deg"] > 60)')" "True"
 exit $fail

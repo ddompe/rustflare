@@ -111,8 +111,42 @@ pub struct StartupStatus {
     pub retrying: bool,
 }
 
+/// Observer site (east-positive longitude), as saved on the Pi.
+#[derive(Clone, Serialize)]
+pub struct SiteStatus {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+/// Where the Sun is in the sky now, for the saved site (shown next to Go to Sun).
+#[derive(Clone, Serialize)]
+pub struct SkySun {
+    pub altitude_deg: f64,
+    pub azimuth_deg: f64,
+    pub ra_hours: f64,
+    pub dec_deg: f64,
+}
+
+/// The Pi's clock decides the Sun's computed position and what the mount is told the time is.
+#[derive(Clone, Serialize, Default)]
+pub struct ClockStatus {
+    /// `systemd` says the clock is synchronised to a time server (None where that cannot be read).
+    pub ntp_synchronized: Option<bool>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct GotoStatus {
+    pub target: &'static str,
+    /// "starting" until the mount reports motion, then "slewing".
+    pub phase: &'static str,
+}
+
 #[derive(Clone, Serialize)]
 pub struct Status {
+    pub site: Option<SiteStatus>,
+    pub sky_sun: Option<SkySun>,
+    pub clock: ClockStatus,
+    pub goto: Option<GotoStatus>,
     pub startup: StartupStatus,
     pub optics: OpticsStatus,
     pub camera: Option<CameraStatus>,
@@ -130,6 +164,10 @@ pub struct Status {
 impl Default for Status {
     fn default() -> Self {
         Status {
+            site: None,
+            sky_sun: None,
+            clock: ClockStatus::default(),
+            goto: None,
             startup: StartupStatus::default(),
             optics: OpticsStatus::default(),
             camera: None,

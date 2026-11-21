@@ -43,6 +43,8 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/mount/slew", post(mount_slew))
         .route("/api/mount/stop", post(|s| run(s, Command::MountStop)))
         .route("/api/mount/home", post(|s, b| mount_motion(s, b, Command::MountHome)))
+        .route("/api/mount/goto-sun", post(goto_sun))
+        .route("/api/site", put(site_put))
         .route("/api/tracking/start", post(tracking_start))
         .route("/api/tracking/stop", post(|s| run(s, Command::StopTracking)))
         .route("/api/guiding/calibrate", post(|s| run(s, Command::Calibrate)))
@@ -431,4 +433,27 @@ mod ble_tests {
         assert!(connect_device(Some("ble"), Some("AA:BB:CC:DD:EE".into())).is_err());
         assert!(connect_device(Some("wifi"), None).is_err());
     }
+}
+
+#[derive(Deserialize)]
+struct GotoSunBody {
+    #[serde(default)]
+    confirm: bool,
+    #[serde(default)]
+    allow_unsynced_clock: bool,
+}
+
+/// Go to the Sun MOVES the mount (and then switches solar tracking on): explicit confirmation required.
+async fn goto_sun(s: State<AppState>, body: Option<Json<GotoSunBody>>) -> Res {
+    let b = body.map(|b| b.0).unwrap_or(GotoSunBody { confirm: false, allow_unsynced_clock: false });
+    if !b.confirm {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "this moves the mount: send {\"confirm\": true}" }))).into_response();
+    }
+    run(s, Command::MountGotoSun { allow_unsynced_clock: b.allow_unsynced_clock }).await
+}
+
+#[derive(Deserialize)]
+struct SiteBody { latitude: f64, longitude: f64 }
+async fn site_put(s: State<AppState>, Json(b): Json<SiteBody>) -> Res {
+    run(s, Command::SetSite { latitude: b.latitude, longitude: b.longitude }).await
 }

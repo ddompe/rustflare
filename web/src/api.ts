@@ -11,6 +11,10 @@ export interface StorageInfo { path: string; label: string; mount_point: string 
 export interface SunLocation { pos: { x: number; y: number }; radius: number; partial: boolean; radius_from_optics?: boolean | null; fit_rms?: number | null }
 export interface Startup { enabled: boolean; camera: string | null; mount: string | null; retrying: boolean }
 export interface Status {
+  site?: { latitude: number; longitude: number } | null
+  sky_sun?: { altitude_deg: number; azimuth_deg: number; ra_hours: number; dec_deg: number } | null
+  clock?: { ntp_synchronized: boolean | null }
+  goto?: { target: string; phase: string } | null
   startup: Startup
   optics: Optics
   camera: CameraStatus | null

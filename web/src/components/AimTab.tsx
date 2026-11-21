@@ -269,6 +269,35 @@ function SendHome({ status, disabled, reason }: { status: Status; disabled: bool
   )
 }
 
+/** Slew to where the Sun is now, then switch solar tracking on. Needs a saved site and a trustworthy clock. */
+function GoToSun({ status, disabled }: { status: Status; disabled: boolean }) {
+  const [ask, setAsk] = useState(false)
+  const { err, busy, run } = useAction()
+  const clockBad = status.clock?.ntp_synchronized === false
+  const sky = status.sky_sun
+  const go = () => run(async () => { await api('POST', '/mount/goto-sun', { confirm: true, allow_unsynced_clock: clockBad }); setAsk(false) })
+  if (status.goto) return <div className="hint-text" role="status">Going to the Sun ({status.goto.phase}). STOP cancels.</div>
+  return (
+    <div className="home">
+      {!ask ? (
+        <button type="button" className="wide" disabled={disabled || !status.site} onClick={() => setAsk(true)}>Go to Sun</button>
+      ) : (
+        <div className="confirm" role="alertdialog" aria-label="Go to the Sun">
+          <p>The mount will slew to the Sun's position computed from your site and the Pi's clock, then start solar tracking. Make sure the telescope and cables are clear.</p>
+          {clockBad && <p className="warn">The Pi's clock is not synchronised, so the position may be off.</p>}
+          <div className="btnrow tight">
+            <button type="button" className="grow" onClick={() => setAsk(false)}>Cancel</button>
+            <button type="button" className="danger grow" disabled={busy} onClick={go}>Go to Sun</button>
+          </div>
+        </div>
+      )}
+      {!status.site && <div className="hint-text">Set your site first: More, Site.</div>}
+      {sky && <div className="hint-text">Sun now: altitude {sky.altitude_deg.toFixed(1)}°, azimuth {sky.azimuth_deg.toFixed(0)}°{sky.altitude_deg < 0 ? ' (below the horizon)' : ''}</div>}
+      <ErrorLine error={err} />
+    </div>
+  )
+}
+
 /** Step 2: connect the mount, switch on solar tracking, slew the region of interest into view. */
 export function AimTab({ status, next }: { status: Status | null; next: () => void }) {
   const { err, run } = useAction()
@@ -281,6 +310,7 @@ export function AimTab({ status, next }: { status: Status | null; next: () => vo
       {parked && <div className="warn" role="alert">{m.park === 'parking' ? 'The mount is parking: motion is disabled.' : 'Parked on the mount: motion is disabled.'}</div>}
       <Offset status={status} />
       <Pad status={status} locked={parked} />
+      <GoToSun status={status} disabled={parked || !!status.goto} />
       <Section error={err}>
         <Switch label="Solar tracking" checked={m.tracking} disabled={parked} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? m.info : `${m.info}. Off: the Sun will drift out of view.`} />
         <MountState m={m} />
