@@ -79,6 +79,8 @@ pub enum Command {
     MountGotoSun { allow_unsynced_clock: bool },
     /// Observer site (decimal degrees, east-positive longitude).
     SetSite { latitude: f64, longitude: f64 },
+    /// Disc frame plus a `factor` times longer exposure for prominences, and their composite.
+    CaptureProminence { name: Option<String>, factor: f64 },
     /// Prominence view: mask the Sun's disc in the live view (display only).
     SetCoronagraph { enabled: bool, scale: f64 },
     /// Guiding tuning; takes effect the next time guiding starts.
@@ -173,6 +175,19 @@ enum Job {
     Single { stem: PathBuf },
     Capture(Box<CaptureJob>),
     Flats(Box<Flats>),
+    Prominence(Box<Prominence>),
+}
+
+/// Two-exposure prominence capture: the disc at the current exposure, then a much longer one.
+struct Prominence {
+    stem: PathBuf,
+    factor: f64,
+    original_exposure: f64,
+    long_exposure: f64,
+    /// Disc frame and the Sun's position when it was taken.
+    disc: Option<(Frame, (f64, f64, f64))>,
+    /// Frames still to discard after the exposure change so the long frame really has the new exposure.
+    skip: u32,
 }
 
 pub struct Engine {
@@ -801,6 +816,19 @@ impl Engine {
                 self.stop_guiding_quietly();
                 Ok(json!({}))
             }
+            Command::CaptureProminence { name, factor } => {
+                self.require_capture_ready()?;
+                if !(2.0..=64.0).contains(&factor) {
+                    return Err("exposure factor must be 2 to 64".into());
+                }
+                if self.status.sun.is_none() {
+                    return Err("no Sun found in the frame: the disc position is needed for the composite".into());
+                }
+                let exp = self.exposure();
+                self.job = Job::Prominence(Box::new(Prominence { stem: self.new_stem("prom", name.as_deref()), factor, original_exposure: exp, long_exposure: exp, disc: None, skip: 0 }));
+                self.set_capture("single", "disc exposure", None);
+                Ok(json!({}))
+            }
             Command::CaptureSingle { name } => {
                 self.require_capture_ready()?;
                 self.job = Job::Single { stem: self.new_stem("frame", name.as_deref()) };
@@ -1360,6 +1388,7 @@ impl Engine {
         let job = std::mem::replace(&mut self.job, Job::Idle);
         match job {
             Job::Idle | Job::Single { .. } => {}
+            Job::Prominence(p) => self.set_exposure(p.original_exposure), // never leave the long exposure on the camera
             Job::Capture(job) => {
                 let CaptureJob { sink, phase, kind, name, burst_no, .. } = *job;
                 if let CapPhase::Capturing { stem, taken, started } = phase {
@@ -1436,6 +1465,7 @@ impl Engine {
                 Job::Idle
             }
             Job::Capture(job) => self.step_capture(job, frame),
+            Job::Prominence(p) => self.step_prominence(p, frame),
             Job::Flats(f) => {
                 let m = frame.mean_fraction(); // flats need a fresh level for every frame
                 let _ = mean;
@@ -1624,6 +1654,62 @@ impl Engine {
                 let sc = self.sidecar("flats", json!({ "frames": n, "exposure_us": exposure_used, "target_level": target.level, "final_mean": mean, "master": master.file_name().map(|n| n.to_string_lossy().to_string()), "restored_exposure_us": original_exposure }));
                 self.write_sidecar(&stem, &sc);
                 self.finish_capture(Some(rel(&self.data_dir(), &stem.with_extension("ser"))), "saved");
+                Job::Idle
+            }
+        }
+    }
+
+    fn step_prominence(&mut self, mut p: Box<Prominence>, frame: Frame) -> Job {
+        let dir_ok = std::fs::create_dir_all(p.stem.parent().unwrap());
+        if let Err(e) = dir_ok {
+            self.status.error = Some(format!("prominence: {e}"));
+            self.finish_capture(None, "failed");
+            return Job::Idle;
+        }
+        match p.disc.take() {
+            None => {
+                let Some(sun) = self.status.sun.as_ref().map(|s| (s.pos.x, s.pos.y, s.radius)) else {
+                    self.status.error = Some("prominence: the Sun was lost from the frame".into());
+                    self.finish_capture(None, "failed");
+                    return Job::Idle;
+                };
+                let max = self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == CTRL_EXPOSURE_US)).map(|c| c.max).unwrap_or(2_000_000.0);
+                p.long_exposure = (p.original_exposure * p.factor).min(max);
+                p.disc = Some((frame, sun));
+                p.skip = 4;
+                self.set_exposure(p.long_exposure);
+                self.set_capture("single", "long exposure", None);
+                Job::Prominence(p)
+            }
+            Some(d) => {
+                if p.skip > 0 {
+                    p.skip -= 1;
+                    p.disc = Some(d);
+                    return Job::Prominence(p);
+                }
+                self.set_exposure(p.original_exposure);
+                let (short, (cx, cy, r)) = d;
+                let factor = p.long_exposure / p.original_exposure.max(1.0);
+                let stem = p.stem.clone();
+                let res = (|| -> Result<(), String> {
+                    write_png(&stem.with_file_name(format!("{}_disc", stem.file_name().unwrap().to_string_lossy())).with_extension("png"), &short).map_err(s)?;
+                    write_png(&stem.with_file_name(format!("{}_long", stem.file_name().unwrap().to_string_lossy())).with_extension("png"), &frame).map_err(s)?;
+                    let comp = rustflare_capture::prominence::composite(&short, &frame, cx, cy, r, factor).map_err(s)?;
+                    write_png(&stem.with_file_name(format!("{}_composite", stem.file_name().unwrap().to_string_lossy())).with_extension("png"), &comp).map_err(s)
+                })();
+                match res {
+                    Ok(()) => {
+                        let sc = self.sidecar("prominence", json!({ "disc_exposure_us": p.original_exposure, "long_exposure_us": p.long_exposure, "factor": factor, "sun": { "x": cx, "y": cy, "radius": r } }));
+                        self.write_sidecar(&stem, &sc);
+                        let name = format!("{}_composite.png", stem.file_name().unwrap().to_string_lossy());
+                        let rel_path = rel(&self.data_dir(), &stem.with_file_name(name));
+                        self.finish_capture(Some(rel_path), "saved");
+                    }
+                    Err(e) => {
+                        self.status.error = Some(format!("prominence capture failed: {e}"));
+                        self.finish_capture(None, "failed");
+                    }
+                }
                 Job::Idle
             }
         }

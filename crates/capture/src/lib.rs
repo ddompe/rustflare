@@ -1,6 +1,7 @@
 //! File output (SER sequences, PNG stills) and flat-field logic.
 
 pub mod flats;
+pub mod prominence;
 pub mod ser;
 pub mod sink;
 pub mod still;

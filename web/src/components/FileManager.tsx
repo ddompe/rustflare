@@ -22,7 +22,7 @@ function useFiles(refreshKey: unknown) {
   const [all, setAll] = useState<FileEntry[]>([])
   const load = () => api<FileEntry[]>('GET', '/files').then(setAll).catch(() => {})
   useEffect(() => { load() }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
-  const files = all.filter((f) => !(f.path.endsWith('.json') && all.some((o) => o.path !== f.path && o.path.replace(/\.[^./]+\/?$/, '') === f.path.slice(0, -5))))
+  const files = all.filter((f) => !(f.path.endsWith('.json') && all.some((o) => o.path !== f.path && o.path.startsWith(f.path.slice(0, -5)))))
   return { files, load }
 }
 

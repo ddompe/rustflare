@@ -57,6 +57,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/capture/bursts", post(capture_bursts))
         .route("/api/capture/buffer", put(capture_buffer))
         .route("/api/capture/flats", post(capture_flats))
+        .route("/api/capture/prominence", post(capture_prominence))
         .route("/api/capture/stop", post(|s| run(s, Command::CaptureStop)))
         .route("/api/files", get(files))
         .route("/stream.mjpg", get(mjpeg))
@@ -212,6 +213,12 @@ async fn capture_bursts(s: State<AppState>, Json(b): Json<Bursts>) -> Res {
 struct Buffer { mb: u64 }
 async fn capture_buffer(s: State<AppState>, Json(b): Json<Buffer>) -> Res {
     run(s, Command::SetBuffer { mb: b.mb }).await
+}
+
+#[derive(Deserialize)]
+struct Prominence { name: Option<String>, factor: Option<f64> }
+async fn capture_prominence(s: State<AppState>, Json(b): Json<Prominence>) -> Res {
+    run(s, Command::CaptureProminence { name: b.name, factor: b.factor.unwrap_or(8.0) }).await
 }
 
 #[derive(Deserialize)]
