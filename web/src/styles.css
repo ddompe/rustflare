@@ -368,7 +368,14 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .hint-text { font-size: .85rem; }
 
 /* Aim needs the pad on screen next to the picture (issue #49): a smaller picture on phones while aiming */
-@media (max-width: 699px) { .app[data-tab='aim'] .live { --vmax: 26dvh; } }
+@media (max-width: 699px) {
+  .app[data-tab='camera'] .live { --vmax: 34dvh; }
+  .app[data-tab='track'] .live { --vmax: 30dvh; }
+  .app[data-tab='aim'] .live, .app[data-tab='record'] .live, .app[data-tab='more'] .live { --vmax: 24dvh; }
+  .app:not([data-tab='camera']) .live-tools { flex-direction: row; top: auto; bottom: .4rem; right: auto; left: .4rem; }
+  .app:not([data-tab='camera']) .live-tools button { width: 40px; height: 40px; }
+  .app:not([data-tab='camera']) .hud { display: none; }
+}
 .strip:empty { display: none; }
 .hud-w .cv { font-size: 1.05rem; }
 .hud-w.min { min-height: 36px; padding: .2rem .55rem; }
@@ -385,3 +392,5 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .fm-name { font-weight: 650; word-break: break-all; }
 .fm-sub { font-size: .85rem; margin: .2rem 0 .4rem; line-height: 1.35; }
 .fm-actions .btn, a.btn { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 .9rem; border: 1.5px solid #565d69; border-radius: var(--radius); background: var(--raised); color: var(--fg); text-decoration: none; font-weight: 650; font-size: .95rem; }
+.strip { padding: .3rem .75rem; gap: .3rem; }
+.strip > .sr-only { position: absolute; }
