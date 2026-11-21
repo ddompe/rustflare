@@ -7,39 +7,72 @@
 
 <h1 align="center">RustFlare</h1>
 
-Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi next to the telescope, open a web page from anywhere on your network, and:
+Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi next to the telescope, open a web page from your phone or laptop (an iPhone Home Screen app works well), and take the Sun from "where is it?" to a saved recording without a keyboard.
 
-- see a live view with a tracking overlay,
-- control a **Player One** camera (exposure, gain, offset, 8/16-bit),
-- control a **ZWO AM3/AM5** mount (solar tracking rate, slewing, guiding),
-- keep the Sun in frame by tracking the **full disc**, a **partial disc** (fitted from the visible limb), or a **surface feature** such as a sunspot, with automatic mount calibration and guiding,
-- capture **single frames** (PNG), **sequences and scheduled bursts** ("100 frames every 30 s", SER or PNG images, through a RAM buffer so slow disks don't limit fast cameras) and **flats** (automatic exposure, SER + master flat),
-- choose a **USB drive** for captures in the UI, with free-space and FAT32 safeguards,
-- see it all in a live view with **centring aids** (bullseye, Sun outline), zoom, invert / H-alpha tint, auto-stretch and a histogram.
+## Features
 
-Based on ideas and code from [Vidoxide](https://github.com/GreatAttractor/vidoxide) (MIT) — see [NOTICE.md](NOTICE.md).
+**Mount** (ZWO AM3 family, over USB or Bluetooth)
+- **Go to Sun**: slews to the Sun's current position from your site and the Pi's clock, then switches on solar tracking. **Send home**, a slew pad with remembered speed, and the state the mount itself reports (it follows changes made with the mount's own buttons).
+- USB re-enumeration and Bluetooth link loss are detected; the mount is found again automatically.
+
+**Camera** (Player One, ZWO ASI on the roadmap)
+- Exposure, gain, offset and 8/16-bit with a logarithmic exposure slider, histogram with clipping warning, sensor temperature, device datasheet card.
+- **Flats**: guided workflow (cap on, check level, capture), automatic exposure to about 50 %, master flat applied to the live view (recordings stay raw) and remembered across restarts.
+
+**Tracking and guiding**
+- Follows the **full disc**, a **partial disc** (fitted from the visible limb, with the expected radius from your optics and a measured fallback) or a **surface feature** such as a sunspot.
+- Automatic calibration of both mount axes, then a guider that corrects **slow drift only**: it averages away the seeing, uses a dead band and gentle pulses. All parameters are adjustable.
+
+**Live view**
+- Draggable, semi-transparent **overlays**: camera/screen/disk fps, exposure, gain, temperature, mount state, flat applied, recording, RAM buffer, guiding error graph, histogram.
+- Centring aids (bullseye, Sun outline), zoom, brightness/contrast/gamma, auto-stretch, H-alpha tint.
+- **Prominence view**: a software coronagraph that blacks out the disc so you can judge the exposure for prominences. **Prominence pair** capture saves a disc frame, a longer exposure and their composite.
+
+**Recording**
+- **Single frames, sequences and scheduled bursts** ("100 frames every 30 s") as SER videos or PNG images, through a **RAM buffer** so a slow disk never limits a fast camera.
+- **USB drive** selection with free-space and FAT32 safeguards (4 GB files continue in numbered parts) and a **safe eject** button.
+- A full-screen **file manager**: browse by day, check recordings (frame count, measured fps, brightness; flags *mostly dark* and *incomplete*), download, delete in bulk.
+
+**Running it**
+- Installs and upgrades as a Debian package (`rustflare-update`, or a signed apt repository); settings (site, flats, guiding, storage, UI layout) survive reboots; auto-reconnect of camera and mount.
+- Optional **password** and **HTTPS** with a private certificate authority you trust once on your phone (`rustflare-tls`).
+- Built-in simulators for the camera and mount, so everything can be tried without hardware; Playwright browser tests run in CI.
+
+Based on ideas and code from [Vidoxide](https://github.com/GreatAttractor/vidoxide) (MIT), see [NOTICE.md](NOTICE.md).
 
 ## Install on a Raspberry Pi
 
+From a release package:
+
 ```sh
-# from the latest release: https://github.com/ddompe/rustflare/releases/latest
+# https://github.com/ddompe/rustflare/releases/latest
 sudo apt install ./rustflare_*_arm64.deb
 sudo rustflare-update          # later: install the newest release
 ```
 
-Then open `http://<pi-name>.local:8080/`. Details in [docs/getting-started.md](docs/getting-started.md).
+Or from the signed apt repository (see [docs/apt-repository.md](docs/apt-repository.md)):
+
+```sh
+curl -fsSL https://ddompe.github.io/rustflare/rustflare.gpg | sudo tee /usr/share/keyrings/rustflare.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/rustflare.gpg arch=arm64] https://ddompe.github.io/rustflare stable main" | sudo tee /etc/apt/sources.list.d/rustflare.list
+sudo apt update && sudo apt install rustflare
+```
+
+Then open `http://<pi-name>.local:8080/`. For HTTPS and a password see [docs/https.md](docs/https.md). Details in [docs/getting-started.md](docs/getting-started.md); how to use it in [docs/usage.md](docs/usage.md).
 
 ## Status
 
+Developed against a Raspberry Pi 5, a Player One Apollo-M MINI and a ZWO AM3.
+
 | Area | State |
 |---|---|
-| Server, API, web UI, tracking (limb / feature / disc), calibration, guiding, bursts + RAM buffer, flats, storage selection | Working end-to-end **against the built-in simulators**, also on a real Raspberry Pi 5; unit tests for all pure logic |
-| Debian package, install, upgrade, `rustflare-update` | Verified on a Pi 5; CI/release workflows not yet run on GitHub |
-| Player One camera driver | Library loads and enumerates on the Pi; **not yet run with a real camera** |
-| ZWO AM3/AM5 mount driver | Ported from Vidoxide with fixes; unit-tested on a mock port; **not yet run on a real mount in this project** |
-| Tracking on real H-alpha images | Tested on synthetic frames only |
+| ZWO AM3 over USB and Bluetooth: connect, tracking, nudge, send home, Go to Sun | **Verified on the real mount** |
+| Capture path: camera and USB stick on separate USB 3 controllers (~57 fps at 1944x1472, 3.4 GB sequence) | **Verified on the Pi** |
+| Storage, 4 GB FAT32 split, camera settings restore, package install and upgrade | **Verified on the Pi** |
+| Flats, guider on a real sky, tracking on real H-alpha images, prominence tools, safe eject, USB recovery, iPhone app, HTTPS on the phone | Built and tested on the simulators; **waiting for a real-hardware check** ([checklist](docs/hardware-checklist.md)) |
+| ZWO ASI cameras | Driver written, not yet run with a camera |
 
-See [docs/roadmap.md](docs/roadmap.md) for what to verify first on real hardware and what is planned (including a user guide).
+See [docs/roadmap.md](docs/roadmap.md) for the plan and milestones.
 
 ## Quick try (no hardware)
 
@@ -56,4 +89,4 @@ Start at [docs/index.md](docs/index.md) (`mkdocs serve` renders it). Design deci
 
 ## Security
 
-There is **no authentication**. The server can slew a mount. Run it only on a trusted network (or behind a VPN / reverse proxy with auth).
+By default there is **no password** and the server can slew a mount: use a trusted network, or set a password and enable HTTPS ([docs/https.md](docs/https.md)). It is built for a telescope on a LAN, not for exposure to the internet.
