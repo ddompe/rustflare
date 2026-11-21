@@ -52,7 +52,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked }: 
   const hint = d.zoom > 1 ? `${d.zoom.toFixed(1)}×` : ''
 
   return (
-    <div ref={box} className={`live ${anchorPick ? 'pick' : ''}`} style={{ aspectRatio: `${W} / ${H}` }}
+    <div ref={box} className={`live ${anchorPick ? 'pick' : ''}`} style={{ aspectRatio: `${W} / ${H}`, maxWidth: `calc((100vh - 6rem) * ${W / H})` }}
       onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onDoubleClick={() => setDisplay({ zoom: 1, panX: 0, panY: 0 })}>
       <svg width="0" height="0" style={{ position: 'absolute' }}>
         <filter id="rf-gamma" colorInterpolationFilters="sRGB">
@@ -66,7 +66,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked }: 
       </svg>
       <div ref={inner} className="zoomed" style={{ transform: `translate(${d.panX}px, ${d.panY}px) scale(${d.zoom})` }}>
         <img src={`/stream.mjpg?fps=${d.fps}`} alt="live view" draggable={false} style={{ filter: cssFilter(d) }} onLoad={() => force((n) => n + 1)} />
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
           <g fill="none" strokeWidth={stroke}>
             {d.grid && <path stroke="#ff3b30" opacity={0.4} d={`M${W / 3} 0V${H}M${(2 * W) / 3} 0V${H}M0 ${H / 3}H${W}M0 ${(2 * H) / 3}H${W}`} />}
             {d.rings > 0 && (
