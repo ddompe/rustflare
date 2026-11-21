@@ -49,8 +49,9 @@ async fn main() -> std::io::Result<()> {
     let storage = std::sync::Arc::new(storage::Storage::load(args.config_file, args.data_dir));
     log::info!("captures go to {}", storage.dir().display());
     let stretch = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let (handle, engine_thread) = engine::spawn(storage.clone(), stretch.clone());
-    let app = api::router(api::AppState { engine: handle, storage, stretch }, args.web_dir);
+    let demand = std::sync::Arc::new(preview::Demand::default());
+    let (handle, engine_thread) = engine::spawn(storage.clone(), stretch.clone(), demand.clone());
+    let app = api::router(api::AppState { engine: handle, storage, stretch, demand }, args.web_dir);
 
     let app = if args.password.is_empty() {
         app

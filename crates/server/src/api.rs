@@ -22,6 +22,8 @@ pub struct AppState {
     pub storage: std::sync::Arc<crate::storage::Storage>,
     /// Preview auto-stretch (applies to everyone watching).
     pub stretch: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Counts live viewers so the preview is only produced while someone watches.
+    pub demand: std::sync::Arc<crate::preview::Demand>,
 }
 
 pub fn router(state: AppState, web_dir: PathBuf) -> Router {
@@ -250,6 +252,12 @@ async fn files(State(st): State<AppState>) -> Json<Value> {
 }
 
 async fn snapshot(State(st): State<AppState>) -> Res {
+    if !st.demand.wanted() {
+        st.demand.want_snapshot();
+        tokio::time::sleep(Duration::from_millis(250)).await; // let a fresh frame come through
+    } else {
+        st.demand.want_snapshot();
+    }
     match st.engine.preview.borrow().clone() {
         Some(j) => ([(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "no-store")], j.to_vec()).into_response(),
         None => StatusCode::NO_CONTENT.into_response(),
@@ -262,7 +270,8 @@ async fn mjpeg(State(st): State<AppState>, axum::extract::Query(q): axum::extrac
     // ?fps=N caps this viewer's frame rate (saves Wi-Fi bandwidth)
     let min_gap = q.get("fps").and_then(|v| v.parse::<f64>().ok()).filter(|f| *f >= 0.5).map(|f| Duration::from_secs_f64(1.0 / f.min(30.0)));
     let rx = st.engine.preview.clone();
-    let stream = futures_util::stream::unfold((rx, std::time::Instant::now() - Duration::from_secs(10)), move |(mut rx, mut last)| async move {
+    let guard = st.demand.viewer();
+    let stream = futures_util::stream::unfold((rx, std::time::Instant::now() - Duration::from_secs(10), guard), move |(mut rx, mut last, guard)| async move {
         loop {
             if rx.changed().await.is_err() {
                 return None;
@@ -276,7 +285,7 @@ async fn mjpeg(State(st): State<AppState>, axum::extract::Query(q): axum::extrac
                 let mut chunk = format!("--{B}\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n", j.len()).into_bytes();
                 chunk.extend_from_slice(&j);
                 chunk.extend_from_slice(b"\r\n");
-                return Some((Ok::<_, std::convert::Infallible>(chunk), (rx, last)));
+                return Some((Ok::<_, std::convert::Infallible>(chunk), (rx, last, guard)));
             }
         }
     });

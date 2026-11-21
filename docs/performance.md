@@ -16,8 +16,10 @@ Total about 60 % of one core out of four: plenty of headroom while recording (th
 - **Preview conversion** now uses integer arithmetic only (16.16 multiplier, direct row slicing). On a desktop benchmark the conversion loop was not the bottleneck: JPEG encoding of the 972x736 picture dominates (about 3 ms on an Apple-silicon Mac). So the cheapest further saving is less JPEG work, not faster pixel loops.
 - The engine sends the preview thread a **clone of the whole frame** (5.7 MB) about 15 times a second. Sharing the frame buffer (`Arc<Frame>`) would remove that copy; planned.
 
+- **Preview only while someone watches.** The engine counts live viewers (the MJPEG stream) and `/snapshot.jpg` requests; with nobody watching it skips the frame copy, the downscale and the JPEG encode. An unattended recording therefore pays none of the preview cost. On the simulator the process went from 15 % to 11 % of a core; the Pi figure is in the table above for the viewer case.
+
 ## Not done yet (issue #67)
 
 - A Pi 5 specific build (`-C target-cpu=cortex-a76`): safe only if Pi 4 and older are not supported; keep the generic build as the default and offer a Pi 5 flavour if profiling on the Pi shows a win.
-- `Arc<Frame>` sharing, reusing the JPEG and gray buffers, and moving the tracker's per-frame passes to strided sampling.
+- Reusing the JPEG and gray buffers, and moving the tracker's per-frame passes to strided sampling.
 - A profile with recording on and several viewers.

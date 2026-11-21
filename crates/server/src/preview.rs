@@ -40,6 +40,40 @@ pub fn mask_disc(frame: &mut Frame, cx: f64, cy: f64, r: f64) {
     }
 }
 
+/// Who is looking at the picture. With nobody watching (an unattended recording) the engine skips the preview copy,
+/// the downscale and the JPEG encode entirely, about a quarter of a Pi core.
+#[derive(Default)]
+pub struct Demand {
+    viewers: std::sync::atomic::AtomicUsize,
+    snapshot_until_ms: std::sync::atomic::AtomicU64,
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+impl Demand {
+    pub fn wanted(&self) -> bool {
+        self.viewers.load(Ordering::Relaxed) > 0 || now_ms() < self.snapshot_until_ms.load(Ordering::Relaxed)
+    }
+    /// A one-off still (`/snapshot.jpg`) keeps the preview running for a few seconds.
+    pub fn want_snapshot(&self) {
+        self.snapshot_until_ms.store(now_ms() + 3000, Ordering::Relaxed);
+    }
+    /// Counts a live viewer until the returned guard is dropped.
+    pub fn viewer(self: &Arc<Self>) -> ViewerGuard {
+        self.viewers.fetch_add(1, Ordering::Relaxed);
+        ViewerGuard(self.clone())
+    }
+}
+
+pub struct ViewerGuard(Arc<Demand>);
+impl Drop for ViewerGuard {
+    fn drop(&mut self) {
+        self.0.viewers.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 pub type JpegTx = watch::Sender<Option<Arc<Vec<u8>>>>;
 
 /// Display range (in the frame's own units) that maps to black..white when auto-stretching:

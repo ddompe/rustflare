@@ -227,6 +227,7 @@ pub struct Engine {
     preview_tx: SyncSender<Frame>,
     flat: rustflare_capture::SharedFlat,
     corona: preview::SharedCorona,
+    demand: Arc<preview::Demand>,
     last_preview: Instant,
     last_publish: Instant,
     last_temp: Instant,
@@ -235,7 +236,7 @@ pub struct Engine {
 }
 
 /// Starts the engine thread.
-pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>) -> (Handle, std::thread::JoinHandle<()>) {
+pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>, demand: Arc<preview::Demand>) -> (Handle, std::thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
     let guide_params = load_guide_params(&storage);
     let mut first_status = Status::default();
@@ -295,6 +296,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         preview_tx: preview::spawn(jpeg_tx, stretch, flat.clone(), corona.clone()),
         flat,
         corona,
+        demand,
         last_preview: Instant::now(),
         last_publish: Instant::now(),
         last_temp: Instant::now(),
@@ -1245,7 +1247,7 @@ impl Engine {
         if let Some(c) = self.status.camera.as_mut() {
             c.fps = self.fps_ema;
         }
-        if self.last_preview.elapsed() >= Duration::from_millis(66) {
+        if self.last_preview.elapsed() >= Duration::from_millis(66) && self.demand.wanted() {
             self.last_preview = now;
             let _ = self.preview_tx.try_send(frame.clone());
         }
