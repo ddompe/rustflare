@@ -39,6 +39,8 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 - **Browser-level UI tests** (Playwright, Chromium and WebKit) in CI, with an opt-in profile for the real Pi.
 - Signed apt repository; authentication and HTTPS; configurable guiding parameters; ROI/binning/cooler controls; colour cameras; more drivers.
 
+- **Bluetooth mount link** (issue #53): implemented (ADR 0015); needs a first live session with the mount in pairing mode to verify scanning, the session opener, guiding and slewing over BLE.
+
 ## Known limitations
 
 - Mono only (colour cameras deliver Bayer, treated as mono).

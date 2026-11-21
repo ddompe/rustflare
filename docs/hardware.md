@@ -29,7 +29,7 @@ Controls exposed: exposure (µs), gain, offset, USB bandwidth (%), 8/16-bit outp
 Connected over USB as a serial device (it appears as `/dev/ttyACM0`, and as a stable name under `/dev/serial/by-id/`, which the Mount panel suggests); RustFlare speaks the ZWO serial protocol directly (no ASCOM/INDI).
 The AM3 can run equatorial or alt-az; RustFlare calls the axes *primary/secondary* (RA/Dec in equatorial mode). See [Calibration](tracking-and-guiding.md#calibration) for what that means for guiding. Supported: solar tracking rate (`:TS#`), tracking on/off, manual slewing at the ten speeds the mount offers
 (0.25× … 1440× sidereal), pulse guiding. Guide rate is clamped to the mount's 0.1–0.9× range; the mount has one rate for both axes.
-See [ADR 0007](adr/0007-zwo-mount-serial-driver.md) for the fixes made relative to Vidoxide's driver. The mount also has Bluetooth; what we know about that link is in [ZWO mount Bluetooth protocol](zwo-ble-protocol.md).
+See [ADR 0007](adr/0007-zwo-mount-serial-driver.md) for the fixes made relative to Vidoxide's driver. The mount can also be connected over **Bluetooth** (Aim tab: Connection > Bluetooth > Scan for mounts; [ADR 0015](adr/0015-ble-mount-transport.md)). Press the mount's pairing button and close the ZWO phone app first; the Pi needs `bluez` (a Recommends of the package). *Implemented but not yet verified on a real mount.* What we know about the link is in [ZWO mount Bluetooth protocol](zwo-ble-protocol.md).
 
 !!! note "Status"
     Unit-tested against a mock port; upstream's version was tested on AM3 and AM5. Verify on first use: model string, solar rate, guide direction (calibration discovers it).

@@ -15,7 +15,19 @@ function MountConnect() {
   const [driver, setDriver] = useSetting('mount.driver', 'zwo')
   const [device, setDevice] = useSetting('mount.device', '')
   const [ports, setPorts] = useState<{ path: string; label: string }[]>([])
+  const [transport, setTransport] = useSetting<'usb' | 'ble'>('mount.transport', 'usb')
+  const [bleAddr, setBleAddr] = useSetting('mount.ble_address', '')
+  const [found, setFound] = useState<{ address: string; name: string; rssi: number | null }[] | null>(null)
+  const [scanning, setScanning] = useState(false)
   const { err, busy, run } = useAction()
+  const scanBle = () => run(async () => {
+    setScanning(true)
+    try {
+      const d = await api<{ address: string; name: string; rssi: number | null }[]>('GET', '/mount/scan')
+      setFound(d)
+      if (d.length && !d.some((x) => x.address === bleAddr)) setBleAddr(d[0].address)
+    } finally { setScanning(false) }
+  })
   useEffect(() => { api<string[]>('GET', '/mount/drivers').then(setDrivers).catch(() => {}) }, [])
   const scan = () => api<{ path: string; label: string }[]>('GET', '/mount/ports').then((p) => { setPorts(p); if (!device) setDevice(p[0]?.path || '/dev/ttyACM0') }).catch(() => {})
   useEffect(() => { scan() }, [])
@@ -28,7 +40,34 @@ function MountConnect() {
           {(drivers.length ? drivers : ['zwo', 'simulator']).map((d) => <option key={d}>{d}</option>)}
         </select>
       </div>
-      {driver !== 'simulator' && (
+      {driver === 'zwo' && (
+        <div className="field">
+          <label htmlFor="mount-transport">Connection</label>
+          <select id="mount-transport" value={transport} onChange={(e) => setTransport(e.target.value as 'usb' | 'ble')}>
+            <option value="usb">USB cable</option>
+            <option value="ble">Bluetooth</option>
+          </select>
+        </div>
+      )}
+      {driver === 'zwo' && transport === 'ble' && (
+        <div className="field">
+          <div className="btnrow tight">
+            <button type="button" className="grow" disabled={busy || scanning} onClick={scanBle}>{scanning ? 'Scanning (about 6 s)...' : 'Scan for mounts'}</button>
+          </div>
+          {found && found.length > 0 && (
+            <ul className="list" aria-label="Mounts found">
+              {found.map((d) => (
+                <li key={d.address}>
+                  <label><input type="radio" name="ble-mount" checked={bleAddr === d.address} onChange={() => setBleAddr(d.address)} /> {d.name}{d.rssi != null ? ` (signal ${d.rssi} dBm)` : ''}</label>
+                </li>
+              ))}
+            </ul>
+          )}
+          {found && found.length === 0 && <div className="hint-text">No mount found.</div>}
+          <div className="hint-text">Press the mount's pairing button, close the ZWO phone app (the mount talks to one device at a time) and keep the mount within a few metres.</div>
+        </div>
+      )}
+      {driver !== 'simulator' && !(driver === 'zwo' && transport === 'ble') && (
         <div className="field">
           <label htmlFor="mount-device">Serial device</label>
           <div className="btnrow tight">
@@ -39,7 +78,7 @@ function MountConnect() {
           {ports.length === 0 && <div className="hint-text">No serial devices found: is the mount's USB cable plugged in and the mount powered?</div>}
         </div>
       )}
-      <button type="button" className="primary wide" disabled={busy} onClick={() => run(() => api('POST', '/mount/connect', { driver, device: driver === 'simulator' ? null : device }))}>Connect mount</button>
+      <button type="button" className="primary wide" disabled={busy || scanning || (driver === 'zwo' && transport === 'ble' && !bleAddr)} onClick={() => run(() => api('POST', '/mount/connect', driver === 'zwo' && transport === 'ble' ? { driver, transport: 'ble', device: bleAddr } : { driver, device: driver === 'simulator' ? null : device }))}>{busy && transport === 'ble' && driver === 'zwo' ? 'Connecting over Bluetooth...' : 'Connect mount'}</button>
     </Section>
   )
 }
@@ -191,6 +230,8 @@ type MountSt = NonNullable<Status['mount']>
 /** What the mount itself reports. The tracking switch above follows the same field, so pressing park or home on the mount flips it. */
 function MountState({ m }: { m: MountSt }) {
   const tags: { t: string; tone?: string }[] = [
+    ...(m.link ? [{ t: m.link === 'ble' ? 'Bluetooth' : 'USB', tone: m.link_up === false ? 'warn' : undefined }] : []),
+    ...(m.link_up === false ? [{ t: 'Link lost', tone: 'warn' }] : []),
     { t: m.tracking ? 'Tracking' : 'Stopped', tone: m.tracking ? 'ok' : 'warn' },
     ...(m.slewing ? [{ t: 'Slewing', tone: 'info' }] : []),
     ...(m.at_home ? [{ t: 'At home' }] : []),
