@@ -11,7 +11,7 @@ Work is tracked on the [GitHub project board](https://github.com/users/ddompe/pr
 
 ## Not verified yet: do these first on real hardware
 
-1. **Player One camera** (partly verified): enumeration, opening, controls and the udev rule are verified on an Apollo-M MINI. **Still to check:** the frame rate with the new continuous mode (the one-shot mode gave a constant 8.4 fps) and the RAM buffer under real high-fps load.
+1. **Player One camera** (partly verified): enumeration, opening, controls and the udev rule are verified on an Apollo-M MINI. Frame rate with continuous mode **measured: 57 fps 16-bit / 82 fps 8-bit** (was a constant 8.4 with one-shot capture). A 100-frame, 572 MB burst was captured through the RAM buffer with no frames lost and flushed to the SD card at ≈ 65 MB/s; camera auto-reconnect after a service restart works. **Still to check:** longer runs and scheduled bursts under real load, and the USB stick.
 2. **ZWO AM3**: model reply, `:TS#` solar rate, slew and guide directions, pulse behaviour, calibration result, guiding quality.
 3. **Tracking on real H-alpha images**: Otsu separation, limb fit with a partial disc and the Optics radius, anchor on a sunspot or filament.
 4. **USB drive**: selecting the FAT32 drive from the UI, writing, FAT32 rollover of SER files, behaviour when it is unplugged mid-capture.

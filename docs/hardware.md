@@ -10,7 +10,8 @@ Controls exposed: exposure (µs), gain, offset, 8/16-bit output. Colour cameras 
 
 !!! note "Status: verified on a real Apollo-M MINI (Raspberry Pi 5, USB 3)"
     Verified: USB vendor id `a0a0` (the shipped udev rule matches and grants access), enumeration, opening, controls (exposure 10 µs–2000 s, gain 0–550, offset 0–1000, 8/16-bit), 1944×1472 frames, pixel size 4.5 µm (used by the Optics panel), temperature readout.
-    **Frame rate:** the first version used the SDK's one-shot capture, which re-arms the camera for every frame and measured a constant **8.4 fps (9.8 fps at 8-bit) whatever the exposure**. The driver now uses the SDK's continuous mode (arm once, fetch frames). The new fps is **not yet measured**.
+    **SD card write speed** (Pi 5): ≈ 65 MB/s sustained (572 MB burst flushed in ≈ 8.7 s), i.e. ≈ 11 fps of full-frame 16-bit video; the RAM buffer is what makes faster bursts possible.
+    **Frame rate:** the first version used the SDK's one-shot capture, which re-arms the camera for every frame and measured a constant **8.4 fps (9.8 fps at 8-bit) whatever the exposure**. The driver now uses the SDK's continuous mode (arm once, fetch frames). **Measured after the change: 57 fps at 16-bit and 82 fps at 8-bit (1944×1472), constant from 10 ms down to 0.1 ms exposure**, about 7–8× faster, so the camera or USB link is now the limit.
 
 ## ZWO AM3 / AM5 mounts
 

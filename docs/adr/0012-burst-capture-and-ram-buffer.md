@@ -9,11 +9,12 @@ Some target cameras are very fast, while storage (USB sticks, the SD card) is sl
 
 ## Decision
 
-- **A bounded in-memory queue between capture and a writer thread** (`FrameSink` in `rustflare-capture`). The capture thread moves each frame into the queue (no copy) and goes on; the writer streams to disk. Queue capacity = the **RAM buffer** (default 512 MB, configurable in the UI, capped to 70 % of currently available memory), expressed in frames.
+- **A bounded in-memory queue between capture and a writer thread** (`FrameSink` in `rustflare-capture`). The capture thread moves each frame into the queue (no copy) and goes on; the writer streams to disk. Queue capacity = the **RAM buffer** (default 1 GB, configurable in the UI, capped to 70 % of currently available memory), expressed in frames.
 - **Back-pressure, not drops:** when the buffer is full, `push` blocks, so capture slows to disk speed but frames are never silently lost. If the disk fails, the writer keeps draining and discarding so the camera side cannot deadlock, and the error stops the capture.
 - **Bursts and schedules:** one capture job type covers a single sequence (one burst) and a schedule (`frames or seconds` per burst, `every N s` start-to-start, `bursts` count or until stopped). The camera loop keeps running between bursts, so live view, tracking and guiding continue. A burst starts on schedule even if the previous one is still being written; if capture cannot keep up, the next burst starts as soon as the previous finishes.
 - **Formats:** **SER** (one file per burst) or **PNG images** (one folder per burst, numbered frames). A `.json` sidecar per burst records settings and tracker/mount state.
 - **FAT32 rollover:** SER files split into `_part2`, `_part3`, … before the filesystem limit, so long bursts on FAT32 do not fail.
+- **"Saved" means durable:** at the end of each burst the writer calls `sync(2)`, so a finished burst is on the storage medium (safe to unplug a USB stick), and the throughput shown is the real write speed. (Found on a real Pi: before this, the readout showed ~1900 MB/s, which was only the speed of filling the OS write cache.)
 - **Flushing is visible and safe:** after the last burst the state is `flushing` ("writing N buffered frames to disk") and storage/camera changes are blocked until the writer is done; service stop flushes before exiting (`TimeoutStopSec=180`).
 - **Per-frame work is minimal:** analysis, statistics and tracking run at ~10 Hz regardless of camera rate; the recording path only moves the frame.
 

@@ -29,7 +29,7 @@ export function CapturePanel({ status }: { status: Status | null }) {
   const frameBytes = cam.width * cam.height * (cam.bits / 8)
   const nFrames = n(frames) ?? (n(seconds) && cam.fps ? n(seconds)! * cam.fps : 0)
   const burstBytes = nFrames * frameBytes
-  const bufFrames = frameBytes ? Math.floor(((c?.buffer_mb ?? 512) * 1048576) / frameBytes) : 0
+  const bufFrames = frameBytes ? Math.floor(((c?.buffer_mb ?? 1024) * 1048576) / frameBytes) : 0
   const burstSecs = cam.fps ? nFrames / cam.fps : 0
   const every_s = n(every) ?? 0
   const diskNeed = burstSecs && every_s ? burstBytes / Math.max(every_s, burstSecs) / 1e6 : 0 // average MB/s needed
@@ -94,11 +94,11 @@ export function CapturePanel({ status }: { status: Status | null }) {
           {active && <button className="danger" onClick={() => run(() => api('POST', '/capture/stop'))}>Stop</button>}
         </div>
       )}
-      {c && c.state === 'idle' && c.last_file && <div className="muted small">Last: <a href={`/files/${c.last_file}`}>{c.last_file}</a> ({c.phase})</div>}
+      {c && c.state === 'idle' && c.last_file && <div className="muted small">Last: <a href={`/files/${c.last_file}`}>{c.last_file}</a> ({c.phase}{c.disk_mb_s > 0 ? `, written at ${c.disk_mb_s.toFixed(0)} MB/s` : ''})</div>}
 
       <hr />
       <Row label="RAM buffer">
-        <input className="num" value={bufMb || String(c?.buffer_mb ?? 512)} onChange={(e) => setBufMb(e.target.value)} />
+        <input className="num" value={bufMb || String(c?.buffer_mb ?? 1024)} onChange={(e) => setBufMb(e.target.value)} />
         <span className="unit">MB</span>
         <button disabled={busy || !bufMb} onClick={() => run(async () => { await api('PUT', '/capture/buffer', { mb: parseFloat(bufMb) }); setBufMb('') })}>Set</button>
       </Row>

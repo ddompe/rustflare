@@ -19,7 +19,7 @@ Download from the **Captures** panel or `/files/<date>/<name>`.
 
 Frames are captured at camera speed into a **RAM buffer** and written to disk by a separate thread, so a slow USB stick does not limit the frame rate. **Record → Bursts every N seconds** schedules "100 frames every 30 s": *frames or seconds* per burst, *every* = start-to-start spacing, *bursts* = how many (blank = until you press Stop). Live view, tracking and guiding keep running between bursts.
 
-- Buffer size (default 512 MB) is set in the Capture panel and capped to 70 % of free memory. The panel shows whether a burst fits and the average disk load of the schedule; while recording it shows buffer fill and measured disk speed.
+- Buffer size (default 1 GB) is set in the Capture panel and capped to 70 % of free memory. The panel shows whether a burst fits and the average disk load of the schedule; while recording it shows buffer fill and measured disk speed.
 - If a burst is larger than the buffer, capture slows to disk speed once it is full. **Frames are not dropped.**
 - After the last burst the state is *flushing* until everything is on disk; storage changes and closing the camera wait for it. Stopping the service flushes first.
 - **Formats:** *SER* (one file per burst) or *PNG images* (a folder per burst, `frame_000001.png`, …). Each burst also gets a `.json` sidecar.

@@ -161,6 +161,8 @@ pub struct Engine {
     draining: Option<FrameSink>,
     buffer_mb: u64,
     buffer_cap: usize,
+    /// Real write speed of the most recent finished capture (MB/s), kept after the writer is gone.
+    last_disk_mb_s: f64,
     last_analysis: Instant,
     last_mean: f64,
     last_frame: Option<Frame>,
@@ -201,8 +203,9 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         calibration: None,
         job: Job::Idle,
         draining: None,
-        buffer_mb: crate::config::read(storage.config_file()).get("capture").and_then(|c| c["buffer_mb"].as_u64()).unwrap_or(512).clamp(64, 8192),
+        buffer_mb: crate::config::read(storage.config_file()).get("capture").and_then(|c| c["buffer_mb"].as_u64()).unwrap_or(1024).clamp(64, 8192),
         buffer_cap: 0,
+        last_disk_mb_s: 0.0,
         last_analysis: Instant::now() - Duration::from_secs(1),
         last_mean: 0.0,
         last_frame: None,
@@ -324,10 +327,10 @@ impl Engine {
         c.buffer_capacity = self.buffer_cap;
         c.buffer_mb = self.buffer_mb;
         c.ram_available_mb = mem_available_mb();
-        c.disk_mb_s = rate / 1e6;
+        c.disk_mb_s = if rate > 0.0 { rate / 1e6 } else { self.last_disk_mb_s };
         if matches!(self.job, Job::Idle) && self.draining.is_some() {
             c.state = "flushing";
-            c.phase = format!("writing {queued} buffered frames to disk");
+            c.phase = if queued > 0 { format!("writing {queued} buffered frames to disk") } else { "flushing to the storage medium (safe to unplug when done)".into() };
         }
         self.status.seq += 1;
         self.last_publish = Instant::now();
@@ -1067,6 +1070,9 @@ impl Engine {
             finished.extend(d.take_finished());
             err = d.error();
             done = d.queued() == 0 && d.is_finished();
+            if done && d.rate_bytes_per_s() > 0.0 {
+                self.last_disk_mb_s = d.rate_bytes_per_s() / 1e6;
+            }
         }
         if done {
             self.draining = None;

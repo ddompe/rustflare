@@ -120,7 +120,7 @@ impl Default for Status {
             mount: None,
             tracking: None,
             guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None },
-            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 512, ram_available_mb: None, disk_mb_s: 0.0 },
+            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0 },
             error: None,
             seq: 0,
         }

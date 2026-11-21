@@ -101,7 +101,12 @@ impl FrameSink {
                         Msg::End => {
                             if let Some(a) = active.take() {
                                 match a.finish() {
-                                    Ok(fin) => sh.finished.lock().unwrap().push(fin),
+                                    Ok((fin, rate)) => {
+                                        sh.finished.lock().unwrap().push(fin);
+                                        if rate > 0.0 {
+                                            sh.rate.store(rate as u64, Ordering::Relaxed);
+                                        }
+                                    }
                                     Err(e) => {
                                         let mut g = sh.error.lock().unwrap();
                                         g.get_or_insert(e);
@@ -168,11 +173,14 @@ struct Active {
     ser: Option<SerWriter>,
     frames: u32,
     parts: u32,
+    bytes: u64,
+    /// When the first frame of this burst reached the writer.
+    started: Option<Instant>,
 }
 
 impl Active {
     fn new(spec: BurstSpec) -> Active {
-        Active { spec, ser: None, frames: 0, parts: 0 }
+        Active { spec, ser: None, frames: 0, parts: 0, bytes: 0, started: None }
     }
 
     fn part_path(&self, part: u32) -> PathBuf {
@@ -185,6 +193,8 @@ impl Active {
     }
 
     fn write(&mut self, f: &Frame) -> Result<(), String> {
+        self.started.get_or_insert_with(Instant::now);
+        self.bytes += f.data.len() as u64;
         match self.spec.format {
             Format::Png => {
                 std::fs::create_dir_all(&self.spec.stem).map_err(|e| format!("{}: {e}", self.spec.stem.display()))?;
@@ -213,15 +223,20 @@ impl Active {
         Ok(())
     }
 
-    fn finish(mut self) -> Result<Finished, String> {
+    /// Finalizes the burst and forces it onto the storage medium: "saved" must mean safe to unplug, and
+    /// the returned throughput (bytes/s) is the *real* write speed, not the speed of filling the OS cache.
+    fn finish(mut self) -> Result<(Finished, f64), String> {
         if let Some(w) = self.ser.take() {
             w.finalize().map_err(|e| e.to_string())?;
         }
+        // SAFETY: sync(2) has no preconditions.
+        unsafe { libc::sync() };
+        let rate = self.started.map_or(0.0, |t| self.bytes as f64 / t.elapsed().as_secs_f64().max(1e-3));
         let path = match self.spec.format {
             Format::Ser => self.part_path(1),
             Format::Png => self.spec.stem.clone(),
         };
-        Ok(Finished { path, frames: self.frames, parts: self.parts.max(1) })
+        Ok((Finished { path, frames: self.frames, parts: self.parts.max(1) }, rate))
     }
 }
 
