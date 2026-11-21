@@ -145,12 +145,56 @@ impl FlatField {
     }
 }
 
+/// Dark-frame correction: subtracts the master dark (hot pixels, amplifier glow, offset) from each frame, clamped at zero.
+pub struct DarkFrame {
+    pub width: u32,
+    pub height: u32,
+    data: Vec<u16>,
+}
+
+impl DarkFrame {
+    pub fn from_master(m: &Frame) -> Result<DarkFrame> {
+        if m.format != PixelFormat::Mono16 {
+            return Err(Error::Invalid("master dark must be 16-bit".into()));
+        }
+        Ok(DarkFrame { width: m.width, height: m.height, data: m.data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect() })
+    }
+
+    pub fn matches(&self, f: &Frame) -> bool {
+        (f.width, f.height) == (self.width, self.height)
+    }
+
+    /// Corrects `f` in place. A Mono8 frame is compared with the dark scaled down by 257.
+    pub fn apply(&self, f: &mut Frame) {
+        match f.format {
+            PixelFormat::Mono16 => {
+                for (c, d) in f.data.chunks_exact_mut(2).zip(&self.data) {
+                    let v = u16::from_le_bytes([c[0], c[1]]).saturating_sub(*d);
+                    c.copy_from_slice(&v.to_le_bytes());
+                }
+            }
+            PixelFormat::Mono8 => {
+                for (p, d) in f.data.iter_mut().zip(&self.data) {
+                    *p = p.saturating_sub((*d / 257) as u8);
+                }
+            }
+        }
+    }
+}
+
 /// What the preview applies, shared between the engine (sets it) and the preview thread (reads it each frame).
 #[derive(Default)]
 pub struct FlatSetting {
     pub field: Option<std::sync::Arc<FlatField>>,
     pub enabled: bool,
     pub name: Option<String>,
+    /// Master dark, applied before the flat.
+    pub dark: Option<std::sync::Arc<DarkFrame>>,
+    pub dark_enabled: bool,
+    pub dark_name: Option<String>,
+    /// Exposure (us) and gain the dark was taken at; a dark only helps at the same settings.
+    pub dark_exposure_us: Option<f64>,
+    pub dark_gain: Option<f64>,
 }
 
 pub type SharedFlat = std::sync::Arc<std::sync::Mutex<FlatSetting>>;
@@ -211,5 +255,14 @@ mod tests {
         let mut b = Frame::new(4, 1, PixelFormat::Mono8, vec![255, 255, 255, 255]);
         ff.apply(&mut b);
         assert!(b.data.iter().all(|v| *v <= 255));
+    }
+
+    #[test]
+    fn dark_subtracts_and_clamps() {
+        let m = Frame::new(3, 1, PixelFormat::Mono16, [100u16, 50, 0].iter().flat_map(|v| v.to_le_bytes()).collect());
+        let d = DarkFrame::from_master(&m).unwrap();
+        let mut img = Frame::new(3, 1, PixelFormat::Mono16, [150u16, 20, 7].iter().flat_map(|v| v.to_le_bytes()).collect());
+        d.apply(&mut img);
+        assert_eq!((img.pixel(0, 0), img.pixel(1, 0), img.pixel(2, 0)), (50, 0, 7));
     }
 }

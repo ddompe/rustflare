@@ -19,6 +19,11 @@ Everything below was built and tested on the simulators; each item needs the rea
 | #59 | Guider on a real sky | Calibrate, *Hold position* for 20+ minutes; no oscillation, few pulses per minute; try the Track > *Guiding settings* |
 | #3 | Tracking on real H-alpha | limb tracker finds the partial disc; radius matches Optics |
 
+| new | Darks | Cap on, Camera > Darks > *Capture darks*: hot pixels disappear from the live view, overlay *Dark: applied*; change the exposure and it says *mismatch* |
+| new | FITS and drop policy | Record 100 frames as FITS (open one in a viewer: image upright, EXPTIME and GAIN present); on the USB stick at full rate try *Drop frames* and check the dropped count |
+| new | Buffer reuse | With the phone tab closed and then open, `top -H -p $(pgrep -x rustflare-serve)`: compare CPU with the ~55 % measured before (docs/performance.md) |
+| #72 | HTTPS on the iPhone | The Pi already serves HTTPS: install and trust the CA (docs/https.md), open https://astropi.local:8443, Home Screen, location button |
+
 ## M2: UI
 
 | Issue | Check |

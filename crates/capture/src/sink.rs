@@ -5,7 +5,7 @@
 //! dropped); a camera faster than the disk therefore runs at disk speed once the buffer is full.
 //! On a write error the writer keeps draining (and discarding) so the capture side can never deadlock.
 
-use crate::{write_png, SerWriter};
+use crate::{write_fits, write_png, FitsMeta, SerWriter};
 use rustflare_core::Frame;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -20,6 +20,8 @@ pub enum Format {
     Ser,
     /// A folder of numbered 8/16-bit PNG files per burst.
     Png,
+    /// A folder of numbered FITS files per burst (header: time, exposure, gain, instrument).
+    Fits,
 }
 
 #[derive(Clone, Debug)]
@@ -30,6 +32,8 @@ pub struct BurstSpec {
     pub instrument: String,
     /// Largest file the filesystem can hold (FAT32: 4 GiB − 1); SER files roll over before reaching it.
     pub max_file_bytes: Option<u64>,
+    /// FITS header values (only used for `Format::Fits`).
+    pub fits_meta: FitsMeta,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +56,8 @@ struct Shared {
     queued: AtomicUsize,
     written_frames: AtomicU64,
     written_bytes: AtomicU64,
+    /// Frames thrown away because the RAM buffer was full and the policy is to drop (never counted as written).
+    dropped: AtomicU64,
     /// Smoothed disk throughput in bytes/s, as measured around each frame write.
     rate: AtomicU64,
     error: Mutex<Option<String>>,
@@ -136,6 +142,24 @@ impl FrameSink {
         true
     }
 
+    /// Queues a frame without ever blocking: when the RAM buffer is full the frame is dropped and counted.
+    /// Returns `Some(true)` if queued, `Some(false)` if dropped, `None` if the writer has died.
+    pub fn try_push(&self, frame: Frame) -> Option<bool> {
+        self.shared.queued.fetch_add(1, Ordering::Relaxed);
+        match self.tx.try_send(Msg::Frame(frame)) {
+            Ok(()) => Some(true),
+            Err(std::sync::mpsc::TrySendError::Full(_)) => {
+                self.shared.queued.fetch_sub(1, Ordering::Relaxed);
+                self.shared.dropped.fetch_add(1, Ordering::Relaxed);
+                Some(false)
+            }
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                self.shared.queued.fetch_sub(1, Ordering::Relaxed);
+                None
+            }
+        }
+    }
+
     /// Ends the current burst; its file is finalized after the queued frames are written.
     pub fn end(&self) {
         let _ = self.tx.send(Msg::End);
@@ -147,6 +171,7 @@ impl FrameSink {
     }
 
     pub fn queued(&self) -> usize { self.shared.queued.load(Ordering::Relaxed) }
+    pub fn dropped(&self) -> u64 { self.shared.dropped.load(Ordering::Relaxed) }
     pub fn written_frames(&self) -> u64 { self.shared.written_frames.load(Ordering::Relaxed) }
     pub fn written_bytes(&self) -> u64 { self.shared.written_bytes.load(Ordering::Relaxed) }
     pub fn rate_bytes_per_s(&self) -> f64 { self.shared.rate.load(Ordering::Relaxed) as f64 }
@@ -220,6 +245,11 @@ impl Active {
                 let p = self.spec.stem.join(format!("frame_{:06}.png", self.frames + 1));
                 write_png(&p, f).map_err(|e| e.to_string())?;
             }
+            Format::Fits => {
+                std::fs::create_dir_all(&self.spec.stem).map_err(|e| format!("{}: {e}", self.spec.stem.display()))?;
+                let p = self.spec.stem.join(format!("frame_{:06}.fits", self.frames + 1));
+                write_fits(&p, f, &self.spec.fits_meta).map_err(|e| e.to_string())?;
+            }
             Format::Ser => {
                 if let (Some(w), Some(max)) = (self.ser.as_ref(), self.spec.max_file_bytes) {
                     if w.projected_size_with_next() > max {
@@ -249,14 +279,14 @@ impl Active {
             w.finalize().map_err(|e| e.to_string())?;
         }
         let dir = match self.spec.format {
-            Format::Png => self.spec.stem.clone(),
+            Format::Png | Format::Fits => self.spec.stem.clone(),
             Format::Ser => self.spec.stem.parent().map(|p| p.to_path_buf()).unwrap_or_default(),
         };
         flush_filesystem(&dir);
         let rate = self.started.map_or(0.0, |t| self.bytes as f64 / t.elapsed().as_secs_f64().max(1e-3));
         let path = match self.spec.format {
             Format::Ser => self.part_path(1),
-            Format::Png => self.spec.stem.clone(),
+            Format::Png | Format::Fits => self.spec.stem.clone(),
         };
         Ok((Finished { path, frames: self.frames, parts: self.parts.max(1) }, rate))
     }
@@ -290,7 +320,7 @@ mod tests {
     fn buffers_then_writes_a_ser_burst() {
         let dir = tmp("ser");
         let sink = FrameSink::new(8);
-        sink.begin(BurstSpec { stem: dir.join("b1"), format: Format::Ser, instrument: "cam".into(), max_file_bytes: None });
+        sink.begin(BurstSpec { stem: dir.join("b1"), format: Format::Ser, instrument: "cam".into(), max_file_bytes: None, fits_meta: Default::default() });
         for _ in 0..20 { assert!(sink.push(frame())); } // more than the 8-frame buffer: push blocks, never drops
         sink.end();
         wait_done(&sink);
@@ -310,7 +340,7 @@ mod tests {
         let sink = FrameSink::new(4);
         // limit fits header + 3 frames per file
         let max = 178 + 3 * (32 + 8);
-        sink.begin(BurstSpec { stem: dir.join("b"), format: Format::Ser, instrument: "cam".into(), max_file_bytes: Some(max) });
+        sink.begin(BurstSpec { stem: dir.join("b"), format: Format::Ser, instrument: "cam".into(), max_file_bytes: Some(max), fits_meta: Default::default() });
         for _ in 0..8 { sink.push(frame()); }
         sink.end();
         wait_done(&sink);
@@ -326,7 +356,7 @@ mod tests {
     fn png_burst_makes_a_folder_of_numbered_files() {
         let dir = tmp("png");
         let sink = FrameSink::new(4);
-        sink.begin(BurstSpec { stem: dir.join("burst"), format: Format::Png, instrument: "cam".into(), max_file_bytes: None });
+        sink.begin(BurstSpec { stem: dir.join("burst"), format: Format::Png, instrument: "cam".into(), max_file_bytes: None, fits_meta: Default::default() });
         for _ in 0..5 { sink.push(frame()); }
         sink.end();
         wait_done(&sink);
@@ -342,11 +372,49 @@ mod tests {
         let dir = tmp("err");
         let blocker = dir.join("file");
         std::fs::write(&blocker, b"x").unwrap();
-        sink.begin(BurstSpec { stem: blocker.join("sub/b"), format: Format::Ser, instrument: "cam".into(), max_file_bytes: None });
+        sink.begin(BurstSpec { stem: blocker.join("sub/b"), format: Format::Ser, instrument: "cam".into(), max_file_bytes: None, fits_meta: Default::default() });
         for _ in 0..50 { sink.push(frame()); } // would hang forever if the writer stopped consuming
         sink.end();
         for _ in 0..200 { if sink.queued() == 0 { break; } std::thread::sleep(Duration::from_millis(10)); }
         assert!(sink.error().is_some());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn fits_burst_writes_numbered_files() {
+        let dir = std::env::temp_dir().join(format!("rf-fits-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let sink = FrameSink::new(4);
+        sink.begin(BurstSpec { stem: dir.join("b"), format: Format::Fits, instrument: "cam".into(), max_file_bytes: None, fits_meta: FitsMeta { exposure_us: Some(1000.0), ..Default::default() } });
+        for _ in 0..3 {
+            assert!(sink.push(Frame::new(4, 4, rustflare_core::PixelFormat::Mono16, vec![0; 32])));
+        }
+        sink.end();
+        sink.close();
+        while !sink.is_finished() { std::thread::sleep(std::time::Duration::from_millis(5)); }
+        assert!(sink.error().is_none(), "{:?}", sink.error());
+        let n = std::fs::read_dir(dir.join("b")).unwrap().filter(|e| e.as_ref().unwrap().path().extension().is_some_and(|x| x == "fits")).count();
+        assert_eq!(n, 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn try_push_drops_instead_of_blocking_when_full() {
+        let dir = std::env::temp_dir().join(format!("rf-drop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // no Begin message: the writer discards frames but a tiny queue still fills while it is parked
+        let sink = FrameSink::new(2);
+        sink.begin(BurstSpec { stem: dir.join("b"), format: Format::Ser, instrument: "cam".into(), max_file_bytes: None, fits_meta: Default::default() });
+        let big = || Frame::new(512, 512, rustflare_core::PixelFormat::Mono16, vec![0; 512 * 512 * 2]);
+        let mut dropped = 0;
+        for _ in 0..200 {
+            if sink.try_push(big()) == Some(false) { dropped += 1; }
+        }
+        assert_eq!(sink.dropped(), dropped);
+        sink.end();
+        sink.close();
+        while !sink.is_finished() { std::thread::sleep(std::time::Duration::from_millis(5)); }
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(dropped > 0 || sink.written_frames() == 200, "either some were dropped or the writer kept up");
     }
 }

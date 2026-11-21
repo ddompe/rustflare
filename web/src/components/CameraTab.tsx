@@ -5,6 +5,7 @@ import { useSetting } from '../settings'
 import { Histogram } from './Histogram'
 import { DeviceCard } from './DeviceCard'
 import { Flats } from './Flats'
+import { Darks } from './Darks'
 import { CameraCatalog, useDatasheet } from '../datasheet'
 
 const fmt = (c: Control, v: number) => {
@@ -190,6 +191,9 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
       )}
       <Disclosure title="Flats" summary={status?.flats?.applied ? 'applied' : 'not applied'}>
         <Flats status={status} />
+      </Disclosure>
+      <Disclosure title="Darks" summary={status?.darks?.applied ? 'applied' : 'not applied'}>
+        <Darks status={status} />
       </Disclosure>
       <DeviceCard kind="camera" data={sheet} />
       <div className="btnrow end">

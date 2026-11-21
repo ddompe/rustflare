@@ -17,7 +17,7 @@ Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi nex
 
 **Camera** (Player One, ZWO ASI on the roadmap)
 - Exposure, gain, offset and 8/16-bit with a logarithmic exposure slider, histogram with clipping warning, sensor temperature, device datasheet card.
-- **Flats**: guided workflow (cap on, check level, capture), automatic exposure to about 50 %, master flat applied to the live view (recordings stay raw) and remembered across restarts.
+- **Darks** (cap on, same exposure and gain) and **flats**: guided workflow (cap on, check level, capture), automatic exposure to about 50 %, master flat applied to the live view (recordings stay raw) and remembered across restarts.
 
 **Tracking and guiding**
 - Follows the **full disc**, a **partial disc** (fitted from the visible limb, with the expected radius from your optics and a measured fallback) or a **surface feature** such as a sunspot.
@@ -29,7 +29,7 @@ Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi nex
 - **Prominence view**: a software coronagraph that blacks out the disc so you can judge the exposure for prominences. **Prominence pair** capture saves a disc frame, a longer exposure and their composite.
 
 **Recording**
-- **Single frames, sequences and scheduled bursts** ("100 frames every 30 s") as SER videos or PNG images, through a **RAM buffer** so a slow disk never limits a fast camera.
+- **Single frames, sequences and scheduled bursts** ("100 frames every 30 s") as **SER** videos, **PNG** or **FITS** files, through a **RAM buffer** so a slow disk never limits a fast camera; choose to wait for the disk or **drop frames** when the buffer is full.
 - **USB drive** selection with free-space and FAT32 safeguards (4 GB files continue in numbered parts) and a **safe eject** button.
 - A full-screen **file manager**: browse by day, check recordings (frame count, measured fps, brightness; flags *mostly dark* and *incomplete*), download, delete in bulk.
 

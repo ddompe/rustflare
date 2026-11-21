@@ -173,6 +173,7 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
         <div><b>Buffer</b> {c.state === 'flushing' && <span className="warn-text">flushing</span>}</div>
         <progress max={c.buffer_capacity || 1} value={c.buffer_queued} className="buf" aria-label="RAM buffer in use" />
         <div className="muted">{c.buffer_queued}/{c.buffer_capacity} frames</div>
+        {(c.dropped ?? 0) > 0 && <div className="bad-text"><b>{c.dropped}</b> dropped</div>}
         <div><b className="cv">{c.disk_mb_s.toFixed(0)}</b> <span className="cl">MB/s to disk</span></div>
       </Widget>,
     )
@@ -224,6 +225,7 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
           {cam.temperature_c != null && <><dt>Sensor</dt><dd><b>{cam.temperature_c.toFixed(1)}</b> °C</dd></>}
           {mountText && <><dt>Mount</dt><dd><b>{mountText}</b></dd></>}
           <dt>Flat</dt><dd className={flats ? 'ok' : 'muted'}>{flats ? 'applied' : 'none'}</dd>
+          <dt>Dark</dt><dd className={status.darks?.applied ? 'ok' : 'muted'}>{status.darks?.applied ? (status.darks.matches_camera ? 'applied' : 'mismatch') : 'none'}</dd>
         </dl>
       </Widget>,
     )

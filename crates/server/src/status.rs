@@ -69,6 +69,8 @@ pub struct CaptureStatus {
     pub bursts_total: Option<u32>,
     pub next_in_s: Option<f64>,
     /// RAM buffer: frames queued for the disk / capacity, configured size, memory available, disk speed.
+    /// Frames dropped because the RAM buffer was full (only with the "drop" policy; 0 otherwise).
+    pub dropped: u64,
     pub buffer_queued: usize,
     pub buffer_capacity: usize,
     pub buffer_mb: u64,
@@ -160,6 +162,17 @@ pub struct GuideParamsStatus {
 }
 
 #[derive(Clone, Serialize)]
+pub struct DarksStatus {
+    pub available: bool,
+    pub applied: bool,
+    pub name: Option<String>,
+    pub exposure_us: Option<f64>,
+    pub gain: Option<f64>,
+    /// The camera's current exposure and gain equal the ones the dark was taken at (otherwise it does not help).
+    pub matches_camera: bool,
+}
+
+#[derive(Clone, Serialize)]
 pub struct CoronagraphStatus {
     pub enabled: bool,
     pub scale: f64,
@@ -168,6 +181,7 @@ pub struct CoronagraphStatus {
 #[derive(Clone, Serialize)]
 pub struct Status {
     pub coronagraph: CoronagraphStatus,
+    pub darks: DarksStatus,
     pub guide_params: GuideParamsStatus,
     pub flats: FlatsStatus,
     pub site: Option<SiteStatus>,
@@ -191,6 +205,7 @@ pub struct Status {
 impl Default for Status {
     fn default() -> Self {
         Status {
+            darks: DarksStatus { available: false, applied: false, name: None, exposure_us: None, gain: None, matches_camera: false },
             coronagraph: CoronagraphStatus { enabled: false, scale: 1.03 },
             guide_params: GuideParamsStatus { window_s: 10.0, deadband_px: 3.0, gain: 0.7, speed: 0.2, fast_speed: 0.8, fast_above_px: 20.0 },
             flats: FlatsStatus { available: false, applied: false, name: None },
@@ -205,7 +220,7 @@ impl Default for Status {
             mount: None,
             tracking: None,
             guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None },
-            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0 },
+            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0 },
             error: None,
             seq: 0,
         }

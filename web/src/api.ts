@@ -17,6 +17,7 @@ export interface Status {
   goto?: { target: string; phase: string } | null
   guide_params?: { window_s: number; deadband_px: number; gain: number; speed: number; fast_speed: number; fast_above_px: number }
   coronagraph?: { enabled: boolean; scale: number }
+  darks?: { available: boolean; applied: boolean; name: string | null; exposure_us: number | null; gain: number | null; matches_camera: boolean }
   flats?: { applied: boolean; available: boolean; name: string | null }
   startup: Startup
   optics: Optics
@@ -30,7 +31,7 @@ export interface Status {
     state: 'idle' | 'single' | 'sequence' | 'bursts' | 'flats' | 'flushing'
     phase: string; done: number; total: number | null; file: string | null; last_file: string | null
     burst: number | null; bursts_total: number | null; next_in_s: number | null
-    buffer_queued: number; buffer_capacity: number; buffer_mb: number; ram_available_mb: number | null; disk_mb_s: number
+    dropped?: number; buffer_queued: number; buffer_capacity: number; buffer_mb: number; ram_available_mb: number | null; disk_mb_s: number
   }
   error: string | null
   seq: number

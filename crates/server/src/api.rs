@@ -68,6 +68,8 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/flats/applied", put(flats_applied))
         .route("/api/guiding/params", put(guide_params))
         .route("/api/coronagraph", put(coronagraph))
+        .route("/api/capture/darks", post(capture_darks))
+        .route("/api/darks/applied", put(darks_applied))
         .route("/api/datasheet/:kind", get(datasheet))
         .route("/api/files/stats", get(file_stats))
         .route("/api/files/delete", post(file_delete))
@@ -192,21 +194,21 @@ async fn guiding_start(s: State<AppState>, body: Option<Json<GuideStart>>) -> Re
 }
 
 #[derive(Deserialize)]
-struct Single { name: Option<String> }
+struct Single { name: Option<String>, format: Option<String> }
 async fn capture_single(s: State<AppState>, Json(b): Json<Single>) -> Res {
-    run(s, Command::CaptureSingle { name: b.name }).await
+    run(s, Command::CaptureSingle { name: b.name, format: b.format }).await
 }
 
 #[derive(Deserialize)]
-struct Sequence { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, format: Option<String> }
+struct Sequence { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, format: Option<String>, on_full: Option<String> }
 async fn capture_sequence(s: State<AppState>, Json(b): Json<Sequence>) -> Res {
-    run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: None, bursts: None, format: b.format }).await
+    run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: None, bursts: None, format: b.format, on_full: b.on_full }).await
 }
 
 #[derive(Deserialize)]
-struct Bursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: f64, bursts: Option<u32>, format: Option<String> }
+struct Bursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: f64, bursts: Option<u32>, format: Option<String>, on_full: Option<String> }
 async fn capture_bursts(s: State<AppState>, Json(b): Json<Bursts>) -> Res {
-    run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: Some(b.interval_s), bursts: b.bursts, format: b.format }).await
+    run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: Some(b.interval_s), bursts: b.bursts, format: b.format, on_full: b.on_full }).await
 }
 
 #[derive(Deserialize)]
@@ -366,6 +368,15 @@ async fn datasheet(State(st): State<AppState>, axum::extract::Path(kind): axum::
 struct GuideParamsBody { window_s: f64, deadband_px: f64, gain: f64, speed: f64, fast_speed: f64, fast_above_px: f64 }
 async fn guide_params(s: State<AppState>, Json(b): Json<GuideParamsBody>) -> Res {
     run(s, Command::SetGuideParams { window_s: b.window_s, deadband_px: b.deadband_px, gain: b.gain, speed: b.speed, fast_speed: b.fast_speed, fast_above_px: b.fast_above_px }).await
+}
+
+#[derive(Deserialize)]
+struct DarksBody { name: Option<String>, frames: Option<u32> }
+async fn capture_darks(s: State<AppState>, Json(b): Json<DarksBody>) -> Res {
+    run(s, Command::CaptureDarks { name: b.name, frames: b.frames.unwrap_or(30) }).await
+}
+async fn darks_applied(s: State<AppState>, Json(b): Json<FlatApplied>) -> Res {
+    run(s, Command::SetDarkApplied { enabled: b.enabled }).await
 }
 
 #[derive(Deserialize)]

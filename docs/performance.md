@@ -18,6 +18,8 @@ Total about 60 % of one core out of four: plenty of headroom while recording (th
 
 - **Preview only while someone watches.** The engine counts live viewers (the MJPEG stream) and `/snapshot.jpg` requests; with nobody watching it skips the frame copy, the downscale and the JPEG encode. An unattended recording therefore pays none of the preview cost. On the simulator the process went from 15 % to 11 % of a core; the Pi figure is in the table above for the viewer case.
 
+- **Buffer reuse**: the server sets glibc's `M_MMAP_THRESHOLD` to 128 MB, so multi-megabyte frame buffers stay on the heap and are reused instead of being mmapped, page-faulted and unmapped for every frame. A Pi measurement before and after is on the hardware checklist (close the phone tab first).
+
 ## Not done yet (issue #67)
 
 - A Pi 5 specific build (`-C target-cpu=cortex-a76`): safe only if Pi 4 and older are not supported; keep the generic build as the default and offer a Pi 5 flavour if profiling on the Pi shows a win.

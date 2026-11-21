@@ -41,6 +41,13 @@ struct Args {
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // Frames are several MB. With glibc's defaults each one is a fresh mmap that is page-faulted in and unmapped again
+    // (hundreds of MB/s of kernel work). Keeping big blocks on the heap lets freed frame buffers be reused as they are.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::mallopt(libc::M_MMAP_THRESHOLD, 128 * 1024 * 1024);
+        libc::mallopt(libc::M_TRIM_THRESHOLD, 512 * 1024 * 1024);
+    }
     let args = Args::parse();
     if !args.web_dir.join("index.html").exists() {
         log::warn!("no web UI at {} (build it with `npm run build` in web/); the API still works", args.web_dir.display());

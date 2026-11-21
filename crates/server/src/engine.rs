@@ -81,6 +81,9 @@ pub enum Command {
     SetSite { latitude: f64, longitude: f64 },
     /// Disc frame plus a `factor` times longer exposure for prominences, and their composite.
     CaptureProminence { name: Option<String>, factor: f64 },
+    /// Master dark from `frames` frames at the current exposure and gain.
+    CaptureDarks { name: Option<String>, frames: u32 },
+    SetDarkApplied { enabled: bool },
     /// Prominence view: mask the Sun's disc in the live view (display only).
     SetCoronagraph { enabled: bool, scale: f64 },
     /// Guiding tuning; takes effect the next time guiding starts.
@@ -93,10 +96,10 @@ pub enum Command {
     /// `center`: steer the target to the frame centre instead of holding the current position.
     StartGuiding { center: bool },
     StopGuiding,
-    CaptureSingle { name: Option<String> },
+    CaptureSingle { name: Option<String>, format: Option<String> },
     /// One burst (`interval_s` = None) or a schedule of bursts, recorded through the RAM buffer.
     /// `frames` / `seconds`: when a burst ends. `interval_s`: start-to-start spacing. `bursts`: None = until stopped.
-    CaptureBursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String> },
+    CaptureBursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String> },
     SetBuffer { mb: u64 },
     /// Reconnect the last camera and mount automatically at startup (and after a camera error).
     SetStartup { enabled: bool },
@@ -154,6 +157,8 @@ struct CaptureJob {
     max_file: Option<u64>,
     last_check: Instant,
     sink: FrameSink,
+    /// RAM buffer full: drop the new frame (keeps the camera at full speed) instead of waiting for the disk.
+    drop_when_full: bool,
 }
 
 enum FlatPhase {
@@ -172,10 +177,21 @@ struct Flats {
 
 enum Job {
     Idle,
-    Single { stem: PathBuf },
+    Single { stem: PathBuf, fits: bool },
     Capture(Box<CaptureJob>),
     Flats(Box<Flats>),
     Prominence(Box<Prominence>),
+    Darks(Box<Darks>),
+}
+
+/// Dark-frame capture: N frames at the current exposure and gain (cap on), averaged into a master dark.
+struct Darks {
+    stem: PathBuf,
+    frames: u32,
+    acc: FlatAccumulator,
+    exposure_us: f64,
+    gain: f64,
+    skip: u32,
 }
 
 /// Two-exposure prominence capture: the disc at the current exposure, then a much longer one.
@@ -268,6 +284,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
     }
     let flat: rustflare_capture::SharedFlat = Default::default();
     load_saved_flat(&storage, &flat);
+    load_saved_dark(&storage, &flat);
     let engine = Engine {
         drivers: cams::drivers(sky.clone()),
         sky,
@@ -361,6 +378,25 @@ fn load_saved_flat(storage: &Storage, flat: &rustflare_capture::SharedFlat) {
             log::info!("flat: loaded {rel} (enabled: {enabled})");
         }
         Err(e) => log::warn!("flat: cannot load {rel}: {e}"),
+    }
+}
+
+/// Restores the master dark (config key `dark`), same idea as the flat.
+fn load_saved_dark(storage: &Storage, flat: &rustflare_capture::SharedFlat) {
+    let cfg = crate::config::read(storage.config_file());
+    let Some(d) = cfg.get("dark") else { return };
+    let Some(rel) = d.get("master").and_then(|v| v.as_str()) else { return };
+    match crate::files::resolve(&storage.dir(), rel).and_then(|p| read_png(&p).map_err(|e| e.to_string())).and_then(|m| rustflare_capture::DarkFrame::from_master(&m).map_err(|e| e.to_string())) {
+        Ok(df) => {
+            let mut s = flat.lock().unwrap();
+            s.dark = Some(std::sync::Arc::new(df));
+            s.dark_enabled = d.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+            s.dark_name = Some(rel.to_string());
+            s.dark_exposure_us = d.get("exposure_us").and_then(|v| v.as_f64());
+            s.dark_gain = d.get("gain").and_then(|v| v.as_f64());
+            log::info!("dark: loaded {rel}");
+        }
+        Err(e) => log::warn!("dark: cannot load {rel}: {e}"),
     }
 }
 
@@ -535,6 +571,10 @@ impl Engine {
         self.refresh_ntp(false);
         {
             let s = self.flat.lock().unwrap();
+            let cur_exp = self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == CTRL_EXPOSURE_US)).map(|c| c.value);
+            let cur_gain = self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == "gain")).map(|c| c.value);
+            let close = |a: Option<f64>, b: Option<f64>| match (a, b) { (Some(a), Some(b)) => (a - b).abs() <= 0.01 * a.abs().max(b.abs()).max(1.0), _ => false };
+            self.status.darks = DarksStatus { available: s.dark.is_some(), applied: s.dark_enabled && s.dark.is_some(), name: s.dark_name.clone(), exposure_us: s.dark_exposure_us, gain: s.dark_gain, matches_camera: close(s.dark_exposure_us, cur_exp) && close(s.dark_gain, cur_gain) };
             self.status.flats = FlatsStatus { available: s.field.is_some(), applied: s.enabled && s.field.is_some(), name: s.name.clone() };
         }
         let gp = self.guide_params;
@@ -816,6 +856,35 @@ impl Engine {
                 self.stop_guiding_quietly();
                 Ok(json!({}))
             }
+            Command::CaptureDarks { name, frames } => {
+                self.require_capture_ready()?;
+                if !(1..=500).contains(&frames) {
+                    return Err("dark frame count must be 1 to 500".into());
+                }
+                let cam = self.status.camera.as_ref().ok_or("no camera open")?;
+                if cam.width == 0 {
+                    return Err("no frame received yet".into());
+                }
+                let fmt = if cam.bits > 8 { rustflare_core::PixelFormat::Mono16 } else { rustflare_core::PixelFormat::Mono8 };
+                let gain = cam.controls.iter().find(|c| c.id == "gain").map(|c| c.value).unwrap_or(0.0);
+                let (w, h) = (cam.width, cam.height);
+                let exposure_us = self.exposure();
+                self.stop_guiding_quietly();
+                self.job = Job::Darks(Box::new(Darks { stem: self.new_stem("dark", name.as_deref()), frames, acc: FlatAccumulator::new(w, h, fmt), exposure_us, gain, skip: 2 }));
+                self.set_capture("flats", "dark frames: keep the cap on", Some(frames));
+                Ok(json!({}))
+            }
+            Command::SetDarkApplied { enabled } => {
+                {
+                    let mut s = self.flat.lock().unwrap();
+                    if enabled && s.dark.is_none() {
+                        return Err("no master dark yet: capture darks first (Camera tab)".into());
+                    }
+                    s.dark_enabled = enabled;
+                }
+                self.save_flat_choice();
+                Ok(json!({}))
+            }
             Command::CaptureProminence { name, factor } => {
                 self.require_capture_ready()?;
                 if !(2.0..=64.0).contains(&factor) {
@@ -829,13 +898,18 @@ impl Engine {
                 self.set_capture("single", "disc exposure", None);
                 Ok(json!({}))
             }
-            Command::CaptureSingle { name } => {
+            Command::CaptureSingle { name, format } => {
                 self.require_capture_ready()?;
-                self.job = Job::Single { stem: self.new_stem("frame", name.as_deref()) };
+                let fits = match format.as_deref() {
+                    None | Some("png") => false,
+                    Some("fits") => true,
+                    Some(o) => return Err(format!("unknown format {o} (use png or fits)")),
+                };
+                self.job = Job::Single { stem: self.new_stem("frame", name.as_deref()), fits };
                 self.set_capture("single", "waiting for frame", None);
                 Ok(json!({}))
             }
-            Command::CaptureBursts { name, frames, seconds, interval_s, bursts, format } => {
+            Command::CaptureBursts { name, frames, seconds, interval_s, bursts, format, on_full } => {
                 self.require_capture_ready()?;
                 if frames.is_none() && seconds.is_none() {
                     return Err("give a frame count and/or a duration per burst".into());
@@ -855,7 +929,13 @@ impl Engine {
                 let format = match format.as_deref() {
                     None | Some("ser") => Format::Ser,
                     Some("png") => Format::Png,
-                    Some(o) => return Err(format!("unknown format {o} (use ser or png)")),
+                    Some("fits") => Format::Fits,
+                    Some(o) => return Err(format!("unknown format {o} (use ser, png or fits)")),
+                };
+                let drop_when_full = match on_full.as_deref() {
+                    None | Some("wait") => false,
+                    Some("drop") => true,
+                    Some(o) => return Err(format!("unknown buffer policy {o} (use wait or drop)")),
                 };
                 let cam = self.status.camera.as_ref().ok_or("no camera open")?;
                 if cam.width == 0 {
@@ -878,7 +958,9 @@ impl Engine {
                     max_file: self.storage.info().max_file_bytes,
                     last_check: Instant::now(),
                     sink: FrameSink::new(cap),
+                    drop_when_full,
                 }));
+                self.status.capture.dropped = 0;
                 self.set_capture(if interval.is_some() { "bursts" } else { "sequence" }, "starting", frames);
                 self.status.capture.bursts_total = total_bursts;
                 Ok(json!({ "buffer_frames": cap, "fits_in_buffer": frames.map_or(true, |f| f as usize <= cap) }))
@@ -1389,6 +1471,7 @@ impl Engine {
         match job {
             Job::Idle | Job::Single { .. } => {}
             Job::Prominence(p) => self.set_exposure(p.original_exposure), // never leave the long exposure on the camera
+            Job::Darks(_) => {}
             Job::Capture(job) => {
                 let CaptureJob { sink, phase, kind, name, burst_no, .. } = *job;
                 if let CapPhase::Capturing { stem, taken, started } = phase {
@@ -1448,9 +1531,11 @@ impl Engine {
         let job = std::mem::replace(&mut self.job, Job::Idle);
         self.job = match job {
             Job::Idle => Job::Idle,
-            Job::Single { stem } => {
-                let path = stem.with_extension("png");
-                let r = std::fs::create_dir_all(path.parent().unwrap()).map_err(s).and_then(|_| write_png(&path, &frame).map_err(s));
+            Job::Single { stem, fits } => {
+                let path = stem.with_extension(if fits { "fits" } else { "png" });
+                let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
+                let meta = rustflare_capture::FitsMeta { instrument: self.status.camera.as_ref().map(|c| c.name.clone()), exposure_us: ctl(CTRL_EXPOSURE_US), gain: ctl("gain"), object: Some("Sun".into()), comments: vec![] };
+                let r = std::fs::create_dir_all(path.parent().unwrap()).map_err(s).and_then(|_| if fits { rustflare_capture::write_fits(&path, &frame, &meta).map_err(s) } else { write_png(&path, &frame).map_err(s) });
                 match r {
                     Ok(()) => {
                         let sc = self.sidecar("single", json!({ "width": frame.width, "height": frame.height }));
@@ -1466,6 +1551,7 @@ impl Engine {
             }
             Job::Capture(job) => self.step_capture(job, frame),
             Job::Prominence(p) => self.step_prominence(p, frame),
+            Job::Darks(d) => self.step_darks(d, frame),
             Job::Flats(f) => {
                 let m = frame.mean_fraction(); // flats need a fresh level for every frame
                 let _ = mean;
@@ -1489,7 +1575,15 @@ impl Engine {
                 stem = stem.with_file_name(format!("{}_b{:03}", stem.file_name().unwrap().to_string_lossy(), job.burst_no));
             }
             let instrument = self.status.camera.as_ref().map(|c| c.name.clone()).unwrap_or_default();
-            job.sink.begin(BurstSpec { stem: stem.clone(), format: job.format, instrument, max_file_bytes: job.max_file });
+            let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
+            let fits_meta = rustflare_capture::FitsMeta {
+                instrument: Some(instrument.clone()),
+                exposure_us: ctl(CTRL_EXPOSURE_US),
+                gain: ctl("gain"),
+                object: Some("Sun".into()),
+                comments: vec![format!("flat applied to preview only: {}", if self.status.flats.applied { "yes" } else { "no" }), "frames are raw".into()],
+            };
+            job.sink.begin(BurstSpec { stem: stem.clone(), format: job.format, instrument, max_file_bytes: job.max_file, fits_meta });
             self.status.capture.burst = Some(job.burst_no);
             self.status.capture.next_in_s = None;
             self.status.capture.done = 0;
@@ -1497,7 +1591,16 @@ impl Engine {
             job.phase = CapPhase::Capturing { stem, started: now, taken: 0 };
         }
         let CapPhase::Capturing { stem, started, taken } = &mut job.phase else { unreachable!() };
-        if !job.sink.push(frame) {
+        if job.drop_when_full {
+            match job.sink.try_push(frame) {
+                None => return self.fail_capture(job, "the disk writer stopped unexpectedly".into()),
+                Some(false) => {
+                    self.status.capture.dropped = job.sink.dropped();
+                    return Job::Capture(job); // not counted: only frames that reach the disk count toward the goal
+                }
+                Some(true) => {}
+            }
+        } else if !job.sink.push(frame) {
             return self.fail_capture(job, "the disk writer stopped unexpectedly".into());
         }
         *taken += 1;
@@ -1521,7 +1624,8 @@ impl Engine {
         let sc = self.sidecar(
             if job.kind == "burst" { "burst" } else { "sequence" },
             json!({ "name": job.name, "burst": job.burst_no, "of": job.total_bursts, "frames": taken,
-                    "format": if job.format == Format::Png { "png" } else { "ser" },
+                    "format": match job.format { Format::Png => "png", Format::Fits => "fits", Format::Ser => "ser" },
+                    "dropped_frames": job.sink.dropped(),
                     "duration_s": started.elapsed().as_secs_f64(), "stopped_early": stop }),
         );
         self.write_sidecar(&stem, &sc);
@@ -1659,6 +1763,55 @@ impl Engine {
         }
     }
 
+    fn step_darks(&mut self, mut d: Box<Darks>, frame: Frame) -> Job {
+        if d.skip > 0 {
+            d.skip -= 1;
+            return Job::Darks(d);
+        }
+        if let Err(e) = d.acc.add(&frame) {
+            self.status.error = Some(format!("darks: {e}"));
+            self.finish_capture(None, "failed");
+            return Job::Idle;
+        }
+        self.status.capture.done = d.acc.count();
+        self.status.capture.phase = "dark frames: keep the cap on".into();
+        if d.acc.count() < d.frames {
+            return Job::Darks(d);
+        }
+        let master = d.stem.with_file_name(format!("{}_master", d.stem.file_name().unwrap().to_string_lossy())).with_extension("png");
+        let res = std::fs::create_dir_all(master.parent().unwrap()).map_err(s).and_then(|_| d.acc.master().map_err(s)).and_then(|m| write_png(&master, &m).map_err(s).map(|_| m));
+        match res {
+            Ok(m) => {
+                let rel_png = rel(&self.data_dir(), &master);
+                match rustflare_capture::DarkFrame::from_master(&m) {
+                    Ok(df) => {
+                        {
+                            let mut st = self.flat.lock().unwrap();
+                            st.dark = Some(std::sync::Arc::new(df));
+                            st.dark_enabled = true;
+                            st.dark_name = Some(rel_png.clone());
+                            st.dark_exposure_us = Some(d.exposure_us);
+                            st.dark_gain = Some(d.gain);
+                        }
+                        self.save_flat_choice();
+                        let sc = self.sidecar("darks", json!({ "frames": d.frames, "exposure_us": d.exposure_us, "gain": d.gain, "master": rel_png }));
+                        self.write_sidecar(&d.stem, &sc);
+                        self.finish_capture(Some(rel_png), "saved");
+                    }
+                    Err(e) => {
+                        self.status.error = Some(format!("master dark unusable: {e}"));
+                        self.finish_capture(None, "failed");
+                    }
+                }
+            }
+            Err(e) => {
+                self.status.error = Some(format!("saving the master dark failed: {e}"));
+                self.finish_capture(None, "failed");
+            }
+        }
+        Job::Idle
+    }
+
     fn step_prominence(&mut self, mut p: Box<Prominence>, frame: Frame) -> Job {
         let dir_ok = std::fs::create_dir_all(p.stem.parent().unwrap());
         if let Err(e) = dir_ok {
@@ -1719,6 +1872,9 @@ impl Engine {
         let s = self.flat.lock().unwrap();
         if let Some(name) = &s.name {
             let _ = crate::config::set(self.storage.config_file(), "flat", json!({ "master": name, "enabled": s.enabled }));
+        }
+        if let Some(name) = &s.dark_name {
+            let _ = crate::config::set(self.storage.config_file(), "dark", json!({ "master": name, "enabled": s.dark_enabled, "exposure_us": s.dark_exposure_us, "gain": s.dark_gain }));
         }
     }
 

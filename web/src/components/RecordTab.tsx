@@ -32,7 +32,8 @@ export function Progress({ status, onStop }: { status: Status; onStop: () => voi
 export function RecordTab({ status, goto, openFiles }: { status: Status | null; goto: (t: 'more', focus: string) => void; openFiles: () => void }) {
   const [name, setName] = useSetting('capture.name', '')
   const [mode, setMode] = useSetting<'sequence' | 'bursts'>('capture.mode', 'bursts')
-  const [format, setFormat] = useSetting<'ser' | 'png'>('capture.format', 'ser')
+  const [format, setFormat] = useSetting<'ser' | 'png' | 'fits'>('capture.format', 'ser')
+  const [onFull, setOnFull] = useSetting<'wait' | 'drop'>('capture.on_full', 'wait')
   const [frames, setFrames] = useSetting('capture.frames', '100')
   const [seconds, setSeconds] = useSetting('capture.seconds', '')
   const [every, setEvery] = useSetting('capture.every', '30')
@@ -66,8 +67,8 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
 
   const start = () =>
     mode === 'sequence'
-      ? run(() => api('POST', '/capture/sequence', { name: nm, frames: n(frames), seconds: n(seconds), format }))
-      : run(() => api('POST', '/capture/bursts', { name: nm, frames: n(frames), seconds: n(seconds), interval_s: n(every), bursts: n(bursts), format }))
+      ? run(() => api('POST', '/capture/sequence', { name: nm, frames: n(frames), seconds: n(seconds), format, on_full: onFull }))
+      : run(() => api('POST', '/capture/bursts', { name: nm, frames: n(frames), seconds: n(seconds), interval_s: n(every), bursts: n(bursts), format, on_full: onFull }))
 
   return (
     <>
@@ -92,7 +93,9 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
             {mode === 'bursts' && diskNeed > 0 && ` Average disk load ≈ ${diskNeed.toFixed(0)} MB/s.`}
           </p>
         )}
-        <Segmented label="File format" value={format} onChange={setFormat} options={[{ id: 'ser', label: 'SER video' }, { id: 'png', label: 'PNG images' }]} />
+        <Segmented label="File format" value={format} onChange={setFormat} options={[{ id: 'ser', label: 'SER video' }, { id: 'png', label: 'PNG' }, { id: 'fits', label: 'FITS' }]} />
+        <Segmented label="When the RAM buffer is full" value={onFull} onChange={setOnFull} options={[{ id: 'wait', label: 'Wait for the disk' }, { id: 'drop', label: 'Drop frames' }]} />
+        <div className="hint-text">{onFull === 'drop' ? 'Keeps the camera at full speed; frames that do not fit are dropped and counted. Dropped frames never count toward the frame goal.' : 'Never loses a frame: a camera faster than the disk slows to disk speed once the buffer is full.'}{format === 'fits' ? ' FITS makes one file per frame (a folder per burst), with exposure, gain and time in the header.' : ''}</div>
         <StorageLine status={status} onChange={() => goto('more', 'storage')} />
         <div className="sticky-act"><button type="button" className="primary wide big" onClick={start}>{mode === 'bursts' ? 'Start bursts' : 'Start recording'}</button></div>
       </Section>

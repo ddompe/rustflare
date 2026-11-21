@@ -155,7 +155,10 @@ pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::Shar
         .spawn(move || {
             while let Ok(mut frame) = frx.recv() {
                 // flat-field correction is for display only: recordings stay raw
-                let field = { let s = flat.lock().unwrap(); if s.enabled { s.field.clone() } else { None } };
+                let (dark, field) = { let s = flat.lock().unwrap(); (if s.dark_enabled { s.dark.clone() } else { None }, if s.enabled { s.field.clone() } else { None }) };
+                if let Some(dk) = dark.filter(|d| d.matches(&frame)) {
+                    dk.apply(&mut frame);
+                }
                 if let Some(ff) = field.filter(|ff| ff.matches(&frame)) {
                     ff.apply(&mut frame);
                 }
