@@ -1,0 +1,43 @@
+#!/bin/sh
+# Creates a private certificate authority (once) and a server certificate for this Pi, so the web UI can be served
+# over HTTPS (needed for the phone's location button and for a password that is not sent in the clear).
+#   sudo rustflare-tls [extra-host-name-or-ip ...]
+# Re-run it when the Pi's name or IP changes or the certificate nears its end (it keeps the same CA, so phones that
+# trust the CA keep working). Then:  sudo systemctl restart rustflare
+set -eu
+DIR="${RUSTFLARE_TLS_DIR:-/var/lib/rustflare/tls}"
+OWNER="$(systemctl show -p User --value rustflare 2>/dev/null || true)"
+[ -n "$OWNER" ] || OWNER=rustflare
+mkdir -p "$DIR"
+cd "$DIR"
+umask 077
+
+if [ ! -f ca.key ]; then
+  openssl genrsa -out ca.key 4096 2>/dev/null
+  openssl req -x509 -new -key ca.key -sha256 -days 3650 -subj "/CN=RustFlare local CA" \
+    -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" -out ca.crt
+  echo "created the CA: $DIR/ca.crt"
+fi
+
+H="$(hostname | sed 's/\.local$//')"
+SAN="DNS:localhost,DNS:$H,DNS:$H.local,DNS:astropi.local"
+for ip in $(hostname -I 2>/dev/null || true); do SAN="$SAN,IP:$ip"; done
+for extra in "$@"; do
+  case "$extra" in *[!0-9.]*) SAN="$SAN,DNS:$extra" ;; *) SAN="$SAN,IP:$extra" ;; esac
+done
+
+openssl genrsa -out server.key 2048 2>/dev/null
+openssl req -new -key server.key -subj "/CN=$H" -out server.csr
+printf 'subjectAltName=%s\nbasicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' "$SAN" > server.ext
+# iOS rejects server certificates valid for more than 825 days
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -sha256 -days 800 -extfile server.ext -out server.crt 2>/dev/null
+rm -f server.csr server.ext ca.srl
+
+chmod 644 ca.crt server.crt
+chmod 600 ca.key
+chown "$OWNER" server.key server.crt ca.crt 2>/dev/null || true
+chmod 600 server.key
+echo "server certificate for: $SAN"
+echo "now:  sudo systemctl restart rustflare"
+echo "then on the phone: open http://$H.local:8080/rustflare-ca.crt , install the profile (Settings > Profile Downloaded),"
+echo "and enable it in Settings > General > About > Certificate Trust Settings. After that use https://$H.local:8443"

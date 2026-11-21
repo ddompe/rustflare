@@ -21,3 +21,4 @@ an accepted record: supersede it with a new one and link both ways.
 | [0013](0013-partial-disc-first-tracking-and-optics.md) | Partial-disc-first tracking, Otsu detection, optics | Accepted |
 | [0014](0014-zwo-asi-cameras.md) | ZWO ASI cameras via a run-time loaded vendor library | Accepted |
 | [0015](0015-ble-mount-transport.md) | Bluetooth LE transport for the ZWO mount | Accepted |
+| [0016](0016-optional-https-and-password.md) | Optional HTTPS (private CA) and password | Accepted |

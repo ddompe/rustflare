@@ -9,6 +9,7 @@ import { AimTab } from './components/AimTab'
 import { TrackTab } from './components/TrackTab'
 import { RecordTab } from './components/RecordTab'
 import { MoreTab } from './components/MoreTab'
+import { FileManagerScreen } from './components/FileManager'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'camera', label: 'Camera' },
@@ -23,6 +24,7 @@ type Tone = 'ok' | 'warn' | 'bad' | 'rec' | null
 export function App() {
   const { status, connected } = useStatus()
   const [anchorPick, setAnchorPick] = useState(false)
+  const [filesOpen, setFilesOpen] = useState(false)
   const [display, setDisplay, resetDisplay] = useDisplay()
   const [savedTab, setSavedTab] = useSetting<TabId>('ui.tab', 'camera')
   const [tab, setTabState] = useState<TabId>(TABS.some((x) => x.id === savedTab) ? savedTab : 'camera')
@@ -104,9 +106,10 @@ export function App() {
         {tab === 'camera' && <CameraTab status={status} next={() => goto('aim')} />}
         {tab === 'aim' && <AimTab status={status} next={() => goto('track')} />}
         {tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} />}
-        {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} />}
+        {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={() => setFilesOpen(true)} />}
         {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} />}
       </main>
+      {filesOpen && <FileManagerScreen status={status} onClose={() => setFilesOpen(false)} />}
     </div>
   )
 }

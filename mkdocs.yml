@@ -6,6 +6,7 @@ nav:
   - Brand: brand.md
   - Getting started: getting-started.md
   - User guide: usage.md
+  - HTTPS and password: https.md
   - Hardware: hardware.md
   - ZWO mount Bluetooth protocol: zwo-ble-protocol.md
   - Tracking & guiding: tracking-and-guiding.md

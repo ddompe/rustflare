@@ -1,6 +1,6 @@
 # Rustflare settings (systemd EnvironmentFile). Restart after editing:  sudo systemctl restart rustflare
 
-# Address and port to listen on. There is NO authentication: only use a trusted network.
+# Address and port to listen on (plain HTTP). Without a password below there is NO authentication: trusted networks only.
 RUSTFLARE_BIND=0.0.0.0:8080
 
 # Default capture directory (on the SD card). You normally choose a USB drive in the web UI
@@ -11,3 +11,9 @@ RUSTFLARE_DATA_DIR=/var/lib/rustflare/captures
 # if the repository is private (a fine-grained token with read access to contents).
 RUSTFLARE_REPO=ddompe/rustflare
 #RUSTFLARE_GITHUB_TOKEN=
+
+# Password for the web UI and API (HTTP Basic, any user name). Strongly recommended together with HTTPS
+# (`sudo rustflare-tls`, see docs/https.md); over plain HTTP the password travels in the clear.
+#RUSTFLARE_PASSWORD=
+# HTTPS: after `sudo rustflare-tls` the server also listens here. Plain HTTP then only serves the CA and redirects.
+#RUSTFLARE_TLS_BIND=0.0.0.0:8443
