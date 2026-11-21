@@ -168,6 +168,25 @@ impl Drop for FrameSink {
     }
 }
 
+/// Forces everything written so far onto the storage medium. Linux: only the filesystem holding `dir`
+/// (`syncfs`), so a USB stick is flushed without waiting for unrelated writes elsewhere; elsewhere the whole
+/// system (`sync`).
+fn flush_filesystem(dir: &std::path::Path) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::io::AsRawFd;
+        if let Ok(f) = std::fs::File::open(dir) {
+            // SAFETY: the descriptor is valid for the duration of the call.
+            if unsafe { libc::syncfs(f.as_raw_fd()) } == 0 {
+                return;
+            }
+        }
+    }
+    let _ = dir;
+    // SAFETY: sync(2) has no preconditions.
+    unsafe { libc::sync() };
+}
+
 struct Active {
     spec: BurstSpec,
     ser: Option<SerWriter>,
@@ -229,8 +248,11 @@ impl Active {
         if let Some(w) = self.ser.take() {
             w.finalize().map_err(|e| e.to_string())?;
         }
-        // SAFETY: sync(2) has no preconditions.
-        unsafe { libc::sync() };
+        let dir = match self.spec.format {
+            Format::Png => self.spec.stem.clone(),
+            Format::Ser => self.spec.stem.parent().map(|p| p.to_path_buf()).unwrap_or_default(),
+        };
+        flush_filesystem(&dir);
         let rate = self.started.map_or(0.0, |t| self.bytes as f64 / t.elapsed().as_secs_f64().max(1e-3));
         let path = match self.spec.format {
             Format::Ser => self.part_path(1),
@@ -254,7 +276,8 @@ mod tests {
     }
     fn frame() -> Frame { Frame::new(4, 4, PixelFormat::Mono16, vec![7; 32]) }
     fn wait_done(s: &FrameSink) {
-        for _ in 0..200 {
+        // a burst is reported finished only after its flush to the medium, which can take seconds on a busy runner
+        for _ in 0..3000 {
             if s.queued() == 0 && !s.take_finished_peek() { return; }
             std::thread::sleep(Duration::from_millis(10));
         }
