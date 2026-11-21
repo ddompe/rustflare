@@ -1037,7 +1037,7 @@ checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
 name = "rustflare-camera"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "playerone-sdk",
  "rustflare-core",
@@ -1045,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-capture"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "libc",
  "png",
@@ -1054,7 +1054,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-core"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
@@ -1062,7 +1062,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-mount"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "rustflare-core",
  "serialport",
@@ -1070,7 +1070,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-server"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "axum",
  "chrono",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-tracking"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "rustflare-core",
  "serde",
