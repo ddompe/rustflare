@@ -8,12 +8,13 @@ No separate vendor SDK install is needed. The package includes the library and d
 
 Controls exposed: exposure (µs), gain, offset, 8/16-bit output. Colour cameras deliver raw Bayer data, treated as mono.
 
-!!! note "Status"
-    Verified on the Pi: the library loads and enumeration runs (no camera attached yet, so nothing is listed). **Not yet run with a real camera.** First things to check: enumeration, opening, exposure range, frame rate, and the udev rule (the vendor id `a0a0` is unverified; compare with `lsusb`).
+!!! note "Status: verified on a real Apollo-M MINI (Raspberry Pi 5, USB 3)"
+    Verified: USB vendor id `a0a0` (the shipped udev rule matches and grants access), enumeration, opening, controls (exposure 10 µs–2000 s, gain 0–550, offset 0–1000, 8/16-bit), 1944×1472 frames, pixel size 4.5 µm (used by the Optics panel), temperature readout.
+    **Frame rate:** the first version used the SDK's one-shot capture, which re-arms the camera for every frame and measured a constant **8.4 fps (9.8 fps at 8-bit) whatever the exposure**. The driver now uses the SDK's continuous mode (arm once, fetch frames). The new fps is **not yet measured**.
 
 ## ZWO AM3 / AM5 mounts
 
-Connected over USB as a serial device; Rustflare speaks the ZWO serial protocol directly (no ASCOM/INDI).
+Connected over USB as a serial device (it appears as `/dev/ttyACM0`, and as a stable name under `/dev/serial/by-id/`, which the Mount panel suggests); Rustflare speaks the ZWO serial protocol directly (no ASCOM/INDI).
 The AM3 can run equatorial or alt-az; Rustflare calls the axes *primary/secondary* (RA/Dec in equatorial mode). See [Calibration](tracking-and-guiding.md#calibration) for what that means for guiding. Supported: solar tracking rate (`:TS#`), tracking on/off, manual slewing at the ten speeds the mount offers
 (0.25× … 1440× sidereal), pulse guiding. Guide rate is clamped to the mount's 0.1–0.9× range; the mount has one rate for both axes.
 See [ADR 0007](adr/0007-zwo-mount-serial-driver.md) for the fixes made relative to Vidoxide's driver.

@@ -1,8 +1,12 @@
 //! Player One cameras through the vendor SDK (`libPlayerOneCamera`), wrapped by
 //! the `playerone-sdk` crate. These cameras are *not* V4L2/UVC devices (ADR 0006).
 //!
-//! NOTE: written against the crate's documented API but not yet exercised on
-//! real hardware.
+//! Capture uses the SDK's continuous (video) mode: the exposure is armed once and the camera free-runs,
+//! and each `capture` just fetches the next frame. The wrapper's one-shot `capture()` re-arms the camera
+//! for every frame, which on the Apollo-M MINI capped it at ~8 fps regardless of exposure time.
+//! Changing a setting stops the stream first; the next `capture` restarts it.
+//!
+//! Verified on real hardware: enumeration, opening, controls (an Apollo-M MINI on a Raspberry Pi 5).
 
 use playerone_sdk::{Camera as PoaCamera, ImageFormat};
 use std::time::Duration;
@@ -40,13 +44,31 @@ impl CameraDriver for PlayerOneDriver {
         let (w, h) = (cam.properties().max_width, cam.properties().max_height);
         cam.set_image_size(w, h).map_err(err)?;
         cam.set_image_format(ImageFormat::RAW16).map_err(err)?;
-        Ok(Box::new(PoaCam { cam, format: ImageFormat::RAW16 }))
+        Ok(Box::new(PoaCam { cam, format: ImageFormat::RAW16, streaming: false }))
     }
 }
 
 struct PoaCam {
     cam: PoaCamera,
     format: ImageFormat,
+    /// True while the camera is in continuous exposure mode.
+    streaming: bool,
+}
+
+impl PoaCam {
+    fn stop_stream(&mut self) {
+        if self.streaming {
+            let _ = self.cam.stop_exposure();
+            self.streaming = false;
+        }
+    }
+}
+
+impl Drop for PoaCam {
+    fn drop(&mut self) {
+        // The SDK requires stopping a running exposure before closing the camera.
+        self.stop_stream();
+    }
 }
 
 impl Camera for PoaCam {
@@ -77,6 +99,7 @@ impl Camera for PoaCam {
     }
 
     fn set_control(&mut self, id: &str, value: f64) -> Result<()> {
+        self.stop_stream(); // settings are applied with the exposure stopped; capture() restarts it
         let v = value.round() as i64;
         match id {
             CTRL_EXPOSURE_US => self.cam.set_exposure(v, false).map_err(err),
@@ -98,8 +121,15 @@ impl Camera for PoaCam {
             ImageFormat::RAW16 => (PixelFormat::Mono16, 2),
             _ => (PixelFormat::Mono8, 1),
         };
+        if !self.streaming {
+            self.cam.start_exposure().map_err(err)?; // continuous mode: arm once, then just fetch frames
+            self.streaming = true;
+        }
         let mut buf = self.cam.create_image_buffer();
-        self.cam.capture(&mut buf, Some(timeout.as_millis() as i32)).map_err(err)?;
+        if let Err(e) = self.cam.get_image_data(&mut buf, Some(timeout.as_millis() as i32)) {
+            self.stop_stream(); // re-arm on the next call
+            return Err(err(e));
+        }
         buf.truncate(w as usize * h as usize * bpp);
         Ok(Frame::new(w, h, pf, buf))
     }

@@ -10,6 +10,7 @@ export interface Display {
   fps: number
   crosshair: boolean
   rings: number // concentric "bullseye" rings, 0 = none
+  ringSize: number // radius of the outermost ring, % of the frame height
   grid: boolean // rule-of-thirds
   sunOutline: boolean
   zoom: number
@@ -19,7 +20,7 @@ export interface Display {
 
 export const DEFAULT_DISPLAY: Display = {
   invert: false, tint: 'none', brightness: 1, contrast: 1, gamma: 1, fps: 15,
-  crosshair: true, rings: 2, grid: false, sunOutline: true, zoom: 1, panX: 0, panY: 0,
+  crosshair: true, rings: 3, ringSize: 15, grid: false, sunOutline: true, zoom: 1, panX: 0, panY: 0,
 }
 
 const KEY = 'rustflare.display'

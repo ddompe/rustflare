@@ -19,6 +19,19 @@ use tokio::sync::{oneshot, watch};
 
 pub type Reply = Result<Value, String>;
 
+/// What to reconnect at startup. Saved in the settings file under `startup`.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Startup {
+    pub enabled: bool,
+    pub camera: Option<(String, String)>,         // (driver, id)
+    pub mount: Option<(String, Option<String>)>,  // (driver, serial device)
+}
+
+impl Default for Startup {
+    fn default() -> Self { Startup { enabled: true, camera: None, mount: None } }
+}
+
 /// Optical setup, persisted in the settings file; gives the expected solar radius in pixels.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -54,6 +67,8 @@ pub enum Command {
     /// `frames` / `seconds`: when a burst ends. `interval_s`: start-to-start spacing. `bursts`: None = until stopped.
     CaptureBursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String> },
     SetBuffer { mb: u64 },
+    /// Reconnect the last camera and mount automatically at startup (and after a camera error).
+    SetStartup { enabled: bool },
     CaptureFlats { name: Option<String>, frames: u32, level: Option<f64> },
     CaptureStop,
     SetOptics { focal_length_mm: Option<f64>, pixel_size_um: Option<f64>, binning: u32 },
@@ -151,6 +166,10 @@ pub struct Engine {
     last_frame: Option<Frame>,
     storage: Arc<Storage>,
     optics: OpticsSettings,
+    startup: Startup,
+    /// While set, keep trying to reconnect the remembered camera/mount (they may not be enumerated yet at boot).
+    auto_until: Option<Instant>,
+    last_auto_try: Instant,
     camera_pixel_um: Option<f64>,
     /// Expected solar radius in pixels (from optics), used to make partial-disc fits reliable.
     expected_radius: Option<f64>,
@@ -188,6 +207,9 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         last_mean: 0.0,
         last_frame: None,
         optics: rustflare_config_optics(&storage),
+        startup: crate::config::read(storage.config_file()).get("startup").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
+        auto_until: Some(Instant::now() + Duration::from_secs(120)),
+        last_auto_try: Instant::now() - Duration::from_secs(10),
         camera_pixel_um: None,
         expected_radius: None,
         storage,
@@ -218,6 +240,7 @@ impl Engine {
     fn run(mut self, rx: Receiver<Request>) {
         loop {
             self.poll_sink();
+            self.auto_connect_tick();
             if self.draining.is_some() && self.last_publish.elapsed() >= Duration::from_millis(200) {
                 self.publish();
             }
@@ -285,6 +308,12 @@ impl Engine {
 
     fn publish(&mut self) {
         self.refresh_optics();
+        self.status.startup = StartupStatus {
+            enabled: self.startup.enabled,
+            camera: self.startup.camera.as_ref().map(|(d, id)| format!("{d} {id}")),
+            mount: self.startup.mount.as_ref().map(|(d, dev)| format!("{d} {}", dev.clone().unwrap_or_default())),
+            retrying: self.auto_until.is_some() && self.startup.enabled && ((self.camera.is_none() && self.startup.camera.is_some()) || (self.mount.is_none() && self.startup.mount.is_some())),
+        };
         let (queued, rate) = match (&self.job, &self.draining) {
             (Job::Capture(j), _) => (j.sink.queued(), j.sink.rate_bytes_per_s()),
             (_, Some(d)) => (d.queued(), d.rate_bytes_per_s()),
@@ -328,19 +357,18 @@ impl Engine {
             }
             Command::OpenCamera { driver, id } => {
                 self.require_idle()?;
-                self.close_camera();
-                let d = self.drivers.iter().find(|d| d.name() == driver).ok_or(format!("unknown driver {driver}"))?;
-                let mut cam = d.open(&id).map_err(s)?;
-                let info = cam.info();
-                let controls = cam.controls().map_err(s)?;
-                self.camera_pixel_um = cam.pixel_size_um();
-                self.status.camera = Some(CameraStatus { driver: info.driver, id: info.id, name: info.name, controls, ..Default::default() });
-                self.camera = Some(cam);
+                self.open_camera(&driver, &id)?;
+                if driver != "simulator" {
+                    self.startup.camera = Some((driver, id));
+                    self.save_startup();
+                }
                 Ok(json!({}))
             }
             Command::CloseCamera => {
                 self.require_idle()?;
                 self.close_camera();
+                self.startup.camera = None; // closing on purpose: do not reopen it by itself
+                self.save_startup();
                 Ok(json!({}))
             }
             Command::SetControl { id, value } => {
@@ -352,14 +380,23 @@ impl Engine {
                 Ok(json!({}))
             }
             Command::ConnectMount { driver, device } => {
-                self.disconnect_mount();
-                let m = rustflare_mount::connect(&driver, device.as_deref(), &self.sky).map_err(s)?;
-                self.mount = Some(m);
-                self.mount_tracking = false;
+                self.connect_mount(&driver, device.as_deref())?;
+                if driver != "simulator" {
+                    self.startup.mount = Some((driver, device));
+                    self.save_startup();
+                }
                 Ok(json!({}))
             }
             Command::DisconnectMount => {
                 self.disconnect_mount();
+                self.startup.mount = None;
+                self.save_startup();
+                Ok(json!({}))
+            }
+            Command::SetStartup { enabled } => {
+                self.startup.enabled = enabled;
+                self.auto_until = None;
+                self.save_startup();
                 Ok(json!({}))
             }
             Command::MountTracking { enabled } => {
@@ -600,6 +637,68 @@ impl Engine {
         Ok(())
     }
 
+    fn open_camera(&mut self, driver: &str, id: &str) -> Result<(), String> {
+        self.close_camera();
+        let d = self.drivers.iter().find(|d| d.name() == driver).ok_or(format!("unknown driver {driver}"))?;
+        let mut cam = d.open(id).map_err(s)?;
+        let info = cam.info();
+        let controls = cam.controls().map_err(s)?;
+        self.camera_pixel_um = cam.pixel_size_um();
+        self.status.camera = Some(CameraStatus { driver: info.driver, id: info.id, name: info.name, controls, ..Default::default() });
+        self.camera = Some(cam);
+        Ok(())
+    }
+
+    fn connect_mount(&mut self, driver: &str, device: Option<&str>) -> Result<(), String> {
+        self.disconnect_mount();
+        let m = rustflare_mount::connect(driver, device, &self.sky).map_err(s)?;
+        self.mount = Some(m);
+        self.mount_tracking = false; // connecting never starts tracking: that moves the mount
+        Ok(())
+    }
+
+    fn save_startup(&self) {
+        let _ = crate::config::set(self.storage.config_file(), "startup", serde_json::to_value(&self.startup).unwrap_or_default());
+    }
+
+    /// Reconnects the remembered camera / mount (they may take a while to appear after boot or a USB hiccup).
+    /// Never switches on mount tracking.
+    fn auto_connect_tick(&mut self) {
+        let Some(until) = self.auto_until else { return };
+        if !self.startup.enabled || Instant::now() > until {
+            self.auto_until = None;
+            return;
+        }
+        if self.last_auto_try.elapsed() < Duration::from_secs(5) {
+            return;
+        }
+        self.last_auto_try = Instant::now();
+        let mut changed = false;
+        if self.camera.is_none() {
+            if let Some((driver, id)) = self.startup.camera.clone() {
+                match self.open_camera(&driver, &id) {
+                    Ok(()) => { log::info!("reconnected camera {driver}/{id}"); changed = true; }
+                    Err(e) => log::debug!("auto camera {driver}/{id}: {e}"),
+                }
+            }
+        }
+        if self.mount.is_none() {
+            if let Some((driver, device)) = self.startup.mount.clone() {
+                match self.connect_mount(&driver, device.as_deref()) {
+                    Ok(()) => { log::info!("reconnected mount {driver} {device:?} (tracking stays off)"); changed = true; }
+                    Err(e) => log::debug!("auto mount {driver}: {e}"),
+                }
+            }
+        }
+        let done = (self.camera.is_some() || self.startup.camera.is_none()) && (self.mount.is_some() || self.startup.mount.is_none());
+        if done {
+            self.auto_until = None;
+        }
+        if changed {
+            self.publish();
+        }
+    }
+
     fn close_camera(&mut self) {
         self.camera = None;
         self.camera_pixel_um = None;
@@ -633,6 +732,9 @@ impl Engine {
         log::error!("camera failed: {e}");
         self.abort_job("camera error");
         self.close_camera();
+        if self.startup.enabled && self.startup.camera.is_some() {
+            self.auto_until = Some(Instant::now() + Duration::from_secs(60));
+        }
         self.status.error = Some(format!("camera error: {e}"));
         self.publish();
     }

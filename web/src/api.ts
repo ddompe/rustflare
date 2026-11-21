@@ -7,7 +7,9 @@ export interface Calibration { primary_dir: { x: number; y: number }; secondary_
 export interface Optics { focal_length_mm: number | null; pixel_size_override_um: number | null; pixel_size_um: number | null; pixel_size_source: 'camera' | 'manual' | null; binning: number; scale_arcsec_per_px: number | null; solar_radius_arcsec: number; expected_radius_px: number | null }
 export interface StorageInfo { path: string; label: string; mount_point: string | null; fstype: string | null; total: number | null; free: number | null; max_file_bytes: number | null; available: boolean; problem: string | null }
 export interface SunLocation { pos: { x: number; y: number }; radius: number; partial: boolean }
+export interface Startup { enabled: boolean; camera: string | null; mount: string | null; retrying: boolean }
 export interface Status {
+  startup: Startup
   optics: Optics
   camera: CameraStatus | null
   sun: SunLocation | null

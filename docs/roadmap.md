@@ -11,7 +11,7 @@ Work is tracked on the [GitHub project board](https://github.com/users/ddompe/pr
 
 ## Not verified yet: do these first on real hardware
 
-1. **Player One camera**: enumerate/open, exposure range, real frame rate and the RAM buffer under a real high-fps load, udev rule (check `lsusb` ids).
+1. **Player One camera** (partly verified): enumeration, opening, controls and the udev rule are verified on an Apollo-M MINI. **Still to check:** the frame rate with the new continuous mode (the one-shot mode gave a constant 8.4 fps) and the RAM buffer under real high-fps load.
 2. **ZWO AM3**: model reply, `:TS#` solar rate, slew and guide directions, pulse behaviour, calibration result, guiding quality.
 3. **Tracking on real H-alpha images**: Otsu separation, limb fit with a partial disc and the Optics radius, anchor on a sunspot or filament.
 4. **USB drive**: selecting the FAT32 drive from the UI, writing, FAT32 rollover of SER files, behaviour when it is unplugged mid-capture.
@@ -19,6 +19,8 @@ Work is tracked on the [GitHub project board](https://github.com/users/ddompe/pr
 6. Sustained CPU and frame rate on the Pi with a real camera, preview and recording together.
 
 ## Planned
+
+- *(done in 0.2.1, unverified)* Streaming capture via the SDK's continuous mode, auto-reconnect of camera and mount at startup, red adjustable bullseye, serial-port suggestions for the mount.
 
 - **Guided flats.** Flats work today but start instantly. Planned workflow: *Flats* opens a step-by-step dialog: (1) "Put the flat cap/diffuser on and make sure the field is uniform", showing the live view and histogram; (2) adjust gain/exposure (with a suggested exposure and a clipping/underexposure indicator), tracking and guiding paused; (3) **OK** captures N flats; (4) results are summarised (level, frames, file, master) and the previous settings restored, with a reminder to remove the cap. Also to decide: matching darks/dark flats, naming that ties flats to the lights' settings (gain/offset/format/exposure), and flats per filter/position. Deferred until the base setup is stable on real hardware.
 

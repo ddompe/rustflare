@@ -84,8 +84,19 @@ pub struct OpticsStatus {
     pub expected_radius_px: Option<f64>,
 }
 
+#[derive(Clone, Serialize, Default)]
+pub struct StartupStatus {
+    /// Reconnect the remembered camera and mount automatically.
+    pub enabled: bool,
+    pub camera: Option<String>,
+    pub mount: Option<String>,
+    /// Currently trying to reconnect (e.g. just after boot).
+    pub retrying: bool,
+}
+
 #[derive(Clone, Serialize)]
 pub struct Status {
+    pub startup: StartupStatus,
     pub optics: OpticsStatus,
     pub camera: Option<CameraStatus>,
     /// Sun location in the latest frame, whether or not tracking is on (centring aid).
@@ -102,6 +113,7 @@ pub struct Status {
 impl Default for Status {
     fn default() -> Self {
         Status {
+            startup: StartupStatus::default(),
             optics: OpticsStatus::default(),
             camera: None,
             sun: None,

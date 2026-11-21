@@ -34,6 +34,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/camera/open", post(camera_open))
         .route("/api/camera/close", post(|s| run(s, Command::CloseCamera)))
         .route("/api/camera/control", put(camera_control))
+        .route("/api/mount/ports", get(mount_ports))
         .route("/api/mount/drivers", get(|| async { Json(json!(rustflare_mount::DRIVERS)) }))
         .route("/api/mount/connect", post(mount_connect))
         .route("/api/mount/disconnect", post(|s| run(s, Command::DisconnectMount)))
@@ -57,6 +58,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/files/*path", get(download))
         .route("/api/storage", get(storage_get).put(storage_put))
         .route("/api/optics", put(optics_put))
+        .route("/api/startup", put(startup_put))
         .route("/api/preview", get(preview_get).put(preview_put))
         .fallback_service(spa)
         .with_state(state)
@@ -286,4 +288,35 @@ async fn preview_get(State(st): State<AppState>) -> Json<Value> {
 async fn preview_put(State(st): State<AppState>, Json(b): Json<PreviewSettings>) -> Json<Value> {
     st.stretch.store(b.stretch, std::sync::atomic::Ordering::Relaxed);
     Json(json!({ "stretch": b.stretch }))
+}
+
+/// Serial devices that could be a mount: stable `/dev/serial/by-id/*` names when available.
+async fn mount_ports() -> Json<Value> {
+    let mut ports: Vec<Value> = vec![];
+    if let Ok(d) = std::fs::read_dir("/dev/serial/by-id") {
+        for e in d.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            ports.push(json!({ "path": format!("/dev/serial/by-id/{name}"), "label": name }));
+        }
+    }
+    if ports.is_empty() {
+        for pat in ["ttyACM", "ttyUSB"] {
+            if let Ok(d) = std::fs::read_dir("/dev") {
+                for e in d.flatten() {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if name.starts_with(pat) {
+                        ports.push(json!({ "path": format!("/dev/{name}"), "label": name }));
+                    }
+                }
+            }
+        }
+    }
+    ports.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+    Json(json!(ports))
+}
+
+#[derive(Deserialize)]
+struct StartupBody { enabled: bool }
+async fn startup_put(s: State<AppState>, Json(b): Json<StartupBody>) -> Res {
+    run(s, Command::SetStartup { enabled: b.enabled }).await
 }

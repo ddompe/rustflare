@@ -68,13 +68,13 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked }: 
         <img src={`/stream.mjpg?fps=${d.fps}`} alt="live view" draggable={false} style={{ filter: cssFilter(d) }} onLoad={() => force((n) => n + 1)} />
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
           <g fill="none" strokeWidth={stroke}>
-            {d.grid && <path stroke="#ffffff" opacity={0.3} d={`M${W / 3} 0V${H}M${(2 * W) / 3} 0V${H}M0 ${H / 3}H${W}M0 ${(2 * H) / 3}H${W}`} />}
+            {d.grid && <path stroke="#ff3b30" opacity={0.4} d={`M${W / 3} 0V${H}M${(2 * W) / 3} 0V${H}M0 ${H / 3}H${W}M0 ${(2 * H) / 3}H${W}`} />}
             {d.rings > 0 && (
-              <g stroke="#ffffff" opacity={0.5}>
-                {Array.from({ length: d.rings }, (_, i) => <circle key={i} cx={cx} cy={cy} r={((i + 1) / d.rings) * (H / 2)} />)}
+              <g stroke="#ff3b30" opacity={0.9}>
+                {Array.from({ length: d.rings }, (_, i) => <circle key={i} cx={cx} cy={cy} r={((i + 1) / d.rings) * (d.ringSize / 100) * H} />)}
               </g>
             )}
-            {d.crosshair && <path stroke="#ffffff" opacity={0.55} d={`M0 ${cy}H${W}M${cx} 0V${H}`} />}
+            {d.crosshair && <path stroke="#ff3b30" opacity={0.7} d={`M0 ${cy}H${W}M${cx} 0V${H}`} />}
             {d.sunOutline && sun && (
               <g stroke="#22d3ee" strokeWidth={stroke * 1.6}>
                 <circle cx={sun.pos.x} cy={sun.pos.y} r={sun.radius} strokeDasharray={sun.partial ? `${stroke * 4} ${stroke * 4}` : undefined} />

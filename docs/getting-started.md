@@ -20,6 +20,10 @@ That is the whole install. It creates the service, starts it, and enables it at 
 !!! warning
     There is **no authentication** and the server can move your mount. Keep it on a trusted network.
 
+### Startup behaviour
+
+The service starts by itself at boot; there is nothing to launch. It **reconnects the last camera and mount automatically** (retrying for a couple of minutes while USB devices come up, and for a minute after a camera error); untick *reconnect camera & mount* in the Camera panel to turn that off, and closing the camera or disconnecting the mount on purpose makes it forget them. It **never switches on the mount's tracking by itself**, since that moves the mount: after a restart, tick *Solar tracking* again. Tracking targets and calibration are not remembered between sessions.
+
 ### Update
 
 ```sh

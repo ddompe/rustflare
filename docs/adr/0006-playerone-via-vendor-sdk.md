@@ -22,6 +22,10 @@ Implement `PlayerOneDriver` with the `playerone-sdk` crate (idiomatic wrapper ov
 
 The server's `build.rs` (feature `playerone` only) adds an executable-relative rpath (`$ORIGIN`, `$ORIGIN/lib`) and copies the library from the cargo registry next to the binary under its SONAME. A deployed install is therefore: binary + `libPlayerOneCamera.so.3` in the same folder, plus `libusb-1.0-0` from apt.
 
+## Capture mode (found on real hardware)
+
+The `playerone-sdk` wrapper's `capture()` starts every frame as a single shot (`POAStartExposure(…, true)`), re-arming the camera each time. On an Apollo-M MINI this gave a constant 8.4 fps (9.8 fps at 8-bit) independent of exposure (10 ms and 1 ms identical), i.e. a fixed per-frame cost, not exposure time or USB bandwidth. The driver therefore uses the SDK's continuous mode: `start_exposure()` once (`POA_FALSE`), then `get_image_data()` per frame; any setting change stops the stream and the next capture restarts it. Measurement of the new rate is pending.
+
 ## Consequences
 
 - On **macOS** the library's install name is a bare `libPlayerOneCamera.3.dylib` (not `@rpath/…`), so a `playerone` build compiles but will not launch there without `install_name_tool`; macOS is for development with the simulator, the Pi (Linux) is the target. The Linux rpath/SONAME path has not been run (no Linux machine was available when written).

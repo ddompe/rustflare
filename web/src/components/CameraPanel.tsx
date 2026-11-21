@@ -79,6 +79,13 @@ export function CameraPanel({ status }: { status: Status | null }) {
 
   return (
     <Panel title="Camera" error={err}>
+      <Row label="At startup">
+        <label className="inline">
+          <input type="checkbox" checked={status?.startup.enabled ?? true} onChange={(e) => run(() => api('PUT', '/startup', { enabled: e.target.checked }))} />
+          reconnect camera &amp; mount
+        </label>
+      </Row>
+      {status?.startup.retrying && <div className="muted small">Reconnecting {status.startup.camera ?? ''} {status.startup.mount ?? ''}… (mount tracking is never switched on automatically)</div>}
       {!cam ? (
         <Row>
           <select value={sel} onChange={(e) => setSel(e.target.value)}>

@@ -37,6 +37,10 @@ export function DisplayPanel({ d, set, reset }: { d: Display; set: (p: Partial<D
         <input type="range" min={0} max={8} step={1} value={d.rings} onChange={(e) => set({ rings: parseInt(e.target.value) })} />
         <span className="val">{d.rings || 'off'}</span>
       </Row>
+      <Row label="Ring size">
+        <input type="range" min={3} max={50} step={1} value={d.ringSize} onChange={(e) => set({ ringSize: parseInt(e.target.value) })} />
+        <span className="val">{d.ringSize}%</span>
+      </Row>
       <Row label="Preview fps">
         <select value={d.fps} onChange={(e) => set({ fps: parseInt(e.target.value) })}>
           {[2, 5, 10, 15, 30].map((f) => <option key={f} value={f}>{f}</option>)}
