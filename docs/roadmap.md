@@ -20,6 +20,8 @@ Work is tracked on the [GitHub project board](https://github.com/users/ddompe/pr
 
 ## Planned
 
+- **UI design review** with the `impeccable` design skill in a side agent, **after image capture is stable on the real system**: layout and hierarchy, a task-oriented flow, outdoor legibility, phone layout, touch targets, overlays. Uses real screenshots (see Playwright below).
+
 - *(done in 0.2.1, unverified)* Streaming capture via the SDK's continuous mode, auto-reconnect of camera and mount at startup, red adjustable bullseye, serial-port suggestions for the mount.
 
 - **Guided flats.** Flats work today but start instantly. Planned workflow: *Flats* opens a step-by-step dialog: (1) "Put the flat cap/diffuser on and make sure the field is uniform", showing the live view and histogram; (2) adjust gain/exposure (with a suggested exposure and a clipping/underexposure indicator), tracking and guiding paused; (3) **OK** captures N flats; (4) results are summarised (level, frames, file, master) and the previous settings restored, with a reminder to remove the cap. Also to decide: matching darks/dark flats, naming that ties flats to the lights' settings (gain/offset/format/exposure), and flats per filter/position. Deferred until the base setup is stable on real hardware.
