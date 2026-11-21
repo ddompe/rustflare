@@ -139,6 +139,11 @@ pub struct SunLocation {
     pub radius: f64,
     /// Part of the disc is outside the frame, so `pos`/`radius` come from a limb fit.
     pub partial: bool,
+    /// Partial discs only: true if `radius` is the one expected from the optics, false if it was measured
+    /// from the limb because the optics' radius did not fit the data.
+    pub radius_from_optics: Option<bool>,
+    /// Partial discs only: RMS residual of the limb fit (pixels).
+    pub fit_rms: Option<f64>,
 }
 
 /// Finds the Sun: whole-disc centroid when the disc is fully in frame, limb fit when it is cut off.
@@ -152,10 +157,10 @@ pub fn locate_sun(frame: &Frame, expected_radius: Option<f64>) -> Option<SunLoca
         || (0..h).step_by(st).any(|y| px8(frame, 0, y) >= thr || px8(frame, w - 1, y) >= thr);
     if !touches_edge {
         let (c, r) = find_disc(frame)?;
-        return Some(SunLocation { pos: c, radius: r, partial: false });
+        return Some(SunLocation { pos: c, radius: r, partial: false, radius_from_optics: None, fit_rms: None });
     }
-    let (pos, radius) = fit_limb(frame, None, expected_radius).or_else(|| fit_limb(frame, None, None))?;
-    Some(SunLocation { pos, radius, partial: true })
+    let fit = fit_limb_auto(frame, expected_radius)?;
+    Some(SunLocation { pos: fit.pos, radius: fit.radius, partial: true, radius_from_optics: Some(fit.radius_from_optics), fit_rms: Some(fit.rms) })
 }
 
 impl Tracker {
@@ -169,8 +174,8 @@ impl Tracker {
     /// Sun is outside the frame. If `known_radius` (pixels) is given it is used as-is; otherwise
     /// the radius is fitted from the first frame (needs a reasonably long arc in view) and then locked.
     pub fn limb(frame: &Frame, known_radius: Option<f64>) -> Result<Tracker, TrackError> {
-        let (pos, radius) = fit_limb(frame, None, known_radius).or_else(|| fit_limb(frame, None, None)).ok_or(TrackError::NoLimb)?;
-        Ok(Tracker { state: State::Limb { pos, radius } })
+        let fit = fit_limb_auto(frame, known_radius).ok_or(TrackError::NoLimb)?;
+        Ok(Tracker { state: State::Limb { pos: fit.pos, radius: fit.radius } })
     }
 
     /// Tracks a surface feature (e.g. a sunspot) by block matching around `pos`.
@@ -268,10 +273,55 @@ fn kasa(pts: &[(f64, f64)]) -> Option<(f64, f64, f64)> {
 /// Fits the solar limb. With `radius` fixed, only the centre is estimated (Gauss–Newton from
 /// `start`, or from a Kåsa fit when no start is given); otherwise centre and radius come from Kåsa.
 fn fit_limb(frame: &Frame, start: Option<Vec2>, radius: Option<f64>) -> Option<(Vec2, f64)> {
+    fit_limb_pts(&limb_points(frame), start, radius)
+}
+
+/// RMS distance of the limb points from the circle (centre, radius): how well a radius explains the data.
+pub fn limb_rms(pts: &[(f64, f64)], c: Vec2, r: f64) -> f64 {
+    (pts.iter().map(|p| ((p.0 - c.x).hypot(p.1 - c.y) - r).powi(2)).sum::<f64>() / pts.len().max(1) as f64).sqrt()
+}
+
+/// A fitted solar limb and how good the fit is.
+#[derive(Copy, Clone, Debug, Serialize)]
+pub struct LimbFit {
+    pub pos: Vec2,
+    pub radius: f64,
+    /// RMS residual of the limb points, pixels.
+    pub rms: f64,
+    /// The radius is the one expected from the optics (it fits the data about as well as a free fit).
+    pub radius_from_optics: bool,
+}
+
+/// Fits the limb. The radius expected from the optics is used only if it explains the data about as well as
+/// a free fit; otherwise the radius is measured from the data (the optics are probably off: a Barlow's real
+/// factor depends on its spacing, so a nominal 3x can be 3.35x). Measured on real H-alpha frames.
+pub fn fit_limb_auto(frame: &Frame, expected: Option<f64>) -> Option<LimbFit> {
     let pts = limb_points(frame);
+    let free = fit_limb_pts(&pts, None, None).map(|(c, r)| (c, r, limb_rms(&pts, c, r)));
+    if let Some(er) = expected {
+        if let Some((c, r)) = fit_limb_pts(&pts, None, Some(er)) {
+            let rms = limb_rms(&pts, c, r);
+            if free.map_or(true, |(_, _, frms)| rms <= frms * 1.5 + 1.5) {
+                return Some(LimbFit { pos: c, radius: r, rms, radius_from_optics: true });
+            }
+        }
+    }
+    free.map(|(c, r, rms)| LimbFit { pos: c, radius: r, rms, radius_from_optics: false })
+}
+
+/// Both fits side by side, for diagnostics: (free, with the expected radius), each (centre, radius, rms).
+pub fn limb_fits(frame: &Frame, expected: Option<f64>) -> (Option<(Vec2, f64, f64)>, Option<(Vec2, f64, f64)>) {
+    let pts = limb_points(frame);
+    let free = fit_limb_pts(&pts, None, None).map(|(c, r)| (c, r, limb_rms(&pts, c, r)));
+    let fixed = expected.and_then(|er| fit_limb_pts(&pts, None, Some(er))).map(|(c, r)| (c, r, limb_rms(&pts, c, r)));
+    (free, fixed)
+}
+
+fn fit_limb_pts(pts: &[(f64, f64)], start: Option<Vec2>, radius: Option<f64>) -> Option<(Vec2, f64)> {
     if pts.len() < 20 {
         return None;
     }
+    let pts = pts.to_vec();
     let (kx, ky, kr) = kasa(&pts)?;
     let r = radius.unwrap_or(kr);
     if !(20.0..=20000.0).contains(&r) {
@@ -299,9 +349,62 @@ fn fit_limb(frame: &Frame, start: Option<Vec2>, radius: Option<f64>) -> Option<(
         let rms = (pts.iter().map(|p| ((p.0 - c.x).hypot(p.1 - c.y) - r).powi(2)).sum::<f64>() / pts.len() as f64).sqrt();
         if rms > 0.05 * r { return None; }
     } else {
+        // The algebraic (Kåsa) fit is biased on a short arc (real H-alpha data: radius +11 %, centre ~140 px
+        // off). Refine centre AND radius on the geometric distance with Gauss-Newton, starting from it.
+        let (mut cx, mut cy, mut rr) = (kx, ky, kr);
+        for _ in 0..30 {
+            let (mut a, mut b) = ([[0f64; 3]; 3], [0f64; 3]);
+            for p in &pts {
+                let (dx, dy) = (p.0 - cx, p.1 - cy);
+                let d = dx.hypot(dy).max(1e-9);
+                let j = [-dx / d, -dy / d, -1.0];
+                let res = d - rr;
+                for i in 0..3 {
+                    b[i] -= j[i] * res;
+                    for k in 0..3 {
+                        a[i][k] += j[i] * j[k];
+                    }
+                }
+            }
+            let Some(delta) = solve3(a, b) else { break };
+            cx += delta[0];
+            cy += delta[1];
+            rr += delta[2];
+            if delta[0].hypot(delta[1]).max(delta[2].abs()) < 0.01 {
+                break;
+            }
+        }
+        if rr.is_finite() && (20.0..=20000.0).contains(&rr) && cx.is_finite() && cy.is_finite() {
+            return Some((Vec2::new(cx, cy), rr));
+        }
         c = Vec2::new(kx, ky);
     }
     Some((c, r))
+}
+
+/// Solves a 3x3 linear system (Gaussian elimination with partial pivoting).
+fn solve3(mut a: [[f64; 3]; 3], mut b: [f64; 3]) -> Option<[f64; 3]> {
+    for col in 0..3 {
+        let piv = (col..3).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs()))?;
+        if a[piv][col].abs() < 1e-12 {
+            return None;
+        }
+        a.swap(col, piv);
+        b.swap(col, piv);
+        for row in col + 1..3 {
+            let f = a[row][col] / a[col][col];
+            for k in col..3 {
+                a[row][k] -= f * a[col][k];
+            }
+            b[row] -= f * b[col];
+        }
+    }
+    let mut x = [0f64; 3];
+    for row in (0..3).rev() {
+        let s: f64 = (row + 1..3).map(|k| a[row][k] * x[k]).sum();
+        x[row] = (b[row] - s) / a[row][row];
+    }
+    Some(x)
 }
 
 /// Reads a `w`x`h` block centred on (cx, cy) as 8-bit.
@@ -469,6 +572,22 @@ mod tests {
         let all_disc = Frame::new(64, 64, PixelFormat::Mono8, (0..4096).map(|i| 150 + (i % 40) as u8).collect());
         assert!(locate_sun(&all_disc, None).is_none());
         assert!(Tracker::limb(&all_disc, None).is_err());
+    }
+
+    #[test]
+    fn wrong_optics_radius_is_overridden_by_the_data_and_a_right_one_is_kept() {
+        // Partial disc of radius 400 whose limb arcs across the whole frame width (sag 160 px); the "optics" claim
+        // 360 (10 % too small, like a 3x Barlow that is really 3.35x). On a much shorter arc a wrong radius fits
+        // nearly as well (the centre compensates), so the data cannot tell and the hint is rightly kept.
+        let f = disc_frame(320.0, 640.0, 400.0);
+        let wrong = fit_limb_auto(&f, Some(360.0)).unwrap();
+        assert!(!wrong.radius_from_optics, "trusted an optics radius that does not fit the limb");
+        assert!((wrong.radius - 400.0).abs() < 12.0, "measured radius {}", wrong.radius);
+        let right = fit_limb_auto(&f, Some(400.0)).unwrap();
+        assert!(right.radius_from_optics && (right.radius - 400.0).abs() < 1e-6);
+        // the tracker starts from the measured radius, not the wrong hint
+        let t = Tracker::limb(&f, Some(360.0)).unwrap();
+        assert!((t.position().radius.unwrap() - 400.0).abs() < 12.0);
     }
 
     #[test]

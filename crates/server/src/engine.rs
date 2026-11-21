@@ -181,6 +181,10 @@ pub struct Engine {
     camera_pixel_um: Option<f64>,
     /// Expected solar radius in pixels (from optics), used to make partial-disc fits reliable.
     expected_radius: Option<f64>,
+    /// Recent radii measured from the limb when the optics' radius did not fit the data (see `fit_limb_auto`).
+    radius_samples: std::collections::VecDeque<f64>,
+    /// Median of those, used as the radius hint once it is stable: it fixes the radius-centre degeneracy of short arcs.
+    measured_radius: Option<f64>,
     status: Status,
     status_tx: watch::Sender<Status>,
     preview_tx: SyncSender<Frame>,
@@ -223,6 +227,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>)
         last_auto_try: Instant::now() - Duration::from_secs(10),
         camera_pixel_um: None,
         expected_radius: None,
+        radius_samples: Default::default(),
+        measured_radius: None,
         storage,
         status: Status::default(),
         status_tx,
@@ -294,6 +300,34 @@ impl Engine {
         let _ = r.reply.send(res);
     }
 
+    /// The radius to expect: measured from the data if the optics' value turned out wrong, else the optics'.
+    fn radius_hint(&self) -> Option<f64> {
+        self.measured_radius.or(self.expected_radius)
+    }
+
+    /// Tracks the radius measured from partial-disc limb fits that disagree with the optics.
+    fn learn_radius(&mut self, sun: Option<&SunLocation>) {
+        match sun {
+            Some(s) if s.partial && s.radius_from_optics == Some(false) => {
+                self.radius_samples.push_back(s.radius);
+                if self.radius_samples.len() > 30 {
+                    self.radius_samples.pop_front();
+                }
+                if self.radius_samples.len() >= 10 {
+                    let mut v: Vec<f64> = self.radius_samples.iter().copied().collect();
+                    v.sort_by(|a, b| a.total_cmp(b));
+                    self.measured_radius = Some(v[v.len() / 2]);
+                }
+            }
+            Some(s) if s.partial && s.radius_from_optics == Some(true) => {
+                // the optics are consistent with the data: nothing to correct
+                self.radius_samples.clear();
+                self.measured_radius = None;
+            }
+            _ => {}
+        }
+    }
+
     fn refresh_optics(&mut self) {
         use chrono::Datelike;
         use rustflare_tracking::solar;
@@ -318,6 +352,9 @@ impl Engine {
             scale_arcsec_per_px: scale,
             solar_radius_arcsec: solar::angular_radius_arcsec(day),
             expected_radius_px: self.expected_radius,
+            measured_radius_px: self.measured_radius,
+            suggested_effective_focal_mm: self.measured_radius.zip(pixel).map(|(r, p)| solar::focal_from_radius(r, p, bin, day)),
+            suggested_multiplier: self.measured_radius.zip(pixel).zip(self.optics.focal_length_mm).map(|((r, p), f)| solar::focal_from_radius(r, p, bin, day) / f),
         };
     }
 
@@ -462,7 +499,7 @@ impl Engine {
                 let f = self.last_frame.as_ref().ok_or("no frame received yet")?;
                 let t = match mode.as_str() {
                     "sun_disc" => Tracker::sun_disc(f),
-                    "limb" => Tracker::limb(f, radius.or(self.expected_radius)),
+                    "limb" => Tracker::limb(f, radius.or(self.radius_hint())),
                     "anchor" => Tracker::anchor(f, Vec2::new(x.ok_or("anchor needs x,y")?, y.ok_or("anchor needs x,y")?)),
                     other => return Err(format!("unknown tracking mode {other}")),
                 }
@@ -599,6 +636,8 @@ impl Engine {
                     return Err("binning must be 1 to 8".into());
                 }
                 self.optics = OpticsSettings { focal_length_mm, focal_multiplier, pixel_size_um, binning };
+                self.radius_samples.clear();
+                self.measured_radius = None;
                 crate::config::set(self.storage.config_file(), "optics", serde_json::to_value(&self.optics).unwrap_or_default())?;
                 Ok(json!({}))
             }
@@ -819,7 +858,9 @@ impl Engine {
                     c.temperature_c = temp;
                 }
             }
-            self.status.sun = locate_sun(&frame, self.expected_radius);
+            let sun = locate_sun(&frame, self.radius_hint());
+            self.learn_radius(sun.as_ref());
+            self.status.sun = sun;
             self.step_tracking(&frame, now);
             self.last_frame = Some(frame.clone());
         }

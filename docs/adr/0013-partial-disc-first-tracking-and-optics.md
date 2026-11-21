@@ -15,6 +15,10 @@ The first target scope is an **H-alpha** telescope whose field shows only part o
 - **The Sun is located on every analysed frame**, tracked or not (`locate_sun`): whole disc → centroid; partial → limb fit. This drives the centring aids (outline, offset readout, arrow) without starting a tracker.
 - **UI follows the use case:** "Centre & guide" moves the disc centre to the frame centre (only sensible if that is in the frame); **Hold position** keeps the current framing, which is what a partial-disc user wants after slewing a region of interest into view. When the disc centre is outside the frame the panel says so.
 
+## Found on real data: the optics can be wrong, so the data has the last word
+
+On the first real H-alpha recordings the radius expected from the entered optics (350 mm x a nominal 3x Barlow = 1099 px) fitted the limb points with 21 px RMS, while a free fit gave 2.96 px RMS at 1227 px: the real effective focal length was ~1170 mm (a Barlow's true factor depends on its spacing from the sensor). Forcing the wrong radius gave a *stable but wrong* centre (about 140 px off). So the fixed-radius fit is used only if it explains the limb about as well as a free fit (RMS <= 1.5x the free RMS + 1.5 px); otherwise the radius is measured from the data, a running median of those measurements becomes the hint (the radius-centre coupling of a short arc makes single-frame free fits noisier: centre sigma 2.5/6.7 px versus 1.8/2.4 px with a fixed radius), and the UI suggests the corrected effective focal length and Barlow factor. A geometric (Gauss-Newton) refinement of the free fit was added and changed little: the algebraic fit was not the problem.
+
 ## Alternatives considered
 
 - *Ellipse fit*: the Sun is round to far better than our pixel precision.
