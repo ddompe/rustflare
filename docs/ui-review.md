@@ -126,6 +126,16 @@ What was done for it:
 
 ![The new UI on an iPhone 15 Pro profile (WebKit): portrait and landscape](img/ui-after-iphone.webp)
 
+## Mount state and Send home
+
+The Aim tab shows what the mount itself reports (`status.mount`: tracking, slewing, at home, park, alt-az) as small tags
+under the tracking switch, and the switch always follows `status.mount.tracking`, so pressing park or home on the mount
+flips it. If the mount is parked (or parking) the pad and the tracking switch are disabled with "Parked on the mount: motion
+is disabled", and the status strip shows "Mount parked". **Send home** asks for confirmation inline ("The mount will slew to
+its home position. Make sure the telescope and cables are clear."), then posts `{"confirm": true}` to `/api/mount/home`; it
+is disabled while recording or parked and shows the server's error text if it refuses. There is no park or unpark in the
+app. A 400 "the mount is parked" from a slew or the tracking toggle is shown as it comes.
+
 ## Brand
 
 The owner's mark is in the header next to "RustFlare" (system font, bold, tight tracking, "Flare" in the brand orange; the

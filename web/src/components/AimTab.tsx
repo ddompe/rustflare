@@ -102,7 +102,7 @@ function Offset({ status }: { status: Status }) {
 }
 
 /** The hold-to-move slew pad: pointer down starts the slew, pointer up (or cancel, or leaving the tab) stops it. */
-function Pad({ status }: { status: Status }) {
+function Pad({ status, locked }: { status: Status; locked: boolean }) {
   const [speed, setSpeed] = useSetting('mount.slew_speed', 8)
   const [err, setErr] = useState<string | null>(null)
   const [active, setActive] = useState<string | null>(null)
@@ -151,6 +151,7 @@ function Pad({ status }: { status: Status }) {
     <button
       type="button"
       className={`pad-btn ${active === key ? 'held' : ''}`}
+      disabled={locked}
       aria-label={`${name}: hold to move`}
       aria-pressed={active === key}
       onPointerDown={(e) => { e.preventDefault(); try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* synthetic pointer */ } start(key, axis, dir) }}
@@ -185,19 +186,65 @@ function Pad({ status }: { status: Status }) {
   )
 }
 
+type MountSt = NonNullable<Status['mount']>
+
+/** What the mount itself reports. The tracking switch above follows the same field, so pressing park or home on the mount flips it. */
+function MountState({ m }: { m: MountSt }) {
+  const tags: { t: string; tone?: string }[] = [
+    { t: m.tracking ? 'Tracking' : 'Stopped', tone: m.tracking ? 'ok' : 'warn' },
+    ...(m.slewing ? [{ t: 'Slewing', tone: 'info' }] : []),
+    ...(m.at_home ? [{ t: 'At home' }] : []),
+    ...(m.park === 'parked' ? [{ t: 'Parked', tone: 'warn' }] : m.park === 'parking' ? [{ t: 'Parking', tone: 'warn' }] : []),
+    ...(m.alt_az ? [{ t: 'Alt-az' }] : []),
+  ]
+  return (
+    <ul className="tags" aria-label="Mount state">
+      {tags.map((x) => <li key={x.t} className={`tag ${x.tone ?? ''}`}>{x.t}</li>)}
+    </ul>
+  )
+}
+
+/** Send the mount to its home position, after an explicit confirmation. There is deliberately no park or unpark here. */
+function SendHome({ status, disabled, reason }: { status: Status; disabled: boolean; reason: string | null }) {
+  const [ask, setAsk] = useState(false)
+  const { err, busy, run } = useAction()
+  if (!status.mount) return null
+  return (
+    <div className="home">
+      {!ask ? (
+        <button type="button" className="wide" disabled={disabled} onClick={() => setAsk(true)}>Send home</button>
+      ) : (
+        <div className="confirm" role="alertdialog" aria-label="Send the mount home">
+          <p>The mount will slew to its home position. Make sure the telescope and cables are clear.</p>
+          <div className="btnrow tight">
+            <button type="button" className="grow" onClick={() => setAsk(false)}>Cancel</button>
+            <button type="button" className="danger grow" disabled={busy || disabled} onClick={() => run(async () => { await api('POST', '/mount/home', { confirm: true }); setAsk(false) })}>Send home</button>
+          </div>
+        </div>
+      )}
+      {disabled && reason && <div className="hint-text">{reason}</div>}
+      <ErrorLine error={err} />
+    </div>
+  )
+}
+
 /** Step 2: connect the mount, switch on solar tracking, slew the region of interest into view. */
 export function AimTab({ status, next }: { status: Status | null; next: () => void }) {
   const { err, run } = useAction()
   const m = status?.mount
   const sheet = useDatasheet('mount', status, m ? m.info : null)
   if (!status || !m) return <MountConnect />
+  const parked = m.park === 'parked' || m.park === 'parking'
   return (
     <>
+      {parked && <div className="warn" role="alert">{m.park === 'parking' ? 'The mount is parking: motion is disabled.' : 'Parked on the mount: motion is disabled.'}</div>}
       <Offset status={status} />
-      <Pad status={status} />
+      <Pad status={status} locked={parked} />
       <Section error={err}>
-        <Switch label="Solar tracking" checked={m.tracking} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? m.info : `${m.info}. Off: the Sun will drift out of view.`} />
+        <Switch label="Solar tracking" checked={m.tracking} disabled={parked} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? m.info : `${m.info}. Off: the Sun will drift out of view.`} />
+        <MountState m={m} />
       </Section>
+      <SendHome status={status} disabled={parked || status.capture.state !== 'idle'} reason={parked ? 'The mount is parked.' : status.capture.state !== 'idle' ? 'Not while recording.' : null} />
       <Framing status={status} />
       <DeviceCard kind="mount" data={sheet} />
       <div className="btnrow end">

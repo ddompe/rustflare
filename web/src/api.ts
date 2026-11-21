@@ -15,7 +15,8 @@ export interface Status {
   optics: Optics
   camera: CameraStatus | null
   sun: SunLocation | null
-  mount: { info: string; tracking: boolean } | null
+  /** What the mount itself reports (read back every ~2 s); everything but info and tracking may be null. */
+  mount: { info: string; tracking: boolean; slewing?: boolean | null; at_home?: boolean | null; park?: 'unparked' | 'parking' | 'parked' | null; alt_az?: boolean | null } | null
   tracking: Tracking | null
   guiding: { state: 'off' | 'calibrating' | 'guiding'; calibration: Calibration | null; target: [number, number] | null; error_px: number | null }
   capture: {
