@@ -1,0 +1,35 @@
+{
+  "cameras": [
+    {
+      "match": "Apollo-M MINI",
+      "vendor": "Player One Astronomy",
+      "model": "Apollo-M MINI",
+      "sensor": "Sony IMX429 2/3\" CMOS, monochrome, global shutter",
+      "sensor_size_mm": "8.75 x 6.6 (11 mm diagonal)",
+      "resolution": "1944 x 1472",
+      "pixel_um": 4.5,
+      "adc_bits": 12,
+      "max_fps_full_res": 84,
+      "full_well_e": 25000,
+      "read_noise_e": 1.45,
+      "hcg_gain": 71,
+      "hcg_note": "High conversion gain switches on automatically above gain 71 (vendor page).",
+      "qe_peak_pct": 79,
+      "notes": "84 fps is the vendor figure for RAW8 at full resolution on USB 3.0; read noise 5.6 e- to 1.45 e- depending on gain; exposure 32 us to 2000 s; weight 160 g.",
+      "sources": ["https://player-one-astronomy.com/product/apollo-m-mini-usb3-0-mono-camera/"]
+    }
+  ],
+  "mounts": [
+    {
+      "match": "AM3",
+      "vendor": "ZWO",
+      "model": "AM3",
+      "modes": ["Equatorial", "Alt-azimuth"],
+      "tracking_rates": ["Sidereal", "Lunar", "Solar"],
+      "guide_rates": "0.1x to 0.9x sidereal (single guide rate)",
+      "ports": ["USB-C", "Bluetooth", "Wi-Fi"],
+      "notes": "Values from ZWO's serial protocol and tests with this project; mechanical specifications are not listed here because the figures found were for the AM3N.",
+      "sources": ["https://www.zwoastro.com/product/am3n/"]
+    }
+  ]
+}

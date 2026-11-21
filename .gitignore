@@ -11,3 +11,6 @@ rustflare.json
 
 # local agent worktrees
 /.claude/
+.e2e-data
+test-results
+playwright-report

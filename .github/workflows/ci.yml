@@ -30,6 +30,16 @@ jobs:
           cargo build --release -p rustflare-server
           scripts/smoke.sh ./target/release/rustflare-server ./data-smoke | tee smoke.log
           grep -q "capture=idle/saved" smoke.log
+      - name: Browser tests (Playwright, simulators)
+        run: |
+          cd web
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: web/test-results
 
   package-arm64:
     name: Build Raspberry Pi package (arm64 .deb)

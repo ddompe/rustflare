@@ -51,12 +51,14 @@ function Row({ f, stats, busy, onStats, onDeleted }: { f: FileEntry; stats?: Sta
 
 /** Review, check and delete captures: sizes, SER timing, brightness, and a flag for recordings that are mostly dark. */
 export function FileManager({ status }: { status: Status | null }) {
-  const [files, setFiles] = useState<FileEntry[]>([])
+  const [all, setAll] = useState<FileEntry[]>([])
+  // a capture's .json sidecar travels with it (deleting the capture removes it): not a row of its own
+  const files = all.filter((f) => !(f.path.endsWith('.json') && all.some((o) => o !== f && o.path !== f.path && o.path.replace(/\.[^./]+\/?$/, '') === f.path.slice(0, -5))))
   const [stats, setStats] = useState<Record<string, Stats | { error: string }>>({})
   const [checking, setChecking] = useState(false)
   const last = status?.capture.last_file
   const busy = !!status && status.capture.state !== 'idle'
-  const load = () => api<FileEntry[]>('GET', '/files').then(setFiles).catch(() => {})
+  const load = () => api<FileEntry[]>('GET', '/files').then(setAll).catch(() => {})
   useEffect(() => { load() }, [last, busy]) // eslint-disable-line react-hooks/exhaustive-deps
   const check = async (p: string) => {
     try { const s = await api<Stats>('GET', `/files/stats?path=${encodeURIComponent(p)}`); setStats((x) => ({ ...x, [p]: s })) }

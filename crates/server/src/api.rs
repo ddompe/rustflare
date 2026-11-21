@@ -63,6 +63,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/storage", get(storage_get).put(storage_put))
         .route("/api/storage/eject", post(storage_eject))
         .route("/api/flats/applied", put(flats_applied))
+        .route("/api/datasheet/:kind", get(datasheet))
         .route("/api/files/stats", get(file_stats))
         .route("/api/files/delete", post(file_delete))
         .route("/api/optics", put(optics_put))
@@ -318,6 +319,27 @@ async fn storage_put(State(st): State<AppState>, Json(b): Json<StoragePath>) -> 
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
     }
+}
+
+const CATALOG: &str = include_str!("../data/catalog.json");
+
+/// Device card data: what the device reports now (`live`) and the vendor catalog entry matching it (`catalog`, or null).
+async fn datasheet(State(st): State<AppState>, axum::extract::Path(kind): axum::extract::Path<String>) -> Res {
+    let cat: Value = serde_json::from_str(CATALOG).unwrap_or_default();
+    let status = st.engine.status.borrow().clone();
+    let (live, name, list) = match kind.as_str() {
+        "camera" => {
+            let Some(c) = &status.camera else { return (StatusCode::NOT_FOUND, Json(json!({ "error": "no camera open" }))).into_response() };
+            (json!({ "model": c.name, "width": c.width, "height": c.height, "bits": c.bits, "pixel_um": status.optics.pixel_size_um }), c.name.clone(), "cameras")
+        }
+        "mount" => {
+            let Some(m) = &status.mount else { return (StatusCode::NOT_FOUND, Json(json!({ "error": "no mount connected" }))).into_response() };
+            (json!({ "model": m.info, "tracking": m.tracking }), m.info.clone(), "mounts")
+        }
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    let entry = cat[list].as_array().and_then(|a| a.iter().find(|e| e["match"].as_str().is_some_and(|m| name.to_lowercase().contains(&m.to_lowercase())))).cloned();
+    Json(json!({ "live": live, "catalog": entry })).into_response()
 }
 
 #[derive(Deserialize)]
