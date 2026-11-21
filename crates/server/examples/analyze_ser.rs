@@ -5,7 +5,7 @@
 //! The scatter of the located centre from frame to frame is, to first order, the seeing.
 
 use rustflare_core::{Frame, PixelFormat};
-use rustflare_tracking::locate_sun;
+use rustflare_tracking::{limb_fits, locate_sun};
 use std::io::{Read, Seek, SeekFrom};
 
 fn main() {
@@ -40,6 +40,17 @@ fn main() {
         let (lo, hi) = v.iter().fold((f64::MAX, f64::MIN), |(l, h), x| (l.min(*x), h.max(*x)));
         (m, sd, lo, hi)
     };
+    // Which radius explains the limb points better: the free fit, or the one expected from the optics?
+    f.seek(SeekFrom::Start(178)).unwrap();
+    let mut d0 = vec![0u8; bytes];
+    f.read_exact(&mut d0).unwrap();
+    let (free, fixed) = limb_fits(&Frame::new(w, hh, fmt, d0), expected);
+    if let Some((c, r, rms)) = free {
+        println!("frame 0, free fit:           centre ({:.1}, {:.1}) radius {:.1} px, limb RMS residual {:.2} px", c.x, c.y, r, rms);
+    }
+    if let Some((c, r, rms)) = fixed {
+        println!("frame 0, optics radius fit:  centre ({:.1}, {:.1}) radius {:.1} px, limb RMS residual {:.2} px", c.x, c.y, r, rms);
+    }
     println!("located in {}/{} frames ({} partial)", xs.len(), n, partial);
     for (name, v) in [("centre x", &xs), ("centre y", &ys), ("radius", &rs)] {
         let (m, sd, lo, hi) = stats(v);

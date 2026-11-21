@@ -21,6 +21,11 @@ pub fn expected_radius_px(focal_length_mm: f64, pixel_size_um: f64, binning: u32
     angular_radius_arcsec(day_of_year) / plate_scale_arcsec_per_px(focal_length_mm, pixel_size_um, binning)
 }
 
+/// Effective focal length (mm) implied by a measured solar radius in pixels: the inverse of `expected_radius_px`.
+pub fn focal_from_radius(radius_px: f64, pixel_size_um: f64, binning: u32, day_of_year: u32) -> f64 {
+    206.265 * pixel_size_um * binning.max(1) as f64 * radius_px / angular_radius_arcsec(day_of_year)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -31,6 +36,12 @@ mod tests {
         let jul = angular_radius_arcsec(185);
         assert!((jan - 975.6).abs() < 1.0, "{jan}");
         assert!((jul - 943.6).abs() < 1.0, "{jul}");
+    }
+
+    #[test]
+    fn focal_from_measured_radius_round_trips() {
+        let r = expected_radius_px(1172.0, 4.5, 1, 325);
+        assert!((focal_from_radius(r, 4.5, 1, 325) - 1172.0).abs() < 1e-6);
     }
 
     #[test]

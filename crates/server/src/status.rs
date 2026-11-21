@@ -86,6 +86,11 @@ pub struct OpticsStatus {
     pub solar_radius_arcsec: f64,
     /// Expected solar radius in pixels (needs focal length and pixel size).
     pub expected_radius_px: Option<f64>,
+    /// Radius measured from the limb when it disagrees with the optics, and the effective focal length and
+    /// Barlow/reducer factor that would explain it (shown as a suggestion: the optics may simply be mis-entered).
+    pub measured_radius_px: Option<f64>,
+    pub suggested_effective_focal_mm: Option<f64>,
+    pub suggested_multiplier: Option<f64>,
 }
 
 #[derive(Clone, Serialize, Default)]
