@@ -5,11 +5,13 @@ nav:
   - Home: index.md
   - Brand: brand.md
   - Getting started: getting-started.md
-  - Using Rustflare: usage.md
+  - User guide: usage.md
   - Hardware: hardware.md
   - ZWO mount Bluetooth protocol: zwo-ble-protocol.md
   - Tracking & guiding: tracking-and-guiding.md
   - Capture & flats: capture.md
+  - Performance: performance.md
+  - UI review: ui-review.md
   - Architecture: architecture.md
   - HTTP API: api.md
   - Development: development.md

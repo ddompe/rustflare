@@ -58,3 +58,26 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `PUT /api/capture/buffer` | `{"mb"}`: RAM buffer size (64–8192) |
 | `POST /api/capture/flats` | `{"name"?,"frames","level"?}` (`level` 0.1–0.9, default 0.5) |
 | `POST /api/capture/stop` | |
+| `PUT /api/flats/applied` | `{"enabled"}`: apply the master flat to the live view (needs a master flat) |
+
+## Mount: Go to Sun, site, home
+
+| | body |
+|---|---|
+| `PUT /api/site` | `{"latitude","longitude"}` degrees, east-positive longitude; saved in the settings file |
+| `POST /api/mount/goto-sun` | `{"confirm":true,"allow_unsynced_clock"?}`: sends site and time to the mount, slews to the Sun, then switches solar tracking on; refused without a site, below the horizon, with a capture running, or (unless overridden) when the Pi's clock is not NTP-synchronised. `status.goto` shows progress |
+| `POST /api/mount/home` | `{"confirm":true}` |
+| `POST /api/mount/stop` | also cancels a GoTo |
+
+`status` also carries `site`, `sky_sun` (altitude/azimuth/RA/Dec of the Sun now), `clock.ntp_synchronized` and `flats` (`available`, `applied`, `name`).
+
+## Storage and captures
+
+| | body |
+|---|---|
+| `GET /api/storage`, `PUT /api/storage` | candidates and the current location; `{"path"}` selects |
+| `POST /api/storage/eject` | `{"mount_point"}`: flush, unmount and power off a removable drive; refused while capturing or writing |
+| `GET /api/files` | the captures (date folder / name) |
+| `GET /api/files/stats?path=` | SER header, measured fps and duration, sampled brightness, `mostly_dark`, `complete` |
+| `POST /api/files/delete` | `{"path","confirm":true}`: deletes one capture and its notes file; refused while recording |
+| `GET /api/datasheet/camera`, `/mount` | `{live, catalog}` for the device cards |
