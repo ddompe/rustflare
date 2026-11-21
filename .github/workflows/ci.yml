@@ -59,3 +59,4 @@ jobs:
         with:
           name: rustflare-arm64-deb
           path: dist/
+          retention-days: 7
