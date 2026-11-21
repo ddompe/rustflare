@@ -3,6 +3,7 @@ site_description: Headless, web-controlled solar capture for Raspberry Pi
 docs_dir: docs
 nav:
   - Home: index.md
+  - Brand: brand.md
   - Getting started: getting-started.md
   - Using Rustflare: usage.md
   - Hardware: hardware.md

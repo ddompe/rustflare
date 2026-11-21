@@ -14,7 +14,7 @@ Captures are large (2.4 MB per 1280×960 16-bit frame) and the SD card is small 
 - **While recording**, every 2 s: the mount must still be there and at least 50 MB free, or the capture stops cleanly and keeps what it has.
 - **FAT32:** detected from the filesystem type; the UI warns, and the writer **rolls over to `name_part2.ser`, …** before the 4 GB limit instead of failing (see [ADR 0012](0012-burst-capture-and-ram-buffer.md)).
 - **Polling is read-only.** Status refresh uses `statvfs` and `access()`; the create-and-delete write probe runs only on selection and at capture start, so the UI does not write to a flash drive every few seconds.
-- **Permissions:** a drive auto-mounted for a login user is not writable by a system account, so the service runs as that login user by default after a `sudo apt install` ([ADR 0010](0010-debian-package-and-updates.md)); the error message names the fix (`sudo rustflare-user <login>`). Reformatting the drive (to exFAT/ext4) is recommended in the UI but never done by Rustflare.
+- **Permissions:** a drive auto-mounted for a login user is not writable by a system account, so the service runs as that login user by default after a `sudo apt install` ([ADR 0010](0010-debian-package-and-updates.md)); the error message names the fix (`sudo rustflare-user <login>`). Reformatting the drive (to exFAT/ext4) is recommended in the UI but never done by RustFlare.
 
 ## Consequences
 

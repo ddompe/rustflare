@@ -39,7 +39,7 @@ Config and captures are kept. If the repository is private, put a read token in 
 
 ## Storage: use a USB drive
 
-Open **Storage** in the web UI, pick the drive, press *Use*. The choice is remembered. See [Capture](capture.md#storage) for what Rustflare does when a drive is removed, full, or FAT32.
+Open **Storage** in the web UI, pick the drive, press *Use*. The choice is remembered. See [Capture](capture.md#storage) for what RustFlare does when a drive is removed, full, or FAT32.
 
 The installer runs the service as the user who ran `sudo apt install` so that drives auto-mounted for that login are writable. Check or change it with `rustflare-user` / `sudo rustflare-user <login>`.
 

@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Decisions that shape Rustflare, in [MADR](https://adr.github.io/madr/)-style short form.
+Decisions that shape RustFlare, in [MADR](https://adr.github.io/madr/)-style short form.
 Add a new record by copying [`template.md`](template.md) to the next number. Never rewrite
 an accepted record: supersede it with a new one and link both ways.
 

@@ -13,7 +13,7 @@ web-controlled application.
 
 ## Decision
 
-Rustflare is a new Cargo workspace. We **port** the useful algorithms and protocol code onto our
+RustFlare is a new Cargo workspace. We **port** the useful algorithms and protocol code onto our
 own small types instead of forking the application:
 
 | Crate | Responsibility | Taken from Vidoxide |
@@ -25,7 +25,7 @@ own small types instead of forking the application:
 | `rustflare-capture` | SER/PNG writers, flats logic | `output/ser.rs` |
 | `rustflare-server` | engine + HTTP/WS API | — |
 
-Vidoxide is MIT-licensed; Rustflare is MIT-licensed too, keeps the upstream licence text
+Vidoxide is MIT-licensed; RustFlare is MIT-licensed too, keeps the upstream licence text
 (`LICENSE.vidoxide`) and lists every ported piece in `NOTICE.md`.
 
 ## Alternatives considered
