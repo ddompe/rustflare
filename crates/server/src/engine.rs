@@ -36,14 +36,17 @@ impl Default for Startup {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct OpticsSettings {
+    /// Native focal length of the telescope, before any Barlow or reducer.
     pub focal_length_mm: Option<f64>,
+    /// Barlow (> 1) or focal reducer (< 1) factor; the effective focal length is `focal_length_mm * focal_multiplier`.
+    pub focal_multiplier: f64,
     /// Manual pixel size (µm); when unset the camera's own value is used.
     pub pixel_size_um: Option<f64>,
     pub binning: u32,
 }
 
 impl Default for OpticsSettings {
-    fn default() -> Self { OpticsSettings { focal_length_mm: None, pixel_size_um: None, binning: 1 } }
+    fn default() -> Self { OpticsSettings { focal_length_mm: None, focal_multiplier: 1.0, pixel_size_um: None, binning: 1 } }
 }
 
 pub enum Command {
@@ -71,7 +74,7 @@ pub enum Command {
     SetStartup { enabled: bool },
     CaptureFlats { name: Option<String>, frames: u32, level: Option<f64> },
     CaptureStop,
-    SetOptics { focal_length_mm: Option<f64>, pixel_size_um: Option<f64>, binning: u32 },
+    SetOptics { focal_length_mm: Option<f64>, focal_multiplier: f64, pixel_size_um: Option<f64>, binning: u32 },
 }
 
 struct Request {
@@ -295,10 +298,13 @@ impl Engine {
             _ => (None, None),
         };
         let bin = self.optics.binning.max(1);
-        let scale = self.optics.focal_length_mm.zip(pixel).map(|(f, p)| solar::plate_scale_arcsec_per_px(f, p, bin));
-        self.expected_radius = self.optics.focal_length_mm.zip(pixel).map(|(f, p)| solar::expected_radius_px(f, p, bin, day));
+        let effective = self.optics.focal_length_mm.map(|f| f * self.optics.focal_multiplier);
+        let scale = effective.zip(pixel).map(|(f, p)| solar::plate_scale_arcsec_per_px(f, p, bin));
+        self.expected_radius = effective.zip(pixel).map(|(f, p)| solar::expected_radius_px(f, p, bin, day));
         self.status.optics = OpticsStatus {
             focal_length_mm: self.optics.focal_length_mm,
+            focal_multiplier: self.optics.focal_multiplier,
+            effective_focal_mm: effective,
             pixel_size_override_um: self.optics.pixel_size_um,
             pixel_size_um: pixel,
             pixel_size_source: source,
@@ -563,17 +569,20 @@ impl Engine {
                 self.set_capture("flats", "finding exposure", Some(frames));
                 Ok(json!({}))
             }
-            Command::SetOptics { focal_length_mm, pixel_size_um, binning } => {
+            Command::SetOptics { focal_length_mm, focal_multiplier, pixel_size_um, binning } => {
                 if focal_length_mm.is_some_and(|f| !(10.0..=20000.0).contains(&f)) {
                     return Err("focal length must be between 10 and 20000 mm".into());
                 }
                 if pixel_size_um.is_some_and(|p| !(0.5..=50.0).contains(&p)) {
                     return Err("pixel size must be between 0.5 and 50 µm".into());
                 }
+                if !(0.2..=10.0).contains(&focal_multiplier) {
+                    return Err("Barlow/reducer factor must be between 0.2 and 10 (e.g. 2 for a 2x Barlow, 0.63 for a reducer)".into());
+                }
                 if !(1..=8).contains(&binning) {
                     return Err("binning must be 1 to 8".into());
                 }
-                self.optics = OpticsSettings { focal_length_mm, pixel_size_um, binning };
+                self.optics = OpticsSettings { focal_length_mm, focal_multiplier, pixel_size_um, binning };
                 crate::config::set(self.storage.config_file(), "optics", serde_json::to_value(&self.optics).unwrap_or_default())?;
                 Ok(json!({}))
             }

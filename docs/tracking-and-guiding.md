@@ -12,7 +12,7 @@ Decisions and rationale: [ADR 0008](adr/0008-solar-tracking-and-guiding.md).
 
 **Finding the disc.** Sky and disc are separated with an Otsu threshold on a log-intensity histogram, which copes with H-alpha images where bright plage and prominences raise the peak and dark filaments lie inside the disc. If the frame does not show two clearly different populations (e.g. a field wholly on the disc) Rustflare says there is no limb in view. See [ADR 0013](adr/0013-partial-disc-first-tracking-and-optics.md).
 
-**Optics.** Focal length and pixel size give the image scale and, with the Sun's apparent size today (≈ 943–976″), the expected radius in pixels, which makes partial-disc fits much more reliable. A measured radius that disagrees by more than 10 % is flagged (wrong focal length, reducer, binning).
+**Optics.** Focal length (with an optional Barlow/reducer factor, so you do not have to work out the effective focal length yourself) and pixel size give the image scale and, with the Sun's apparent size today (≈ 943–976″), the expected radius in pixels, which makes partial-disc fits much more reliable. A measured radius that disagrees by more than 10 % is flagged (wrong focal length, reducer, binning).
 
 Frames where the measurement jumps by more than half a disc radius are treated as artefacts and ignored. If the target disappears the tracker reports *lost* and keeps trying.
 

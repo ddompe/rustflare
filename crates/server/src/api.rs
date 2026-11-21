@@ -274,10 +274,18 @@ async fn storage_put(State(st): State<AppState>, Json(b): Json<StoragePath>) -> 
 }
 
 #[derive(Deserialize)]
-struct Optics { focal_length_mm: Option<f64>, pixel_size_um: Option<f64>, #[serde(default = "one")] binning: u32 }
+struct Optics {
+    focal_length_mm: Option<f64>,
+    #[serde(default = "one_f")]
+    focal_multiplier: f64,
+    pixel_size_um: Option<f64>,
+    #[serde(default = "one")]
+    binning: u32,
+}
 fn one() -> u32 { 1 }
+fn one_f() -> f64 { 1.0 }
 async fn optics_put(s: State<AppState>, Json(b): Json<Optics>) -> Res {
-    run(s, Command::SetOptics { focal_length_mm: b.focal_length_mm, pixel_size_um: b.pixel_size_um, binning: b.binning }).await
+    run(s, Command::SetOptics { focal_length_mm: b.focal_length_mm, focal_multiplier: b.focal_multiplier, pixel_size_um: b.pixel_size_um, binning: b.binning }).await
 }
 
 #[derive(Deserialize)]

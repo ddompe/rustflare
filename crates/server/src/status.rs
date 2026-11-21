@@ -70,7 +70,11 @@ pub struct CaptureStatus {
 
 #[derive(Clone, Serialize, Default)]
 pub struct OpticsStatus {
+    /// Native focal length of the telescope.
     pub focal_length_mm: Option<f64>,
+    /// Barlow (> 1) / reducer (< 1) factor, and the resulting effective focal length.
+    pub focal_multiplier: f64,
+    pub effective_focal_mm: Option<f64>,
     /// Manual pixel-size override (µm); `None` = use the camera's.
     pub pixel_size_override_um: Option<f64>,
     /// Pixel size actually used, and where it came from ("camera" | "manual").
