@@ -4,6 +4,7 @@ import { StorageLine } from './Storage'
 import { FileManagerButton } from './FileManager'
 import { ProminencePair } from './ProminencePair'
 import { BracketLanes } from './BracketLanes'
+import { ProminenceVideo } from './ProminenceVideo'
 import { useSetting } from '../settings'
 
 const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`)
@@ -105,7 +106,10 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
         <button type="button" className="wide" onClick={() => run(() => api('POST', '/capture/single', { name: nm }))}>Save a single frame (PNG)</button>
       </Disclosure>
       {c.last_file && <div className="hint-text lastfile">Last: <a href={`/files/${c.last_file}`}>{c.last_file}</a> ({c.phase}{c.disk_mb_s > 0 ? `, written at ${c.disk_mb_s.toFixed(0)} MB/s` : ''})</div>}
-      <Disclosure title="Prominence pair" summary="disc + long exposure">
+      <Disclosure title="Prominence video" summary="raw SER, disc + long lanes">
+        <ProminenceVideo status={status} />
+      </Disclosure>
+      <Disclosure title="Prominence pair" summary="stills, PNG composite">
         <ProminencePair status={status} />
       </Disclosure>
       <Disclosure title="HDR bracketing lanes" summary="eclipse, Moon">

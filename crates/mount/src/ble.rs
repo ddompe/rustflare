@@ -1,4 +1,4 @@
-//! Bluetooth Low Energy byte-stream transport for the ZWO driver (ADR 0015, `docs/zwo-ble-protocol.md`).
+//! Bluetooth Low Energy byte-stream transport for the ZWO driver (ADR 0015, `docs/project/zwo-ble-protocol.md`).
 //!
 //! The mount's BLE link is a serial-over-GATT bridge: commands are written to one characteristic, replies come
 //! back as notifications on the same one. [`BleTransport`] turns that into `Read + Write` so [`crate::zwo::Zwo`]
@@ -46,7 +46,7 @@ pub fn resolve_token(env: Option<&str>, setting: Option<&str>) -> Result<String>
         Some(t) if !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit()) => Ok(t.to_string()),
         Some(_) => Err(Error::Mount(
             "the configured Bluetooth session token (RUSTFLARE_ZWO_BLE_TOKEN / settings key zwo_ble_token) is empty or not digits; \
-             remove it to use the built-in value, see docs/zwo-ble-protocol.md"
+             remove it to use the built-in value, see docs/project/zwo-ble-protocol.md"
                 .into(),
         )),
     }
@@ -80,7 +80,7 @@ impl<G: Gatt> BleTransport<G> {
     /// `:BS<token>#` -> `OK#`; the mount ignores everything else until this succeeded.
     pub fn open_session(&mut self, token: &str) -> Result<()> {
         if token.is_empty() || !token.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(Error::Mount("invalid Bluetooth session token, see docs/zwo-ble-protocol.md".into()));
+            return Err(Error::Mount("invalid Bluetooth session token, see docs/project/zwo-ble-protocol.md".into()));
         }
         self.write_all(format!(":BS{token}#").as_bytes()).map_err(|e| Error::Mount(format!("Bluetooth session opener: {e}")))?;
         let start = Instant::now();

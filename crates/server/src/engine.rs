@@ -121,7 +121,7 @@ pub enum Command {
     /// One burst (`interval_s` = None) or a schedule of bursts, recorded through the RAM buffer.
     /// `frames` / `seconds`: when a burst ends. `interval_s`: start-to-start spacing. `bursts`: None = until stopped.
     /// HDR bracketing: cycle through lanes (own exposure, own directory); `cycles` None = until stopped.
-    CaptureLanes { name: Option<String>, lanes: Vec<LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> },
+    CaptureLanes { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> },
     CaptureBursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String> },
     SetBuffer { mb: u64 },
     /// Reconnect the last camera and mount automatically at startup (and after a camera error).
@@ -180,6 +180,9 @@ struct Lanes {
     specs: Vec<LaneSpec>,
     dir: PathBuf,
     original: (f64, Option<f64>),
+    /// Start-to-start time of one pass through all lanes (time-lapse cadence); None = back to back.
+    cycle_interval: Option<Duration>,
+    cycle_started: Instant,
     /// Frames to discard after a setting change so the first kept frame has the new exposure.
     skip: u32,
 }
@@ -1197,7 +1200,15 @@ impl Engine {
                 self.status.capture.bursts_total = total_bursts;
                 Ok(json!({ "buffer_frames": cap, "fits_in_buffer": frames.map_or(true, |f| f as usize <= cap) }))
             }
-            Command::CaptureLanes { name, lanes, cycles, format, on_full } => {
+            Command::CaptureLanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full } => {
+                if cycle_interval_s.is_some_and(|i| i < 1.0) {
+                    return Err("the time between cycles must be at least 1 s".into());
+                }
+                let kind_label: &'static str = match kind.as_deref() {
+                    None | Some("hdr") => "hdr",
+                    Some("prominence") => "prominence",
+                    Some(o) => return Err(format!("unknown lane kind {o} (use hdr or prominence)")),
+                };
                 self.require_capture_ready()?;
                 if !(2..=6).contains(&lanes.len()) {
                     return Err("give 2 to 6 lanes".into());
@@ -1234,13 +1245,16 @@ impl Engine {
                 self.buffer_cap = cap;
                 let gain = cam.controls.iter().find(|c| c.id == "gain").map(|c| c.value);
                 let original = (self.exposure(), gain);
-                let dir = self.new_stem("lanes", name.as_deref());
+                let dir = self.new_stem(kind_label, name.as_deref());
+                let _ = std::fs::create_dir_all(&dir);
+                let manifest = self.sidecar("lane-session", json!({ "kind": kind_label, "cycles": cycles, "lanes": lanes.iter().map(|l| json!({ "name": l.name, "exposure_us": l.exposure_us, "gain": l.gain, "frames": l.frames, "seconds": l.seconds })).collect::<Vec<_>>() }));
+                let _ = std::fs::write(dir.join("session.json"), serde_json::to_vec_pretty(&manifest).unwrap_or_default());
                 let total = cycles.map(|c| c * lanes.len() as u32);
                 let n_lanes = lanes.len();
                 self.job = Job::Capture(Box::new(CaptureJob {
-                    lanes: Some(Lanes { specs: lanes, dir, original, skip: 0 }),
+                    lanes: Some(Lanes { specs: lanes, dir, original, cycle_interval: cycle_interval_s.map(Duration::from_secs_f64), cycle_started: Instant::now(), skip: 0 }),
                     name: name.unwrap_or_default(),
-                    kind: "lane",
+                    kind: kind_label,
                     format,
                     burst_frames: None,
                     burst_seconds: None,
@@ -1916,6 +1930,9 @@ impl Engine {
                 let n = l.specs.len() as u32;
                 let spec = l.specs[((job.burst_no - 1) % n) as usize].clone();
                 let cycle = (job.burst_no - 1) / n + 1;
+                if (job.burst_no - 1) % n == 0 {
+                    l.cycle_started = Instant::now();
+                }
                 job.burst_frames = spec.frames;
                 job.burst_seconds = spec.seconds;
                 l.skip = 2;
@@ -2009,7 +2026,13 @@ impl Engine {
             self.finish_capture(None, "captured; writing buffered frames to disk");
             return Job::Idle;
         }
-        let next_at = if job.lanes.is_some() { Instant::now() } else { (started + job.interval.unwrap()).max(Instant::now()) };
+        let next_at = if let Some(l) = &job.lanes {
+            // time-lapse cadence: after the last lane of a cycle, wait for the next cycle slot
+            match l.cycle_interval {
+                Some(i) if job.burst_no % l.specs.len() as u32 == 0 => (l.cycle_started + i).max(Instant::now()),
+                _ => Instant::now(),
+            }
+        } else { (started + job.interval.unwrap()).max(Instant::now()) };
         job.phase = CapPhase::Waiting { next_at };
         Job::Capture(job)
     }

@@ -1,4 +1,4 @@
-// Captures the screenshots used by docs/manual.md from the simulator.
+// Captures the screenshots used by the user guide in docs/guide/ from the simulator.
 //   npm run build && cargo build --release -p rustflare-server
 //   rm -rf .shots && ../target/release/rustflare-server --bind 127.0.0.1:18120 --web-dir dist --data-dir .shots/data --config-file .shots/c.json &
 //   node e2e/manual-shots.mjs ../docs/img/manual

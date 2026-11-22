@@ -1,0 +1,7 @@
+{
+  "ui": {
+    "camera.selected": "simulator|sim0",
+    "ui.more_open": "startup",
+    "ui.tab": "record"
+  }
+}

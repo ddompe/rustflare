@@ -210,10 +210,10 @@ async fn capture_sequence(s: State<AppState>, Json(b): Json<Sequence>) -> Res {
 }
 
 #[derive(Deserialize)]
-struct LanesBody { name: Option<String>, lanes: Vec<crate::engine::LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> }
+struct LanesBody { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<crate::engine::LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> }
 /// HDR bracketing lanes: each lane has its own exposure and output directory.
 async fn capture_lanes(s: State<AppState>, Json(b): Json<LanesBody>) -> Res {
-    run(s, Command::CaptureLanes { name: b.name, lanes: b.lanes, cycles: b.cycles, format: b.format, on_full: b.on_full }).await
+    run(s, Command::CaptureLanes { name: b.name, kind: b.kind, cycle_interval_s: b.cycle_interval_s, lanes: b.lanes, cycles: b.cycles, format: b.format, on_full: b.on_full }).await
 }
 
 #[derive(Deserialize)]
@@ -250,16 +250,40 @@ async fn files(State(st): State<AppState>) -> Json<Value> {
                 for f in fs.flatten() {
                     if let Ok(md) = f.metadata() {
                         // a PNG burst is a folder of frames: report its frame count and total size
-                        let (size, folder_files) = if md.is_dir() {
+                        let fname = f.file_name().to_string_lossy().to_string();
+                        let session_kind = ["hdr", "prominence"].into_iter().find(|k| fname.starts_with(&format!("{k}_")));
+                        let (mut size, mut folder_files, mut lanes) = (md.len(), None, vec![]);
+                        if md.is_dir() {
                             let items: Vec<_> = std::fs::read_dir(f.path()).map(|d| d.flatten().collect()).unwrap_or_default();
-                            (items.iter().filter_map(|i| i.metadata().ok()).map(|m| m.len()).sum(), Some(items.len()))
-                        } else {
-                            (md.len(), None)
-                        };
+                            size = items.iter().filter_map(|i| i.metadata().ok()).filter(|m| m.is_file()).map(|m| m.len()).sum();
+                            folder_files = Some(items.len());
+                            if session_kind.is_some() {
+                                // an HDR / prominence session: one sub-folder per lane, each with one recording per cycle
+                                for l in items.iter().filter(|i| i.path().is_dir()) {
+                                    let lname = l.file_name().to_string_lossy().trim_start_matches("lane-").to_string();
+                                    let mut files = vec![];
+                                    for r in std::fs::read_dir(l.path()).into_iter().flatten().flatten() {
+                                        if let Ok(m) = r.metadata() {
+                                            if m.is_file() && r.path().extension().is_some_and(|e| e != "json") {
+                                                files.push(json!({ "path": format!("{dname}/{fname}/{}/{}", l.file_name().to_string_lossy(), r.file_name().to_string_lossy()), "size": m.len() }));
+                                            }
+                                        }
+                                    }
+                                    files.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+                                    let lsize: u64 = files.iter().filter_map(|x| x["size"].as_u64()).sum();
+                                    size += lsize;
+                                    lanes.push(json!({ "name": lname, "size": lsize, "files": files }));
+                                }
+                                lanes.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                                folder_files = Some(lanes.iter().map(|l| l["files"].as_array().map_or(0, |f| f.len())).sum());
+                            }
+                        }
                         out.push(json!({
                             "path": format!("{dname}/{}", f.file_name().to_string_lossy()),
                             "size": size,
                             "folder_files": folder_files,
+                            "kind": session_kind,
+                            "lanes": lanes,
                             "modified": md.modified().ok().and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()),
                         }));
                     }

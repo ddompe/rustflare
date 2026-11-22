@@ -141,13 +141,20 @@ pub fn delete(root: &Path, rel: &str) -> Result<u64, String> {
     let md = std::fs::symlink_metadata(&p).map_err(|e| format!("{rel}: {e}"))?;
     let mut freed = 0;
     if md.is_dir() {
-        for e in std::fs::read_dir(&p).map_err(|e| e.to_string())?.flatten() {
-            if e.path().is_file() {
-                freed += e.metadata().map(|m| m.len()).unwrap_or(0);
-                std::fs::remove_file(e.path()).map_err(|e| e.to_string())?;
+        // a capture folder: frames of a PNG burst, or an HDR / prominence session with one sub-folder per lane
+        fn rm(p: &Path, freed: &mut u64) -> Result<(), String> {
+            for e in std::fs::read_dir(p).map_err(|e| e.to_string())?.flatten() {
+                let m = std::fs::symlink_metadata(e.path()).map_err(|e| e.to_string())?;
+                if m.is_dir() {
+                    rm(&e.path(), freed)?;
+                } else {
+                    *freed += m.len();
+                    std::fs::remove_file(e.path()).map_err(|e| e.to_string())?;
+                }
             }
+            std::fs::remove_dir(p).map_err(|e| format!("folder not empty or in use: {e}"))
         }
-        std::fs::remove_dir(&p).map_err(|e| format!("folder not empty or in use: {e}"))?;
+        rm(&p, &mut freed)?;
     } else {
         freed += md.len();
         std::fs::remove_file(&p).map_err(|e| e.to_string())?;
@@ -214,5 +221,17 @@ mod tests {
         assert_eq!(delete(&d, "day/a.ser").unwrap(), 1);
         assert!(!d.join("day/a.ser").exists() && !d.join("day/a.json").exists() && d.join("keep.txt").exists());
         std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn a_lane_session_folder_is_deleted_with_its_lanes() {
+        let d = std::env::temp_dir().join(format!("rf-del-lanes-{}", std::process::id()));
+        std::fs::create_dir_all(d.join("day/hdr_1/lane-a")).unwrap();
+        std::fs::write(d.join("day/hdr_1/lane-a/a_c001.ser"), b"xyz").unwrap();
+        std::fs::write(d.join("day/hdr_1/session.json"), b"{}").unwrap();
+        assert_eq!(delete(&d, "day/hdr_1").unwrap(), 5);
+        assert!(!d.join("day/hdr_1").exists());
+        assert!(d.join("day").exists());
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

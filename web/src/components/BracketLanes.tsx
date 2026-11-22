@@ -14,6 +14,7 @@ const PRESETS: Record<string, Lane[]> = {
 export function BracketLanes({ status }: { status: Status | null }) {
   const [json, setJson] = useSetting('capture.lanes', JSON.stringify(PRESETS['Partial phase']))
   const [cycles, setCycles] = useSetting('capture.lane_cycles', '')
+  const [every, setEvery] = useSetting('capture.lane_every', '')
   const { err, busy, run } = useAction()
   let lanes: Lane[] = []
   try { lanes = JSON.parse(json) } catch { lanes = PRESETS['Partial phase'] }
@@ -21,13 +22,14 @@ export function BracketLanes({ status }: { status: Status | null }) {
   const edit = (i: number, k: keyof Lane, v: string) => set(lanes.map((x, j) => (j === i ? { ...x, [k]: v } : x)))
   const idle = status?.capture.state === 'idle'
   const start = () => run(() => api('POST', '/capture/lanes', {
-    name: 'lanes',
+    name: 'hdr', kind: 'hdr',
     cycles: cycles ? parseInt(cycles, 10) : undefined,
+    cycle_interval_s: every ? parseFloat(every) : undefined,
     lanes: lanes.map((l) => ({ name: l.name, exposure_us: (parseFloat(l.exposure_ms) || 0) * 1000, gain: l.gain ? parseFloat(l.gain) : undefined, frames: parseInt(l.frames, 10) || undefined })),
   }))
   return (
     <div>
-      <p className="hint-text">Cycles through the lanes in order: each lane sets its exposure, records its frames into its own folder (<code>lane-name/</code>) and moves on, repeating until you stop it. Frames right after each change are discarded. The exposure you had is restored at the end. For eclipses and the Moon; pick the exposures at the eyepiece first.</p>
+      <p className="hint-text">Video lanes, saved raw as SER (or FITS) into an <b>hdr_…</b> session folder. Cycles through the lanes in order: each lane sets its exposure, records its frames into its own folder (<code>lane-name/</code>) and moves on, repeating until you stop it. Each lane and cycle is its own short video (stack it with lucky imaging into one frame, and the stacks of a lane make a time-lapse), named with its cycle number and timestamped in its notes file. Set a cycle interval for a steady time-lapse cadence. Frames right after each change are discarded. The exposure you had is restored at the end. For eclipses and the Moon; pick the exposures at the eyepiece first.</p>
       <div className="btnrow tight">
         {Object.keys(PRESETS).map((p) => <button key={p} type="button" className="grow" onClick={() => set(PRESETS[p])}>{p}</button>)}
       </div>
@@ -46,7 +48,8 @@ export function BracketLanes({ status }: { status: Status | null }) {
         <button type="button" disabled={lanes.length >= 6} onClick={() => set([...lanes, { name: `lane${lanes.length + 1}`, exposure_ms: '1', gain: '', frames: '100' }])}>Add lane</button>
       </div>
       <Field label="Cycles (empty = until stopped)">{(id) => <input id={id} inputMode="numeric" value={cycles} onChange={(e) => setCycles(e.target.value)} />}</Field>
-      <button type="button" className="primary wide" disabled={busy || !idle} onClick={start}>Start bracketing</button>
+      <Field label="Start a new cycle every, seconds (empty = back to back)">{(id) => <input id={id} inputMode="decimal" value={every} onChange={(e) => setEvery(e.target.value)} />}</Field>
+      <button type="button" className="primary wide" disabled={busy || !idle} onClick={start}>Start HDR lanes</button>
       <ErrorLine error={err} />
     </div>
   )

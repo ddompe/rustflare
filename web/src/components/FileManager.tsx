@@ -3,7 +3,9 @@ import { api, Status } from '../api'
 import { ErrorLine } from './ui'
 import { useStorage } from './Storage'
 
-interface FileEntry { path: string; size: number; modified: number | null; folder_files: number | null }
+interface LaneInfo { name: string; size: number; files: { path: string; size: number }[] }
+interface FileEntry { path: string; size: number; modified: number | null; folder_files: number | null; kind?: 'hdr' | 'prominence' | null; lanes?: LaneInfo[] }
+const KIND_LABEL: Record<string, string> = { hdr: 'HDR lanes', prominence: 'Prominence video' }
 interface Stats {
   width: number; height: number; depth: number; frames: number; frames_present: number; complete: boolean
   fps: number | null; duration_s: number | null; mean_min: number; mean_avg: number; mean_max: number
@@ -45,6 +47,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
   const [stats, setStats] = useState<Record<string, StatsOrError>>({})
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [sort, setSort] = useState<'new' | 'big' | 'name'>('new')
+  const [show, setShow] = useState<'all' | 'rec' | 'hdr' | 'prominence'>('all')
   const [checking, setChecking] = useState(false)
   const [ask, setAsk] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -67,12 +70,12 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
   const toggle = (p: string) => setSel((s) => { const n = new Set(s); if (n.has(p)) n.delete(p); else n.add(p); return n })
 
   const sorted = useMemo(() => {
-    const f = [...files]
+    const f = files.filter((x) => show === 'all' || (show === 'rec' ? !x.kind : x.kind === show))
     if (sort === 'big') f.sort((a, b) => b.size - a.size)
     else if (sort === 'name') f.sort((a, b) => a.path.localeCompare(b.path))
     else f.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0))
     return f
-  }, [files, sort])
+  }, [files, sort, show])
   const groups = useMemo(() => {
     if (sort !== 'new' && sort !== 'name') return [['All captures', sorted] as [string, FileEntry[]]]
     const m = new Map<string, FileEntry[]>()
@@ -114,6 +117,9 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
         <button type="button" disabled={checking || busy || !files.some((f) => isSer(f.path))} onClick={checkAll}>{checking ? 'Checking…' : 'Check all'}</button>
         <button type="button" onClick={() => setSel(sel.size === files.length ? new Set() : new Set(files.map((f) => f.path)))}>{sel.size === files.length && files.length > 0 ? 'Select none' : 'Select all'}</button>
         {dark.length > 0 && <button type="button" onClick={() => setSel(new Set(dark.map((f) => f.path)))}>Select dark ({dark.length})</button>}
+        <label className="fm-sort">Show <select value={show} onChange={(e) => setShow(e.target.value as typeof show)}>
+          <option value="all">Everything</option><option value="rec">Recordings</option><option value="hdr">HDR lanes</option><option value="prominence">Prominence video</option>
+        </select></label>
         <label className="fm-sort">Sort <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
           <option value="new">Newest first</option><option value="big">Largest first</option><option value="name">Name</option>
         </select></label>
@@ -134,6 +140,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
                     <div className="fm-main">
                       <div className="fm-head">
                         <span className="fm-name">{sort === 'big' ? f.path : base(f.path)}{f.folder_files != null ? '/' : ''}</span>
+                        {f.kind && <span className="tag">{KIND_LABEL[f.kind]}</span>}
                         {s?.mostly_dark && <span className="tag warn" title={`${Math.round(s.dark_fraction * 100)}% of sampled frames are dark`}>Mostly dark</span>}
                         {s && !s.complete && <span className="tag warn" title="The file ends early: the recording was cut off">Incomplete</span>}
                       </div>
@@ -142,6 +149,19 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
                         {s && <> · {s.width}×{s.height} · {s.depth}-bit · {s.frames_present}/{s.frames} frames{s.fps ? ` · ${s.fps.toFixed(1)} fps` : ''}{s.duration_s ? ` · ${s.duration_s.toFixed(1)} s` : ''} · brightness {Math.round(s.mean_avg * 100)}% (min {Math.round(s.mean_min * 100)}, max {Math.round(s.mean_max * 100)})</>}
                         {st && 'error' in st && <> · {st.error}</>}
                       </div>
+                      {f.lanes && f.lanes.length > 0 && (
+                        <details className="fm-lanes">
+                          <summary>{f.lanes.length} lanes: {f.lanes.map((l) => `${l.name} ${l.files.length}`).join(' · ')}</summary>
+                          {f.lanes.map((l) => (
+                            <div key={l.name} className="fm-lane">
+                              <b>{l.name}</b> <span className="muted">{l.files.length} recordings · {size(l.size)}</span>
+                              <ul>{l.files.map((x) => (
+                                <li key={x.path}>{x.path.split('/').pop()} <span className="muted">{size(x.size)}</span> <a href={`/files/${x.path}`} download>Download</a>{isSer(x.path) && <> <button type="button" className="small" onClick={() => check(x.path)}>Check</button></>}{stats[x.path] && ('error' in stats[x.path] ? <span className="muted"> {(stats[x.path] as { error: string }).error}</span> : <span className="muted"> {(stats[x.path] as Stats).frames_present}/{(stats[x.path] as Stats).frames} frames · brightness {Math.round((stats[x.path] as Stats).mean_avg * 100)}%</span>)}</li>
+                              ))}</ul>
+                            </div>
+                          ))}
+                        </details>
+                      )}
                     </div>
                     <div className="fm-actions">
                       {isSer(f.path) && <button type="button" className="small" onClick={() => check(f.path)}>{st ? 'Re-check' : 'Check'}</button>}

@@ -423,3 +423,7 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .app[data-full] .view { display: grid; align-content: center; justify-items: center; padding: 0; }
 .app[data-full] .live { --vmax: 100dvh; border: 0; border-radius: 0; }
 .lane { border: 1px solid var(--line-soft); border-radius: 8px; padding: .5rem .6rem; margin: .6rem 0; }
+.fm-lanes { margin-top: .3rem; font-size: .9rem; }
+.fm-lanes summary { cursor: pointer; padding: .4rem 0; }
+.fm-lane ul { margin: .2rem 0 .5rem 1rem; padding: 0; list-style: none; }
+.fm-lane li { padding: .35rem 0; }
