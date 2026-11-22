@@ -23,7 +23,7 @@ The slider button opens display settings: auto-stretch, brightness, contrast, ga
 
 ## Prominence view
 
-The round **Prominence view** button in the picture's tool column blacks out the Sun's disc (display only). Raise exposure or gain and watch the faint structure at the limb appear, so you can judge the exposure you want for prominences. It does not stretch the image, so what you see is the real brightness. Turn on *Auto-stretch* in the display settings if you want it brightened. [Record > Prominence pair](record.md#prominence-pair) then captures the disc and a longer exposure together.
+The round **Prominence view** button in the picture's tool column blacks out the Sun's disc (display only). Raise exposure or gain and watch the faint structure at the limb appear, so you can judge the exposure you want for prominences. It does not stretch the image, so what you see is the real brightness. Turn on *Auto-stretch* in the display settings if you want it brightened. [Record > + Prominence](record.md#what-to-record) then captures the disc and a longer exposure together.
 
 ## Hide controls
 
