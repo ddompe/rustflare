@@ -43,6 +43,9 @@ impl Calibration {
     }
 }
 
+/// Offsets larger than this (pixels), seen in sparse bursts, need a second burst to confirm them before the guider pulses.
+const CONFIRM_PX: f64 = 40.0;
+
 /// The longest single guide command: the mount ends a timed pulse by itself after 3 s.
 const MAX_PULSE_CHUNK: Duration = Duration::from_millis(2500);
 
@@ -117,11 +120,13 @@ pub struct Guider {
     /// next judgement, so a constant drift does not leave a constant offset (drift x interval / gain) behind.
     drift: Option<Vec2>,
     last_judge: Option<Instant>,
+    /// Sparse mode: the large offset seen at the previous judgement, to be confirmed by the next before acting on it.
+    pending_offset: Option<(Instant, Vec2)>,
 }
 
 impl Guider {
     pub fn new(target: Vec2, cal: Calibration, params: GuideParams) -> Guider {
-        Guider { target, cal, params, samples: VecDeque::new(), pending: VecDeque::new(), pulse_end: None, judge_after: None, filtered_error: None, quick: false, applied: Vec2::default(), sparse: false, drift: None, last_judge: None }
+        Guider { target, cal, params, samples: VecDeque::new(), pending: VecDeque::new(), pulse_end: None, judge_after: None, filtered_error: None, quick: false, applied: Vec2::default(), sparse: false, drift: None, last_judge: None, pending_offset: None }
     }
 
     /// Image motion the guide pulses so far were meant to cause, in pixels (from the calibration).
@@ -218,9 +223,21 @@ impl Guider {
         };
         if err.len() < self.params.deadband_px {
             self.quick = false;
+            self.pending_offset = None;
             if self.sparse { self.samples.clear(); } // the next burst starts a fresh average
             return None;
         }
+        // Sparse measurements (one burst every ~30 s) cannot tell a real offset from a passing excursion (the scope was seen
+        // sliding 400 px and coming back on its own): a large offset must be seen twice, about where it was, before a pulse.
+        if self.sparse && err.len() > CONFIRM_PX {
+            let confirmed = self.pending_offset.is_some_and(|(t, prev)| now.duration_since(t) < Duration::from_secs(150) && (prev - offset).len() < 0.25 * offset.len() + 15.0);
+            if !confirmed {
+                self.pending_offset = Some((now, offset));
+                self.samples.clear();
+                return None;
+            }
+        }
+        self.pending_offset = None;
         // 3. plan gentle pulses, one axis at a time: image motion wanted = gain x error, in axis coordinates
         let big = err.len() > self.params.fast_above_px;
         self.quick = big;
@@ -650,6 +667,39 @@ mod tests {
         let (plain, ff) = (run_bursts(false), run_bursts(true));
         assert!(ff < 6.0, "with feed-forward the framing still moved {ff:.1} px");
         assert!(ff < plain, "feed-forward ({ff:.1} px) should beat the plain proportional correction ({plain:.1} px)");
+    }
+
+    /// Lane recordings: the scope slides 400 px away and comes back by itself within a minute (seen on the real mount). The
+    /// guider must not chase it, but must still correct a real, lasting offset.
+    #[test]
+    fn sparse_guiding_ignores_a_passing_excursion_but_corrects_a_lasting_offset() {
+        let mut w = World::new(Vec2::new(0.0, 0.0), 1.0);
+        let cal = calibrate(&mut w);
+        let target = w.pos;
+        let mut g = Guider::new(target, cal, GuideParams::default());
+        g.set_sparse(true);
+        let (mut pulses_during_excursion, mut moved_back) = (0, false);
+        for i in 0..9000u32 {
+            let t = i as f64 * 0.1;
+            // excursion between 120 s and 160 s: +400 px along the image x axis and back, smoothly
+            if (120.0..160.0).contains(&t) { let k = ((t - 120.0) / 40.0 * std::f64::consts::PI).sin(); w.pos = Vec2::new(target.x + 400.0 * k, target.y); }
+            let phase = i % 300; // a burst of 1 s every 30 s
+            if phase < 10 {
+                let m = w.measured();
+                if let Some(c) = g.step(w.now, m) { w.issue(c); }
+            } else {
+                if phase == 10 {
+                    if let Some(c) = g.judge_now(w.now) { if (145.0..175.0).contains(&t) { pulses_during_excursion += 1; } w.issue(c); }
+                }
+                if let Some(c) = g.tick(w.now) { w.issue(c); }
+            }
+            w.tick();
+            // a lasting offset from 400 s on (e.g. the user re-aimed): 150 px
+            if i == 4000 { w.pos = w.pos + Vec2::new(150.0, 0.0); }
+            if i > 8500 && (w.pos - target).len() < 15.0 { moved_back = true; }
+        }
+        assert_eq!(pulses_during_excursion, 0, "the guider chased a passing excursion");
+        assert!(moved_back, "a lasting 150 px offset was never corrected");
     }
 
     #[test]

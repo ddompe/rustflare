@@ -91,6 +91,19 @@ impl SunModel {
         self.history.clear();
     }
 
+    /// The model's current estimate without feeding it anything.
+    pub fn current(&self) -> Option<SunLocation> {
+        self.state.map(|s| SunLocation { pos: s.pos, radius: s.radius, partial: s.partial, radius_from_optics: None, fit_rms: None })
+    }
+
+    /// Moves the estimate by `d` pixels: a relative displacement seen in frames that cannot give a position of their own
+    /// (the long exposures of a lane recording, whose saturated disc is biased but moves with the Sun).
+    pub fn shift(&mut self, d: Vec2) {
+        if let Some(s) = self.state.as_mut() {
+            s.pos = s.pos + d;
+        }
+    }
+
     /// Feeds the detector's result for one frame (`None`: nothing found) and returns the model's estimate.
     /// `free`: the mount is slewing (or being moved by hand): the Sun really moves, so follow the measurements directly.
     pub fn update(&mut self, meas: Option<SunLocation>, now: Instant, dims: (u32, u32), free: bool) -> Option<Estimate> {

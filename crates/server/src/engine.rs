@@ -340,6 +340,8 @@ pub struct Engine {
     /// A guide pulse is running (or just ended): the image moves on purpose, so the gate must follow the measurements.
     pulsing: bool,
     was_analysing: bool,
+    /// Lane recordings: the last position seen in a long-exposure frame, to turn the next one into a displacement.
+    lane_prev: Option<(Instant, Vec2)>,
     pulse_settle_until: Instant,
     manual_slew_until: Instant,
     sun_held: bool,
@@ -457,6 +459,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         last_good: None,
         pulsing: false,
         was_analysing: false,
+        lane_prev: None,
         pulse_settle_until: Instant::now(),
         manual_slew_until: Instant::now(),
         sun_held: false,
@@ -2024,6 +2027,30 @@ impl Engine {
                 }
                 self.step_tracking(&frame, now, sun);
                 self.was_analysing = true;
+                self.lane_prev = None;
+            } else if sparse && matches!(&self.job, Job::Capture(j) if j.lanes.as_ref().is_some_and(|l| l.skip == 0)) && self.sun_model.current().is_some() {
+                // A long-exposure lane frame: its disc is saturated, so its position is biased, but it moves with the Sun. Compare it
+                // with the previous long-exposure frame and move the Sun model by the difference, so the outline and the coronagraph
+                // mask stay on the image between the disc bursts (the scope can slide hundreds of pixels meanwhile).
+                if let Some(m) = locate_sun(&frame, self.radius_hint()) {
+                    if let Some((t0, p0)) = self.lane_prev {
+                        let d = m.pos - p0;
+                        if now.duration_since(t0) < Duration::from_millis(1500) && d.len() < 80.0 {
+                            self.sun_model.shift(d);
+                            if let Some(cur) = self.sun_model.current() {
+                                self.corona.lock().unwrap().sun = Some((cur.pos.x, cur.pos.y, cur.radius));
+                                self.status.sun = Some(cur);
+                            }
+                        }
+                    }
+                    self.lane_prev = Some((now, m.pos));
+                } else {
+                    self.lane_prev = None;
+                }
+                if matches!(self.guide, GuideState::Guiding(_)) {
+                    if self.was_analysing { self.step_guide(now, GuideInput::Judge); } else { self.step_guide(now, GuideInput::Tick); }
+                }
+                self.was_analysing = false;
             } else if matches!(self.guide, GuideState::Guiding(_)) {
                 // Lane recordings measure only the reference lane, in bursts with long gaps. Pulses must still end on time, and
                 // the corrections are judged when a burst of measurements ends (their frames then carry the long exposures).
