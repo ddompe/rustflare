@@ -22,7 +22,7 @@ Also found on 2026-11-22, all fixed:
 - `:GAST#` answers `date#RA&Dec#flags#` and the driver stopped at the first `#`, so no flip feature could ever record the pointing (#80);
 - the first meridian flip attempt was disabled by the owner; the mount stopped tracking by itself 19 minutes past the meridian, and a Go to Sun afterwards turned it over (image rotated by about 209 degrees).
 
-Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roughly every 18 minutes, before the polar alignment was redone (drift fell from 1.5 to 0.14 px/s after). If it comes back, read `mount.jsonl` for what preceded it; see #81.
+Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roughly every 18 minutes, before the polar alignment was redone (drift fell from 1.5 to 0.14 px/s after). If it comes back, read `mount.jsonl` for what preceded it; see #82.
 
 ## M1: field use
 
