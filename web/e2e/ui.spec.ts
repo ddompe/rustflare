@@ -153,7 +153,7 @@ test('focus assist scores the image, falls when defocused and keeps a best marke
   const sharp = (await (await page.request.get('/api/status')).json()).focus.lucky
   await page.request.put('/api/camera/control', { data: { id: 'sim_defocus', value: 12 } })
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).focus.lucky, { timeout: 15_000 }).toBeLessThan(sharp * 0.8)
-  await expect(page.getByText(/best \d/)).toBeVisible()
+  await expect(page.locator('.focus-score').getByText(/best \d/)).toBeVisible()
   await expect(page.getByRole('img', { name: /Focus score history/ })).toBeVisible()
   await page.request.put('/api/camera/control', { data: { id: 'sim_defocus', value: 0 } })
   await page.getByRole('switch', { name: 'Focus assist' }).uncheck()
