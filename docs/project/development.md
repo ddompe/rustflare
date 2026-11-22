@@ -7,7 +7,7 @@ crates/     core camera mount tracking capture server
 web/        React + Vite UI (src/, components/)
 docs/       this documentation (guide/, reference/, project/); docs/adr/ decision records
 packaging/  files of the .deb: systemd unit, udev rule, maintainer scripts, rustflare-update, rustflare-user
-scripts/    build-deb.sh, smoke.sh, mock-github-release.py
+scripts/    build-deb.sh, pi-deploy.sh, smoke.sh, sim/ (scenario scripts), mock-github-release.py
 .github/    CI (ci.yml) and release (release.yml) workflows
 ```
 
@@ -35,7 +35,10 @@ npm run build        # type-check + production build into web/dist
 Pure logic is where the tests are: ZWO protocol (mock serial port), trackers (synthetic frames, including a partially visible disc),
 calibration and guiding (closed loop against a physical model), H-alpha-like disc detection, SER layout, the asynchronous frame writer (buffering, FAT32 rollover, PNG folders, write errors), storage selection, flat-exposure convergence, simulator behaviour.
 `scripts/smoke.sh` drives calibration, guiding, single/sequence/flats through the real HTTP API.
-Not covered by automated tests: real cameras and mounts, the web UI's behaviour (it is type-checked and was checked by eye once).
+The web UI has 34 Playwright browser tests (`web/e2e/ui.spec.ts`, phone and desktop projects, against the simulators). `scripts/sim/*.sh` run multi-step scenarios on the simulators (guiding in lane recordings, a Sun hidden for a minute, the automatic flip with a recording running), see [their README](https://github.com/ddompe/rustflare/blob/main/scripts/sim/README.md).
+Not covered by automated tests: real cameras and mounts. What has and has not been run on real equipment is in the [hardware checklist](hardware-checklist.md); debugging a real system is in [Debugging and logs](../reference/debugging.md).
+
+Agents and new contributors: start with `AGENTS.md` and `CONTRIBUTING.md` at the repository root.
 
 ## Releasing
 
