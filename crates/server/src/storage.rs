@@ -220,7 +220,10 @@ impl Storage {
         };
         run("udisksctl", &["unmount", "-b", &m.device])
             .or_else(|_| run("sudo", &["-n", "umount", &m.point.display().to_string()]))
-            .map_err(|e| format!("could not unmount (is something still using the drive?): {e}"))?;
+            .map_err(|e| {
+                let busy = if e.contains("busy") { " Something still has the drive open: a terminal whose current folder is on the drive (type `cd ~` there), a file viewer, or another program. RustFlare closes its own logs before ejecting." } else { "" };
+                format!("could not unmount: {e}.{busy}")
+            })?;
         // best effort: power off the whole device so it can be pulled safely
         let parent = std::process::Command::new("lsblk").args(["-no", "pkname", &m.device]).output().ok().and_then(|o| String::from_utf8(o.stdout).ok()).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
         let powered = parent.as_deref().map(|p| run("udisksctl", &["power-off", "-b", &format!("/dev/{p}")]).is_ok()).unwrap_or(false);

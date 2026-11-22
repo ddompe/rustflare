@@ -564,6 +564,10 @@ async fn storage_eject(State(st): State<AppState>, Json(b): Json<EjectBody>) -> 
     if st.engine.status.borrow().capture.state != "idle" {
         return (StatusCode::CONFLICT, Json(json!({ "error": "a capture is running or still writing: wait until it finishes" }))).into_response();
     }
+    // our own open files first: the session log keeps a file on the drive open while it is on
+    if st.engine.status.borrow().session_log.enabled {
+        let _ = run(State(st.clone()), Command::SetSessionLog { enabled: false, frame_every_s: None }).await;
+    }
     let s = st.storage.clone();
     match tokio::task::spawn_blocking(move || s.eject(std::path::Path::new(&b.mount_point))).await {
         Ok(Ok(msg)) => Json(json!({ "message": msg })).into_response(),
