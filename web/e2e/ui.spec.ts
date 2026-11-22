@@ -168,3 +168,17 @@ test('quick Rec and Snap are on the Camera tab and use the saved recipe', async 
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.last_file, { timeout: 10_000 }).toBeTruthy()
   await page.request.post('/api/capture/stop')
 })
+
+test('automatic meridian flip: needs a site, switches on with its timing, and off again', async ({ page }) => {
+  await put(page, '/site', { latitude: 40, longitude: -105 })
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Aim/ }).click()
+  await page.getByText(/Meridian flip/i).first().click()
+  const sw = page.getByRole('switch', { name: 'Flip automatically' })
+  await expect(sw).toBeVisible()
+  await sw.click()
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).auto_flip?.enabled).toBe(true)
+  await expect(page.getByLabel('Record before the meridian')).toBeVisible()
+  await sw.click()
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).auto_flip?.enabled).toBe(false)
+})

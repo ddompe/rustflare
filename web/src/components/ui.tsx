@@ -94,3 +94,13 @@ export function Disclosure({ title, summary, children, open, onToggle }: { title
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="empty">{children}</p>
 }
+
+export function RangeField({ label, value, min, max, step, show, onChange }: { label: string; value: number; min: number; max: number; step: number; show: string; onChange: (v: number) => void }) {
+  const id = useId()
+  return (
+    <div className="ctl">
+      <div className="ctl-head"><label htmlFor={id}>{label}</label><output htmlFor={id} className="ctl-val">{show}</output></div>
+      <input id={id} type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(parseFloat(e.target.value))} />
+    </div>
+  )
+}

@@ -39,6 +39,19 @@ pub struct Site {
     pub longitude: f64,
 }
 
+/// Unattended meridian flip, saved in the settings file under `auto_flip`.
+/// `record_min`: minutes before the meridian at which the pointing and the Sun's place in the picture are recorded.
+/// `flip_min`: minutes after the meridian at which the flip starts (sooner if the mount has stopped tracking by itself).
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+pub struct AutoFlip {
+    pub enabled: bool,
+    pub record_min: f64,
+    pub flip_min: f64,
+}
+impl Default for AutoFlip {
+    fn default() -> Self { AutoFlip { enabled: false, record_min: 5.0, flip_min: 1.0 } }
+}
+
 /// A meridian flip assist in progress: GoTo to the recorded pointing, then re-centre the Sun where it was.
 struct FlipState {
     started: Instant,
@@ -51,6 +64,9 @@ struct FlipState {
     /// Image position to centre on and whether the image turned over, once known.
     centre: Option<((f64, f64), bool)>,
     good_since: Option<Instant>,
+    /// Guiding was running when the flip started: calibrate again afterwards (the axes may now point the other way).
+    was_guiding: bool,
+    cal_gen: u32,
 }
 
 /// Focus assist session: scores frames, summarises one-second bursts, keeps the history for the graph.
@@ -107,6 +123,8 @@ pub enum Command {
     /// Meridian flip assist. `record_only`: just remember the pointing and Sun position. `restore`: the flip was done by
     /// hand, GoTo the recorded pointing and re-centre. Otherwise: record, GoTo (the mount turns over if it decides to), re-centre.
     StartFlip { record_only: bool, restore: bool },
+    /// Automatic meridian flip on/off and its timing (minutes before the meridian to record, minutes after to flip).
+    SetAutoFlip { enabled: bool, record_min: f64, flip_min: f64 },
     /// Centred region of interest covering `fraction` of the sensor in each direction (1.0 = full frame).
     SetRoi { fraction: f64 },
     /// Opt-in session log (JSON lines plus small frames) for regression fixtures.
@@ -288,6 +306,13 @@ pub struct Engine {
     focus: Option<FocusState>,
     flip: Option<FlipState>,
     last_flip: Option<Value>,
+    cal_generation: u32,
+    auto_flip: AutoFlip,
+    /// Pointing and Sun position recorded shortly before the meridian by the automatic flip.
+    auto_pre: Option<Value>,
+    /// The automatic flip has been started (or given up) for this crossing of the meridian.
+    auto_done: bool,
+    last_auto_check: Instant,
     ntp_sync: Option<bool>,
     last_ntp_check: Instant,
     /// A Bluetooth connection attempt running on its own thread (auto-reconnect must not stall the engine).
@@ -379,6 +404,11 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         goto: None,
         focus: None,
         flip: None,
+        auto_flip: crate::config::read(storage.config_file()).get("auto_flip").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
+        cal_generation: 0,
+        auto_pre: None,
+        auto_done: false,
+        last_auto_check: Instant::now(),
         last_flip: crate::config::read(storage.config_file()).get("last_flip").cloned(),
         guide_params,
         ntp_sync: None,
@@ -496,6 +526,7 @@ impl Engine {
             self.poll_mount();
             self.step_goto();
             self.step_flip();
+            self.step_auto_flip();
             self.flush_controls();
             if self.draining.is_some() && self.last_publish.elapsed() >= Duration::from_millis(200) {
                 self.publish();
@@ -659,6 +690,64 @@ impl Engine {
         }
     }
 
+    /// Where the mount points and where the Sun is in the picture right now, for the flip to come back to.
+    fn snapshot_pre(&mut self, now_unix: f64) -> Result<Value, String> {
+        let cam = self.status.camera.as_ref().ok_or("no camera open")?;
+        let (w, h) = (cam.width as f64, cam.height as f64);
+        let sun = self.status.sun.as_ref().ok_or("the Sun must be in view to record its position")?;
+        let (sx, sy, sr) = (sun.pos.x, sun.pos.y, sun.radius);
+        let m = self.mount.as_mut().ok_or("no mount connected")?;
+        let (ra, dec) = m.equatorial().map_err(s)?.ok_or("this mount does not report where it points, so the position cannot be recorded")?;
+        let site = self.site.map(|st| rustflare_tracking::solar::local_sidereal_hours(now_unix, st.longitude));
+        Ok(json!({ "unix": now_unix, "ra_hours": ra, "dec_deg": dec, "sun_x": sx, "sun_y": sy, "sun_radius": sr, "frame_w": w, "frame_h": h, "lst_hours": site,
+                "sun_ra_hours": rustflare_tracking::solar::sun_equatorial(now_unix).0, "sun_dec_deg": rustflare_tracking::solar::sun_equatorial(now_unix).1 }))
+    }
+
+    /// Unattended flip: shortly before the meridian record the pointing and the Sun's place, after it (or as soon as the
+    /// mount stops tracking by itself) stop the capture, send the mount to the recorded position and re-centre.
+    fn step_auto_flip(&mut self) {
+        if !self.auto_flip.enabled || self.last_auto_check.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        self.last_auto_check = Instant::now();
+        let Some(mins) = self.status.sky_sun.as_ref().map(|k| k.minutes_to_meridian) else { return };
+        if mins > self.auto_flip.record_min + 30.0 {
+            self.auto_done = false; // a new crossing is coming
+            self.auto_pre = None;
+            return;
+        }
+        if self.auto_done || self.mount.is_none() || self.flip.is_some() || self.goto.is_some() || mins < -90.0 {
+            return;
+        }
+        let now_unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        if self.auto_pre.is_none() && mins <= self.auto_flip.record_min && self.mount_tracking && self.status.sun.is_some() {
+            if let Ok(pre) = self.snapshot_pre(now_unix) {
+                log::info!("auto flip: recorded the position {mins:.1} min before the meridian");
+                self.auto_pre = Some(pre);
+            }
+        }
+        let stopped_by_mount = mins <= 0.0 && !self.mount_tracking && self.auto_pre.is_some();
+        if !(mins <= -self.auto_flip.flip_min || stopped_by_mount) {
+            return;
+        }
+        if !matches!(self.job, Job::Idle) {
+            self.abort_job("stopped for the automatic meridian flip");
+        }
+        if self.require_idle().is_err() {
+            return; // still writing the buffered frames: try again next second
+        }
+        let restore = self.auto_pre.is_some();
+        if let Some(pre) = self.auto_pre.clone() {
+            self.last_flip = Some(json!({ "pre": pre }));
+        }
+        match self.handle(Command::StartFlip { record_only: false, restore }) {
+            Ok(_) => log::info!("auto flip: started {mins:.1} min past the meridian"),
+            Err(e) => self.status.error = Some(format!("automatic meridian flip: {e}")),
+        }
+        self.auto_done = true;
+        self.publish();
+    }
+
     fn cancel_flip(&mut self, why: &str) {
         if self.flip.take().is_some() {
             self.status.flip = None;
@@ -687,8 +776,8 @@ impl Engine {
         f.last_check = Instant::now();
         let elapsed = f.started.elapsed();
         self.status.flip = Some(FlipStatus { phase: f.phase, elapsed_s: elapsed.as_secs_f64(), detail: String::new() });
-        if elapsed > Duration::from_secs(900) {
-            self.finish_flip("gave up after 15 minutes".into(), None);
+        if elapsed > Duration::from_secs(1500) {
+            self.finish_flip("gave up after 25 minutes".into(), None);
             self.status.error = Some("meridian flip assist timed out".into());
             return;
         }
@@ -740,8 +829,26 @@ impl Engine {
                     }
                 }
             }
-            _ => {
-                // centring: done when the averaged error stays small for a few seconds
+            "recalibrating" => {
+                // the flip may have swapped the axes: measure them again, then go back to the target
+                match &self.guide {
+                    GuideState::Calibrating(_) => {}
+                    _ if self.cal_generation != f.cal_gen => {
+                        let (Some(cal), Some((t, _))) = (self.calibration, f.centre) else { return self.finish_flip("recalibrated, but the target is unknown".into(), None) };
+                        let target = Vec2::new(t.0, t.1);
+                        self.status.guiding.target = Some(t);
+                        self.guide = GuideState::Guiding(Guider::new(target, cal, self.guide_params));
+                        f.good_since = None;
+                        f.phase = "re-centring";
+                    }
+                    _ => {
+                        self.status.error = Some("flip: recalibration failed, guiding is off: calibrate again".into());
+                        self.finish_flip("the Sun is back at its place but the recalibration failed, so guiding is off".into(), None);
+                    }
+                }
+            }
+            phase => {
+                // centring / re-centring: done when the averaged error stays small for a few seconds
                 let small = self.status.guiding.error_px.is_some_and(|e| e < (self.guide_params.deadband_px * 2.0).max(4.0));
                 if !matches!(self.guide, GuideState::Guiding(_)) {
                     return self.finish_flip("guiding stopped during centring".into(), self.status.guiding.error_px);
@@ -751,11 +858,19 @@ impl Engine {
                     if t.elapsed() >= Duration::from_secs(4) {
                         let turned = f.centre.map(|c| c.1).unwrap_or(false);
                         let err = self.status.guiding.error_px;
-                        self.finish_flip(format!("done: the image {}, the Sun is back at its place and held", if turned { "turned over (rotated 180 degrees)" } else { "did not turn over" }), err);
+                        if phase == "centring" && f.was_guiding {
+                            f.cal_gen = self.cal_generation;
+                            f.phase = "recalibrating";
+                            self.status.guiding.error_px = None;
+                            self.guide = GuideState::Calibrating(Calibrator::new());
+                            return;
+                        }
+                        let tail = if f.was_guiding { ", recalibrated and guiding" } else { " and held" };
+                        self.finish_flip(format!("done: the image {}, the Sun is back at its place{tail}", if turned { "turned over (rotated 180 degrees)" } else { "did not turn over" }), err);
                     }
                 } else {
                     f.good_since = None;
-                    if elapsed > Duration::from_secs(600) {
+                    if elapsed > Duration::from_secs(900) {
                         let e = self.status.guiding.error_px;
                         self.finish_flip("could not bring the Sun back within the time limit: check the calibration".into(), e);
                     }
@@ -785,6 +900,10 @@ impl Engine {
         }
         self.status.session_log = SessionLogStatus { enabled: self.slog.enabled(), lines: self.slog.lines, frames: self.slog.frames, bytes: self.slog.bytes, file: self.slog.file_name() };
         self.status.last_flip = self.last_flip.clone();
+        self.status.auto_flip = AutoFlipStatus {
+            enabled: self.auto_flip.enabled, record_min: self.auto_flip.record_min, flip_min: self.auto_flip.flip_min,
+            stage: if !self.auto_flip.enabled { "off" } else if self.flip.is_some() { "flipping" } else if self.auto_done { "done" } else if self.auto_pre.is_some() { "recorded" } else { "waiting" },
+        };
         self.status.clock = ClockStatus { ntp_synchronized: self.ntp_sync };
         self.status.site = self.site.map(|s| SiteStatus { latitude: s.latitude, longitude: s.longitude });
         self.status.sky_sun = self.site.map(|s| {
@@ -1053,15 +1172,7 @@ impl Engine {
                 let pre = if restore {
                     self.last_flip.as_ref().and_then(|v| v.get("pre")).cloned().ok_or("no recorded position: record one before the flip")?
                 } else {
-                    let cam = self.status.camera.as_ref().ok_or("no camera open")?;
-                    let (w, h) = (cam.width as f64, cam.height as f64);
-                    let sun = self.status.sun.as_ref().ok_or("the Sun must be in view to record its position")?;
-                    let (sx, sy, sr) = (sun.pos.x, sun.pos.y, sun.radius);
-                    let m = self.mount.as_mut().ok_or("no mount connected")?;
-                    let (ra, dec) = m.equatorial().map_err(s)?.ok_or("this mount does not report where it points, so the position cannot be recorded")?;
-                    let site = self.site.map(|st| rustflare_tracking::solar::local_sidereal_hours(now_unix, st.longitude));
-                    json!({ "unix": now_unix, "ra_hours": ra, "dec_deg": dec, "sun_x": sx, "sun_y": sy, "sun_radius": sr, "frame_w": w, "frame_h": h, "lst_hours": site,
-                            "sun_ra_hours": rustflare_tracking::solar::sun_equatorial(now_unix).0, "sun_dec_deg": rustflare_tracking::solar::sun_equatorial(now_unix).1 })
+                    self.snapshot_pre(now_unix)?
                 };
                 if record_only {
                     self.last_flip = Some(json!({ "pre": pre }));
@@ -1070,6 +1181,7 @@ impl Engine {
                 }
                 let f = |k: &str| pre.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let target = rustflare_tracking::flip::carried_target((f("ra_hours"), f("dec_deg")), (f("sun_ra_hours"), f("sun_dec_deg")), rustflare_tracking::solar::sun_equatorial(now_unix));
+                let was_guiding = matches!(self.guide, GuideState::Guiding(_));
                 self.stop_guiding_quietly();
                 if let Some(st) = self.site {
                     let st = SiteTime { latitude_deg: st.latitude, longitude_east_deg: st.longitude, unix_secs: now_unix as i64, utc_offset_minutes: chrono::Local::now().offset().local_minus_utc() / 60 };
@@ -1078,8 +1190,18 @@ impl Engine {
                 self.mount.as_mut().ok_or("no mount connected")?.goto_equatorial(target.0, target.1).map_err(s)?;
                 self.mount_tracking = false;
                 self.last_flip = Some(json!({ "pre": pre, "started_unix": now_unix }));
-                self.flip = Some(FlipState { started: Instant::now(), pre, moved: false, last_check: Instant::now(), slew_done_at: None, slew_s: None, phase: "slewing", centre: None, good_since: None });
+                self.flip = Some(FlipState { started: Instant::now(), pre, moved: false, last_check: Instant::now(), slew_done_at: None, slew_s: None, phase: "slewing", centre: None, good_since: None, was_guiding, cal_gen: 0 });
                 Ok(json!({ "target_ra_hours": target.0, "target_dec_deg": target.1 }))
+            }
+            Command::SetAutoFlip { enabled, record_min, flip_min } => {
+                if !(1.0..=60.0).contains(&record_min) || !(0.0..=60.0).contains(&flip_min) {
+                    return Err("record 1 to 60 minutes before the meridian and flip 0 to 60 minutes after it".into());
+                }
+                self.auto_flip = AutoFlip { enabled, record_min, flip_min };
+                if !enabled { self.auto_pre = None; }
+                self.auto_done = false;
+                crate::config::set(self.storage.config_file(), "auto_flip", json!(self.auto_flip))?;
+                Ok(json!({}))
             }
             Command::SetSite { latitude, longitude } => {
                 if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
@@ -1875,6 +1997,7 @@ impl Engine {
                 CalAction::Guide(g) => cmd = Some(g),
                 CalAction::Done(cal) => {
                     self.calibration = Some(cal);
+                    self.cal_generation += 1;
                     self.guide = GuideState::Off;
                     cmd = Some(GuideCommand::STOP);
                 }

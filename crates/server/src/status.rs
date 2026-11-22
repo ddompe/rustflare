@@ -149,6 +149,15 @@ pub struct FlipStatus {
 }
 
 #[derive(Clone, Serialize)]
+pub struct AutoFlipStatus {
+    pub enabled: bool,
+    pub record_min: f64,
+    pub flip_min: f64,
+    /// off, waiting (for the meridian), recorded (position saved), flipping, done (for this crossing)
+    pub stage: &'static str,
+}
+
+#[derive(Clone, Serialize)]
 pub struct GotoStatus {
     pub target: &'static str,
     /// "starting" until the mount reports motion, then "slewing".
@@ -266,6 +275,7 @@ pub struct Status {
     pub clock: ClockStatus,
     pub goto: Option<GotoStatus>,
     pub flip: Option<FlipStatus>,
+    pub auto_flip: AutoFlipStatus,
     /// The last recorded flip (pre-flip pointing and Sun position; after a flip also its duration and result).
     pub last_flip: Option<serde_json::Value>,
     pub startup: StartupStatus,
@@ -299,6 +309,7 @@ impl Default for Status {
             clock: ClockStatus::default(),
             goto: None,
             flip: None,
+            auto_flip: AutoFlipStatus { enabled: false, record_min: 5.0, flip_min: 1.0, stage: "off" },
             last_flip: None,
             startup: StartupStatus::default(),
             optics: OpticsStatus::default(),

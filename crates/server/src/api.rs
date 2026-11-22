@@ -70,6 +70,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/flats/applied", put(flats_applied))
         .route("/api/guiding/params", put(guide_params))
         .route("/api/coronagraph", put(coronagraph))
+        .route("/api/mount/autoflip", put(mount_autoflip))
         .route("/api/colour", put(colour))
         .route("/api/focus", put(focus))
         .route("/api/camera/roi", put(camera_roi))
@@ -643,6 +644,12 @@ async fn mount_flip(s: State<AppState>, Json(b): Json<FlipBody>) -> Res {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "this moves the mount: send {\"confirm\": true}" }))).into_response();
     }
     run(s, Command::StartFlip { record_only: b.record_only, restore: b.restore }).await
+}
+
+#[derive(Deserialize)]
+struct AutoFlipBody { enabled: bool, record_min: Option<f64>, flip_min: Option<f64> }
+async fn mount_autoflip(s: State<AppState>, Json(b): Json<AutoFlipBody>) -> Res {
+    run(s, Command::SetAutoFlip { enabled: b.enabled, record_min: b.record_min.unwrap_or(5.0), flip_min: b.flip_min.unwrap_or(1.0) }).await
 }
 
 #[derive(Deserialize)]

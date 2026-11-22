@@ -54,3 +54,5 @@ Everything below was built and tested on the simulators; each item needs the rea
 | Issue | Check |
 |---|---|
 | #30 | ASI174MM Mini on a USB 3 cable and blue port: open, set exposure/gain, fps at full frame and ROI |
+
+| Automatic meridian flip (unattended, guiding on) | Not yet | Turn on "Flip automatically" (Aim, Meridian flip) a few minutes before the Sun crosses the meridian. Expect: position recorded, flip just after the crossing (or when the mount stops tracking), Sun re-centred, recalibration if guiding, solar tracking back on. |

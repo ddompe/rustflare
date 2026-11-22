@@ -1,22 +1,12 @@
-import { ReactNode, useEffect, useId, useState } from 'react'
+import { ReactNode, useEffect, useState } from 'react'
 import { api, Optics, Status } from '../api'
 import { Display } from '../display'
-import { Disclosure, ErrorLine, Field, Switch, useAction } from './ui'
+import { Disclosure, ErrorLine, Field, RangeField, Switch, useAction } from './ui'
 import { StorageSettings } from './Storage'
 import { SessionLog } from './SessionLog'
 import { useSetting } from '../settings'
 
 const arcmin = (s: number) => `${Math.floor(s / 60)}′ ${(s % 60).toFixed(0)}″`
-
-function RangeField({ label, value, min, max, step, show, onChange }: { label: string; value: number; min: number; max: number; step: number; show: string; onChange: (v: number) => void }) {
-  const id = useId()
-  return (
-    <div className="ctl">
-      <div className="ctl-head"><label htmlFor={id}>{label}</label><output htmlFor={id} className="ctl-val">{show}</output></div>
-      <input id={id} type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(parseFloat(e.target.value))} />
-    </div>
-  )
-}
 
 function SiteSettings({ status }: { status: Status | null }) {
   const [lat, setLat] = useState(status?.site ? String(status.site.latitude) : '')

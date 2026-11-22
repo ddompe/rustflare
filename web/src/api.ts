@@ -16,6 +16,7 @@ export interface Status {
   clock?: { ntp_synchronized: boolean | null }
   goto?: { target: string; phase: string } | null
   flip?: { phase: string; elapsed_s: number; detail: string } | null
+  auto_flip?: { enabled: boolean; record_min: number; flip_min: number; stage: 'off' | 'waiting' | 'recorded' | 'flipping' | 'done' }
   last_flip?: unknown
   guide_params?: { window_s: number; deadband_px: number; gain: number; speed: number; fast_speed: number; fast_above_px: number }
   coronagraph?: { enabled: boolean; scale: number }
