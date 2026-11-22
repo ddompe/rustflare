@@ -27,6 +27,12 @@ pub fn alt_az(ra_hours: f64, dec_deg: f64, unix_secs: f64, latitude_deg: f64, lo
     (alt.to_degrees(), az.to_degrees().rem_euclid(360.0))
 }
 
+/// Local sidereal time in hours for an observer at `longitude_east_deg` (east positive).
+pub fn local_sidereal_hours(unix_secs: f64, longitude_east_deg: f64) -> f64 {
+    let d = unix_secs / 86400.0 + 2440587.5 - 2451545.0;
+    (18.697374558 + 24.06570982441908 * d + longitude_east_deg / 15.0).rem_euclid(24.0)
+}
+
 /// Mean solar angular radius at 1 AU, in arcseconds.
 const RADIUS_AT_1AU_ARCSEC: f64 = 959.63;
 

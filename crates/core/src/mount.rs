@@ -99,6 +99,8 @@ pub trait Mount: Send {
     fn link(&self) -> Option<LinkInfo> { None }
     /// Asks the mount for its current state (read-only).
     fn state(&mut self) -> Result<MountState> { Ok(MountState::default()) }
+    /// Where the mount says it is pointing: (RA hours, Dec degrees). `None` if the driver cannot tell. Read-only.
+    fn equatorial(&mut self) -> Result<Option<(f64, f64)>> { Ok(None) }
     /// Moves to the home (zero) position. Moves the mount.
     fn go_home(&mut self) -> Result<()> { Err(crate::Error::Unsupported("go home".into())) }
 

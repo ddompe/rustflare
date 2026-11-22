@@ -301,6 +301,8 @@ function GoToSun({ status, disabled }: { status: Status; disabled: boolean }) {
   )
 }
 
+import { MeridianFlip } from './MeridianFlip'
+
 /** Step 2: connect the mount, switch on solar tracking, slew the region of interest into view. */
 export function AimTab({ status, next }: { status: Status | null; next: () => void }) {
   const { err, run } = useAction()
@@ -314,6 +316,9 @@ export function AimTab({ status, next }: { status: Status | null; next: () => vo
       <Offset status={status} />
       <Pad status={status} locked={parked} />
       <GoToSun status={status} disabled={parked || !!status.goto} />
+      <Disclosure title="Meridian flip">
+        <MeridianFlip status={status} />
+      </Disclosure>
       <Section error={err}>
         <Switch label="Solar tracking" checked={m.tracking} disabled={parked} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? shortInfo(m.info) : `${shortInfo(m.info)}. Off: the Sun will drift out of view.`} />
         <MountState m={m} />

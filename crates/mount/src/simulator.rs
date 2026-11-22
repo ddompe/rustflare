@@ -8,11 +8,13 @@ pub struct SimMount {
     slew: [f64; 2],
     /// A simulated GoTo keeps the mount "slewing" until this moment.
     goto_until: Option<std::time::Instant>,
+    /// Where the simulated mount believes it points (RA hours, Dec degrees).
+    pointing: (f64, f64),
 }
 
 impl SimMount {
     pub fn new(sky: SimSky) -> Self {
-        SimMount { sky, tracking: false, guide: [0.0; 2], slew: [0.0; 2], goto_until: None }
+        SimMount { sky, tracking: false, guide: [0.0; 2], slew: [0.0; 2], goto_until: None, pointing: (15.8, -19.9) }
     }
     fn push(&self) {
         self.sky.set_axis_rates(self.guide[0] + self.slew[0], self.guide[1] + self.slew[1]);
@@ -28,7 +30,10 @@ impl Mount for SimMount {
 
     fn set_site_time(&mut self, _st: &SiteTime) -> Result<()> { Ok(()) }
 
-    fn goto_equatorial(&mut self, _ra: f64, _dec: f64) -> Result<()> {
+    fn equatorial(&mut self) -> Result<Option<(f64, f64)>> { Ok(Some(self.pointing)) }
+
+    fn goto_equatorial(&mut self, ra: f64, dec: f64) -> Result<()> {
+        self.pointing = (ra, dec);
         self.goto_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
         self.set_tracking(false)
     }

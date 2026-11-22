@@ -129,6 +129,12 @@ impl<P: Read + Write + Send> Mount for Zwo<P> {
         Ok(MountState { tracking: Some(self.tracking), slewing: Some(slewing), at_home: Some(at_home), park, alt_az: Some(has(b'Z')) })
     }
 
+    /// Pointing from `:GAST#`, whose reply is `<date&time&offset>#<RA&Dec>#<flags>#` (read-only query).
+    fn equatorial(&mut self) -> Result<Option<(f64, f64)>> {
+        let r = send(&mut self.port, ":GAST#", Reply::EndsWith(END_CHAR))?;
+        Ok(parse_gast_pointing(&String::from_utf8_lossy(&r)))
+    }
+
     /// `:SMGE<lat>&<lon>#` and `:SMTI<MM/DD/YY>&<hh:mm:ss>&<offset>#`, as the official app sends them. Longitude is
     /// west-positive; the UTC offset is sent with the opposite sign (a site at UTC-6 as `+06:00`).
     fn set_site_time(&mut self, st: &SiteTime) -> Result<()> {
@@ -216,6 +222,19 @@ impl<P: Read + Write + Send> Mount for Zwo<P> {
     fn stop(&mut self) -> Result<()> {
         self.cmd(":Q#")
     }
+}
+
+/// The RA/Dec part of a `:GAST#` reply: `11/21/26&15:20:38&+06:00#01:47:36&+90*00:00#nNHGM040400880#`.
+fn parse_gast_pointing(reply: &str) -> Option<(f64, f64)> {
+    let part = reply.split('#').nth(1)?;
+    let (ra, dec) = part.split_once('&')?;
+    let mut r = ra.split(':').map(|v| v.trim().parse::<f64>());
+    let ra_h = r.next()?.ok()? + r.next()?.ok()? / 60.0 + r.next()?.ok()? / 3600.0;
+    let sign = if dec.trim_start().starts_with('-') { -1.0 } else { 1.0 };
+    let d = dec.trim_start_matches(['+', '-']);
+    let (deg, rest) = d.split_once('*')?;
+    let (min, sec) = rest.split_once(':')?;
+    Some((ra_h, sign * (deg.parse::<f64>().ok()? + min.parse::<f64>().ok()? / 60.0 + sec.parse::<f64>().ok()? / 3600.0)))
 }
 
 /// `±dd*mm:ss` (`deg_width` digits of degrees), rounded to the nearest arcsecond.
@@ -390,5 +409,14 @@ mod tests {
         assert_eq!(civil(0), (1970, 1, 1, 0, 0, 0));
         assert_eq!(civil(1_795_296_038), (2026, 11, 21, 21, 20, 38));
         assert_eq!(fmt_dms(-0.5, 2), "-00*30:00");
+    }
+
+    #[test]
+    fn pointing_is_parsed_from_the_gast_reply() {
+        let (ra, dec) = parse_gast_pointing("11/21/26&15:20:38&+06:00#01:47:36&+90*00:00#nNHGM040400880#").unwrap();
+        assert!((ra - (1.0 + 47.0 / 60.0 + 36.0 / 3600.0)).abs() < 1e-9 && (dec - 90.0).abs() < 1e-9);
+        let (_, d) = parse_gast_pointing("x#15:47:53&-19*58:26#n#").unwrap();
+        assert!((d + (19.0 + 58.0 / 60.0 + 26.0 / 3600.0)).abs() < 1e-9);
+        assert_eq!(parse_gast_pointing("garbage"), None);
     }
 }

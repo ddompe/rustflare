@@ -46,6 +46,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/mount/stop", post(|s| run(s, Command::MountStop)))
         .route("/api/mount/home", post(|s, b| mount_motion(s, b, Command::MountHome)))
         .route("/api/mount/goto-sun", post(goto_sun))
+        .route("/api/mount/flip", post(mount_flip))
         .route("/api/site", put(site_put))
         .route("/api/tracking/start", post(tracking_start))
         .route("/api/tracking/stop", post(|s| run(s, Command::StopTracking)))
@@ -584,6 +585,17 @@ async fn goto_sun(s: State<AppState>, body: Option<Json<GotoSunBody>>) -> Res {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "this moves the mount: send {\"confirm\": true}" }))).into_response();
     }
     run(s, Command::MountGotoSun { allow_unsynced_clock: b.allow_unsynced_clock }).await
+}
+
+#[derive(Deserialize)]
+struct FlipBody { #[serde(default)] confirm: bool, #[serde(default)] record_only: bool, #[serde(default)] restore: bool }
+
+/// Meridian flip assist. Recording only changes nothing on the mount; the rest MOVES the mount: confirmation required.
+async fn mount_flip(s: State<AppState>, Json(b): Json<FlipBody>) -> Res {
+    if !b.record_only && !b.confirm {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "this moves the mount: send {\"confirm\": true}" }))).into_response();
+    }
+    run(s, Command::StartFlip { record_only: b.record_only, restore: b.restore }).await
 }
 
 #[derive(Deserialize)]

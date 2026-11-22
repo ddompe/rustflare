@@ -46,3 +46,7 @@ The slider button opens display settings (auto-stretch, brightness, contrast, ga
 - *Mount link lost*: the USB mount is found again automatically; for Bluetooth press the pairing button again.
 - *Storage not available*: the drive is not mounted; reconnect it or choose another in Storage.
 - *Go to Sun refuses*: set the site, check the Sun is above the horizon, check the clock.
+
+## Meridian flip assist
+
+Aim tab > Meridian flip. The panel shows when the Sun crosses the meridian (needs the site set). **Record position** saves where the mount points, where the Sun sits in the picture and the time. **Flip and re-centre** records, slews the mount to that pointing (carried along by the Sun's own motion; the mount turns over if it decides to), switches solar tracking back on, then brings the Sun back to its recorded place in the picture, accounting for the image turning 180 degrees (it checks where the Sun really appears). It stores the slew time, total time and final error. **Restore after a manual flip** does the same after you flipped with another app. A guiding calibration is required to re-centre. The mount's own meridian-limit setting decides how far it can track past the meridian; set that in the ZWO app. Hardware-unverified: see the checklist.

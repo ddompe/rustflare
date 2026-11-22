@@ -39,6 +39,20 @@ pub struct Site {
     pub longitude: f64,
 }
 
+/// A meridian flip assist in progress: GoTo to the recorded pointing, then re-centre the Sun where it was.
+struct FlipState {
+    started: Instant,
+    pre: Value,
+    moved: bool,
+    last_check: Instant,
+    slew_done_at: Option<Instant>,
+    slew_s: Option<f64>,
+    phase: &'static str,
+    /// Image position to centre on and whether the image turned over, once known.
+    centre: Option<((f64, f64), bool)>,
+    good_since: Option<Instant>,
+}
+
 struct GotoState {
     started: Instant,
     /// The mount has been seen slewing.
@@ -79,6 +93,9 @@ pub enum Command {
     MountGotoSun { allow_unsynced_clock: bool },
     /// Observer site (decimal degrees, east-positive longitude).
     SetSite { latitude: f64, longitude: f64 },
+    /// Meridian flip assist. `record_only`: just remember the pointing and Sun position. `restore`: the flip was done by
+    /// hand, GoTo the recorded pointing and re-centre. Otherwise: record, GoTo (the mount turns over if it decides to), re-centre.
+    StartFlip { record_only: bool, restore: bool },
     /// Centred region of interest covering `fraction` of the sensor in each direction (1.0 = full frame).
     SetRoi { fraction: f64 },
     /// Opt-in session log (JSON lines plus small frames) for regression fixtures.
@@ -223,6 +240,8 @@ pub struct Engine {
     site: Option<Site>,
     guide_params: GuideParams,
     goto: Option<GotoState>,
+    flip: Option<FlipState>,
+    last_flip: Option<Value>,
     ntp_sync: Option<bool>,
     last_ntp_check: Instant,
     /// A Bluetooth connection attempt running on its own thread (auto-reconnect must not stall the engine).
@@ -301,6 +320,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         mount_poll_failures: 0,
         site: crate::config::read(storage.config_file()).get("site").and_then(|v| serde_json::from_value(v.clone()).ok()),
         goto: None,
+        flip: None,
+        last_flip: crate::config::read(storage.config_file()).get("last_flip").cloned(),
         guide_params,
         ntp_sync: None,
         last_ntp_check: Instant::now() - Duration::from_secs(120),
@@ -415,6 +436,7 @@ impl Engine {
             self.auto_connect_tick();
             self.poll_mount();
             self.step_goto();
+            self.step_flip();
             self.flush_controls();
             if self.draining.is_some() && self.last_publish.elapsed() >= Duration::from_millis(200) {
                 self.publish();
@@ -572,6 +594,111 @@ impl Engine {
         }
     }
 
+    fn cancel_flip(&mut self, why: &str) {
+        if self.flip.take().is_some() {
+            self.status.flip = None;
+            if let Some(l) = self.last_flip.as_mut() {
+                l["result"] = json!(format!("cancelled: {why}"));
+            }
+        }
+    }
+
+    fn finish_flip(&mut self, result: String, post_error_px: Option<f64>) {
+        if let Some(f) = self.flip.take() {
+            let total = f.started.elapsed().as_secs_f64();
+            let rec = json!({ "pre": f.pre, "slew_s": f.slew_s, "total_s": total, "image_turned_over": f.centre.map(|c| c.1), "target_px": f.centre.map(|c| c.0), "post_error_px": post_error_px, "result": result });
+            let _ = crate::config::set(self.storage.config_file(), "last_flip", rec.clone());
+            self.last_flip = Some(rec);
+        }
+        self.status.flip = None;
+    }
+
+    /// Follows a flip assist: slew, solar tracking back on, then centre the Sun at its pre-flip place.
+    fn step_flip(&mut self) {
+        let Some(f) = self.flip.as_mut() else { return };
+        if f.last_check.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        f.last_check = Instant::now();
+        let elapsed = f.started.elapsed();
+        self.status.flip = Some(FlipStatus { phase: f.phase, elapsed_s: elapsed.as_secs_f64(), detail: String::new() });
+        if elapsed > Duration::from_secs(900) {
+            self.finish_flip("gave up after 15 minutes".into(), None);
+            self.status.error = Some("meridian flip assist timed out".into());
+            return;
+        }
+        match f.phase {
+            "slewing" => {
+                let Some(m) = self.mount.as_mut() else { return self.finish_flip("the mount disconnected".into(), None) };
+                let Ok(st) = m.state() else { return };
+                f.moved = f.moved || st.slewing == Some(true);
+                if st.slewing == Some(false) && (f.moved || elapsed > Duration::from_secs(8)) {
+                    f.slew_s = Some(elapsed.as_secs_f64());
+                    f.slew_done_at = Some(Instant::now());
+                    let r = m.set_tracking_rate(TrackingRate::Solar).and_then(|_| m.set_tracking(true));
+                    match r {
+                        Ok(()) => self.mount_tracking = true,
+                        Err(e) => self.status.error = Some(format!("flip: arrived, but solar tracking could not be switched on: {e}")),
+                    }
+                    f.phase = "settling";
+                }
+            }
+            "settling" => {
+                // let the mount and the image settle, then look for the Sun
+                if f.slew_done_at.is_some_and(|t| t.elapsed() >= Duration::from_secs(6)) {
+                    let (w, h) = (self.status.camera.as_ref().map(|c| c.width as f64).unwrap_or(0.0), self.status.camera.as_ref().map(|c| c.height as f64).unwrap_or(0.0));
+                    let g = |k: &str| f.pre.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let before = Vec2::new(g("sun_x"), g("sun_y"));
+                    match self.status.sun.as_ref() {
+                        None => {
+                            if f.slew_done_at.is_some_and(|t| t.elapsed() >= Duration::from_secs(60)) {
+                                self.finish_flip("the Sun is not in view after the flip: centre it by hand, then press Hold position".into(), None);
+                            }
+                        }
+                        Some(sun) if (w - g("frame_w")).abs() > 1.0 || (h - g("frame_h")).abs() > 1.0 => {
+                            let _ = sun;
+                            self.finish_flip("the frame size changed since the position was recorded".into(), None);
+                        }
+                        Some(sun) => {
+                            let (target, rotated) = rustflare_tracking::flip::choose_target(before, sun.pos, w, h);
+                            let cal = self.calibration.and_then(|c| if rotated { rustflare_tracking::flip::flipped_calibration(&c) } else { Some(c) });
+                            f.centre = Some(((target.x, target.y), rotated));
+                            match cal {
+                                None => self.finish_flip(format!("the mount {} but there is no guiding calibration: centre the Sun by hand and calibrate", if rotated { "turned over" } else { "did not turn over" }), None),
+                                Some(cal) => {
+                                    self.status.guiding.target = Some((target.x, target.y));
+                                    self.guide = GuideState::Guiding(Guider::new(target, cal, self.guide_params));
+                                    f.phase = "centring";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                // centring: done when the averaged error stays small for a few seconds
+                let small = self.status.guiding.error_px.is_some_and(|e| e < (self.guide_params.deadband_px * 2.0).max(4.0));
+                if !matches!(self.guide, GuideState::Guiding(_)) {
+                    return self.finish_flip("guiding stopped during centring".into(), self.status.guiding.error_px);
+                }
+                if small {
+                    let t = *f.good_since.get_or_insert_with(Instant::now);
+                    if t.elapsed() >= Duration::from_secs(4) {
+                        let turned = f.centre.map(|c| c.1).unwrap_or(false);
+                        let err = self.status.guiding.error_px;
+                        self.finish_flip(format!("done: the image {}, the Sun is back at its place and held", if turned { "turned over (rotated 180 degrees)" } else { "did not turn over" }), err);
+                    }
+                } else {
+                    f.good_since = None;
+                    if elapsed > Duration::from_secs(600) {
+                        let e = self.status.guiding.error_px;
+                        self.finish_flip("could not bring the Sun back within the time limit: check the calibration".into(), e);
+                    }
+                }
+            }
+        }
+    }
+
     fn publish(&mut self) {
         self.refresh_optics();
         self.refresh_ntp(false);
@@ -590,13 +717,15 @@ impl Engine {
             self.status.coronagraph = CoronagraphStatus { enabled: c.enabled, scale: c.scale };
         }
         self.status.session_log = SessionLogStatus { enabled: self.slog.enabled(), lines: self.slog.lines, frames: self.slog.frames, bytes: self.slog.bytes, file: self.slog.file_name() };
+        self.status.last_flip = self.last_flip.clone();
         self.status.clock = ClockStatus { ntp_synchronized: self.ntp_sync };
         self.status.site = self.site.map(|s| SiteStatus { latitude: s.latitude, longitude: s.longitude });
         self.status.sky_sun = self.site.map(|s| {
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
             let (ra, dec) = rustflare_tracking::solar::sun_equatorial(now);
             let (alt, az) = rustflare_tracking::solar::alt_az(ra, dec, now, s.latitude, s.longitude);
-            SkySun { altitude_deg: alt, azimuth_deg: az, ra_hours: ra, dec_deg: dec }
+            let (ha, mins) = rustflare_tracking::flip::meridian_timing(ra, rustflare_tracking::solar::local_sidereal_hours(now, s.longitude));
+            SkySun { altitude_deg: alt, azimuth_deg: az, ra_hours: ra, dec_deg: dec, hour_angle_h: ha, minutes_to_meridian: mins }
         });
         self.status.goto = self.goto.as_ref().map(|g| GotoStatus { target: "sun", phase: if g.moved { "slewing" } else { "starting" } });
         self.status.startup = StartupStatus {
@@ -740,6 +869,7 @@ impl Engine {
             }
             Command::MountStop => {
                 self.goto = None; // STOP also cancels a GoTo
+                self.cancel_flip("stopped");
                 self.stop_guiding_quietly();
                 self.mount.as_mut().ok_or("no mount connected")?.stop().map_err(s)?;
                 Ok(json!({}))
@@ -812,6 +942,44 @@ impl Engine {
                 self.last_frame = None;
                 self.refresh_roi();
                 Ok(json!({ "width": roi.width, "height": roi.height, "x": roi.x, "y": roi.y }))
+            }
+            Command::StartFlip { record_only, restore } => {
+                self.require_idle()?;
+                self.require_not_parked()?;
+                if self.flip.is_some() || self.goto.is_some() {
+                    return Err("a GoTo or flip is already running: press STOP first".into());
+                }
+                let now_unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+                let pre = if restore {
+                    self.last_flip.as_ref().and_then(|v| v.get("pre")).cloned().ok_or("no recorded position: record one before the flip")?
+                } else {
+                    let cam = self.status.camera.as_ref().ok_or("no camera open")?;
+                    let (w, h) = (cam.width as f64, cam.height as f64);
+                    let sun = self.status.sun.as_ref().ok_or("the Sun must be in view to record its position")?;
+                    let (sx, sy, sr) = (sun.pos.x, sun.pos.y, sun.radius);
+                    let m = self.mount.as_mut().ok_or("no mount connected")?;
+                    let (ra, dec) = m.equatorial().map_err(s)?.ok_or("this mount does not report where it points, so the position cannot be recorded")?;
+                    let site = self.site.map(|st| rustflare_tracking::solar::local_sidereal_hours(now_unix, st.longitude));
+                    json!({ "unix": now_unix, "ra_hours": ra, "dec_deg": dec, "sun_x": sx, "sun_y": sy, "sun_radius": sr, "frame_w": w, "frame_h": h, "lst_hours": site,
+                            "sun_ra_hours": rustflare_tracking::solar::sun_equatorial(now_unix).0, "sun_dec_deg": rustflare_tracking::solar::sun_equatorial(now_unix).1 })
+                };
+                if record_only {
+                    self.last_flip = Some(json!({ "pre": pre }));
+                    let _ = crate::config::set(self.storage.config_file(), "last_flip", self.last_flip.clone().unwrap_or_default());
+                    return Ok(json!({ "recorded": true }));
+                }
+                let f = |k: &str| pre.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let target = rustflare_tracking::flip::carried_target((f("ra_hours"), f("dec_deg")), (f("sun_ra_hours"), f("sun_dec_deg")), rustflare_tracking::solar::sun_equatorial(now_unix));
+                self.stop_guiding_quietly();
+                if let Some(st) = self.site {
+                    let st = SiteTime { latitude_deg: st.latitude, longitude_east_deg: st.longitude, unix_secs: now_unix as i64, utc_offset_minutes: chrono::Local::now().offset().local_minus_utc() / 60 };
+                    let _ = self.mount.as_mut().ok_or("no mount connected")?.set_site_time(&st);
+                }
+                self.mount.as_mut().ok_or("no mount connected")?.goto_equatorial(target.0, target.1).map_err(s)?;
+                self.mount_tracking = false;
+                self.last_flip = Some(json!({ "pre": pre, "started_unix": now_unix }));
+                self.flip = Some(FlipState { started: Instant::now(), pre, moved: false, last_check: Instant::now(), slew_done_at: None, slew_s: None, phase: "slewing", centre: None, good_since: None });
+                Ok(json!({ "target_ra_hours": target.0, "target_dec_deg": target.1 }))
             }
             Command::SetSite { latitude, longitude } => {
                 if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {

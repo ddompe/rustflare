@@ -127,6 +127,9 @@ pub struct SkySun {
     pub azimuth_deg: f64,
     pub ra_hours: f64,
     pub dec_deg: f64,
+    /// Hour angle in hours (negative: before the meridian) and minutes until the Sun crosses it (negative: since).
+    pub hour_angle_h: f64,
+    pub minutes_to_meridian: f64,
 }
 
 /// The Pi's clock decides the Sun's computed position and what the mount is told the time is.
@@ -134,6 +137,13 @@ pub struct SkySun {
 pub struct ClockStatus {
     /// `systemd` says the clock is synchronised to a time server (None where that cannot be read).
     pub ntp_synchronized: Option<bool>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct FlipStatus {
+    pub phase: &'static str,
+    pub elapsed_s: f64,
+    pub detail: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -226,6 +236,9 @@ pub struct Status {
     pub sky_sun: Option<SkySun>,
     pub clock: ClockStatus,
     pub goto: Option<GotoStatus>,
+    pub flip: Option<FlipStatus>,
+    /// The last recorded flip (pre-flip pointing and Sun position; after a flip also its duration and result).
+    pub last_flip: Option<serde_json::Value>,
     pub startup: StartupStatus,
     pub optics: OpticsStatus,
     pub camera: Option<CameraStatus>,
@@ -254,6 +267,8 @@ impl Default for Status {
             sky_sun: None,
             clock: ClockStatus::default(),
             goto: None,
+            flip: None,
+            last_flip: None,
             startup: StartupStatus::default(),
             optics: OpticsStatus::default(),
             camera: None,
