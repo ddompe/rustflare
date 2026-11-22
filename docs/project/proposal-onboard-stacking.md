@@ -120,3 +120,16 @@ Multi-point moves **ahead** of the service: it is what decides whether on-board 
 ## Follow-up from the raw-data rule
 
 The recorder still writes its dark and flat masters as 16-bit PNG and applies those to the live view. They are display copies, but they are also rounded means; writing them as float FITS (and reading those back) would be consistent with the rest. Not done yet.
+
+## M0.5 done and review (2026-11-22)
+
+Built: reference refined against the aligned mean of the best 10 % (second alignment pass), per-frame brightness normalisation, optional sigma clipping (`--clip`), a `session` command that stacks every recording under a folder into a mirrored `stacks/` tree with a manifest (finished ones are skipped, so it can be run again as files arrive), and darks chosen per recording by exposure and gain from the sidecars (a dark that does not match is *not* applied, and the manifest says so). Tests: clipping removes an injected hot pixel, brightness changes are evened out, the second pass converges. On the real disc burst the second pass moved frames by 0.37 px (so the first pass had nearly converged); clipping removed about 1 % of pixel values.
+
+**Assumptions checked**
+
+- *"Alignment quality needs a new metric."* Dropped. The split-half measure is valid when every compared stack is aligned (the fixed pattern is spread out in all of them), so it can compare ranking methods and **global against multi-point alignment**; alignment against no alignment is judged by eye and by the convergence number (`refine_change_px`).
+- *"A single global shift per frame is enough."* Not for the Sun. At 0.78 arcsec per pixel the isoplanatic patch is of the order of 5 to 10 arcsec (6 to 13 px) in daytime seeing, so patches 100 px apart move independently. This is the case for multi-point (M1), and it is also what the Siril and PSS documentation build on.
+- *"Sigma clipping by default."* No: it triples the reads of the kept frames and removed only 1 % here; it stays opt-in.
+- *Not yet true:* no real flat or raw dark from the field day exists (the flat SER was not on the stick and darks were never kept raw before today), so calibration is tested on synthetic data only. The first raw flat and dark taken with this release will be the real test.
+
+**Plan correction for M1:** use the refined mean as the AP reference; correlate on 2x-binned images (the cache already holds them; half-width 24 binned pixels, pitch 2.25x like Siril); register only the better half of the frames per point (Siril's "register percent") to bound the cost; rank per point by the normalised correlation peak; blend with a Hann window straight into one accumulator (no per-point buffers); fall back to the global stack where no point has enough structure. Success is measured by the split-half detail of the multi-point stack against the global one on the same bursts, and by eye on the limb and the granulation.

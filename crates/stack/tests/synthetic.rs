@@ -181,3 +181,52 @@ fn masters_are_built_from_the_raw_recordings() {
     assert!((c - e).abs() / c < 0.05, "centre {c} corner {e}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn sigma_clipping_removes_outliers_and_brightness_changes_are_evened_out() {
+    let dir = std::env::temp_dir().join(format!("rf-stack-clip-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let base = scene(5);
+    let mut r = Rng(21);
+    // every frame the same scene (no jitter), noise, brightness varying by +-25 %, a hot pixel in one frame
+    let frames: Vec<Vec<f32>> = (0..20)
+        .map(|i| {
+            let g = 1.0 + 0.25 * ((i % 5) as f32 - 2.0) / 2.0;
+            let mut f: Vec<f32> = base.iter().map(|v| v * g + 200.0 * r.gauss()).map(|v| v.max(3.0)).collect();
+            if i == 7 {
+                f[120 * W + 160] = 65000.0; // a cosmic-ray hit on the disc
+            }
+            f
+        })
+        .collect();
+    let path = dir.join("b.ser");
+    write_ser(&path, &frames);
+    let cal = Calibration::default();
+    let plain = stack_ser(&path, &Options { keep: 1.0, ..Options::default() }, &cal).unwrap();
+    let clipped = stack_ser(&path, &Options { keep: 1.0, clip: 2.5, ..Options::default() }, &cal).unwrap();
+    let truth = base[120 * W + 160];
+    let (p, c) = (plain.data[120 * W + 160], clipped.data[120 * W + 160]);
+    assert!((p - truth).abs() > 1500.0, "the hit pulls the plain mean: {p} vs {truth}");
+    assert!((c - truth).abs() < 600.0, "clipping removes it: {c} vs {truth}");
+    assert!(clipped.report.clipped_fraction > 0.0 && clipped.report.clipped_fraction < 0.1);
+    // brightness: the stack is at the median frame's level, not dragged by the extremes
+    let level = |d: &[f32]| (60..H - 60).flat_map(|y| (60..W - 60).map(move |x| d[y * W + x] as f64)).sum::<f64>() / ((H - 120) * (W - 120)) as f64;
+    let ratio = level(&plain.data) / level(&base);
+    assert!((ratio - 1.0).abs() < 0.04, "level ratio {ratio}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_second_alignment_pass_converges() {
+    let dir = std::env::temp_dir().join(format!("rf-stack-ref-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (frames, _) = burst(40);
+    let path = dir.join("b.ser");
+    write_ser(&path, &frames);
+    let cal = Calibration::default();
+    let two = stack_ser(&path, &Options::default(), &cal).unwrap();
+    let one = stack_ser(&path, &Options { refine: 0.0, ..Options::default() }, &cal).unwrap();
+    assert!(two.report.refine_change_px < 1.0, "the second pass moved the frames by {} px", two.report.refine_change_px);
+    assert!(two.report.signal >= one.report.signal * 0.95, "refined {} vs single pass {}", two.report.signal, one.report.signal);
+    let _ = std::fs::remove_dir_all(&dir);
+}

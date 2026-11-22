@@ -44,10 +44,15 @@ pub struct Options {
     pub cache_mb: usize,
     /// Shift by whole pixels only: no resampling blur, at most half a pixel of misalignment.
     pub integer_shifts: bool,
+    /// Sigma clipping of the mean: pixels further than this many standard deviations from the mean of the kept frames are left
+    /// out (0 = off).
+    pub clip: f32,
+    /// Fraction of the frames whose aligned mean is the reference of the second alignment pass (0 = one pass only).
+    pub refine: f64,
 }
 
 impl Default for Options {
-    fn default() -> Self { Options { keep: 0.25, align: true, threads: 2, bin: 2, whiten: 0.7, erode: 8, rank: Rank::Reference, cache_mb: 1024, integer_shifts: false } }
+    fn default() -> Self { Options { keep: 0.25, align: true, threads: 2, bin: 2, whiten: 0.7, erode: 8, rank: Rank::Reference, cache_mb: 1024, integer_shifts: false, clip: 0.0, refine: 0.10 } }
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -61,6 +66,10 @@ pub struct Report {
     /// Shift of each frame from the reference frame, in full-resolution pixels: (frame, dx, dy), kept frames only.
     pub shifts: Vec<(usize, f64, f64)>,
     pub shift_rms_px: f64,
+    /// How far the second alignment pass moved the frames from the first (full-resolution pixels, rms): small means the alignment had converged.
+    pub refine_change_px: f64,
+    /// Pixel values left out by sigma clipping, as a fraction of all.
+    pub clipped_fraction: f64,
     /// Detail the two halves of the stack have in common (noise cancels): the quality measure to compare stacks with.
     pub signal: f64,
     pub first_timestamp: Option<f64>,
@@ -175,60 +184,82 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     let get = |s: &mut Ser, i: usize| -> Result<Img, String> { match &cache[i] { Some(img) => Ok(img.clone()), None => binned_of(s, i) } };
     let ref0 = (0..n).max_by(|&x, &y| lap[x].partial_cmp(&lap[y]).unwrap_or(std::cmp::Ordering::Equal)).unwrap_or(0);
 
-    // pass B: the shift of every frame from the reference, and the aligned mean
+    // alignment against a reference, then scoring against the aligned mean: shifts (binned pixels), score, brightness, aligned mean
     let aligner0 = Aligner::new(bw, bh, &valid, opts.whiten);
+    let whole = |v: f64| if opts.integer_shifts { (v * b as f64).round() / b as f64 } else { v };
+    let align_and_score = |reference: &crate::align::Prepared| -> Result<(Vec<(f64, f64)>, Vec<f64>, Vec<f64>, Vec<f32>), String> {
+        let b_out = run_parallel(n, opts.threads, |i| {
+            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
+            let img = get(&mut s, i)?;
+            let al = Aligner::new(bw, bh, &valid, opts.whiten);
+            let (dx, dy) = if opts.align { al.shift(reference, &al.prepare(&img)) } else { (0.0, 0.0) };
+            Ok::<_, String>((whole(dx), whole(dy)))
+        });
+        let mut shifts = Vec::with_capacity(n);
+        for (i, r) in b_out.into_iter().enumerate() {
+            shifts.push(r.map_err(|e| format!("frame {i}: {e}"))?);
+        }
+        let mut mean_b = vec![0f32; bw * bh];
+        {
+            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
+            for i in 0..n {
+                accumulate_shifted(&mut mean_b, &get(&mut s, i)?.d, bw, bh, shifts[i].0, shifts[i].1);
+            }
+        }
+        for v in &mut mean_b {
+            *v /= n as f32;
+        }
+        let lm = laplacian(&mean_b, bw, bh, &valid);
+        let var_m: f64 = lm.iter().zip(&valid).filter(|(_, &v)| v).map(|(&l, _)| l as f64 * l as f64).sum::<f64>().max(1e-30);
+        let nvalid = valid.iter().filter(|&&v| v).count().max(1) as f64;
+        let c_out = run_parallel(n, opts.threads, |i| {
+            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
+            let img = get(&mut s, i)?;
+            let mut al = vec![0f32; bw * bh];
+            accumulate_shifted(&mut al, &img.d, bw, bh, shifts[i].0, shifts[i].1);
+            let l = laplacian(&al, bw, bh, &valid);
+            let cov: f64 = l.iter().zip(&lm).zip(&valid).filter(|(_, &v)| v).map(|((&a, &b), _)| a as f64 * b as f64).sum();
+            let mean_v = al.iter().zip(&valid).filter(|(_, &v)| v).map(|(&v, _)| v as f64).sum::<f64>() / nvalid;
+            Ok::<_, String>((if mean_v > 0.0 { cov / var_m / mean_v } else { 0.0 }, mean_v)) // per unit brightness: dimmer frames are not penalised
+        });
+        let (mut score, mut bright) = (vec![0f64; n], vec![0f64; n]);
+        for (i, r) in c_out.into_iter().enumerate() {
+            (score[i], bright[i]) = r.map_err(|e| format!("frame {i}: {e}"))?;
+        }
+        Ok((shifts, score, bright, mean_b))
+    };
+    let by = |v: &Vec<f64>, o: &mut Vec<usize>| o.sort_by(|&x, &y| v[y].partial_cmp(&v[x]).unwrap_or(std::cmp::Ordering::Equal));
+
+    // pass 1 against the sharpest single frame; pass 2 against the aligned mean of the best few (they agree with each other,
+    // so the reference carries less noise and less of one frame's seeing)
     let reference = {
         let mut s = Ser::open(path).map_err(|e| e.to_string())?;
         aligner0.prepare(&get(&mut s, ref0)?)
     };
-    let b_out = run_parallel(n, opts.threads, |i| {
-        let mut s = Ser::open(path).map_err(|e| e.to_string())?;
-        let img = get(&mut s, i)?;
-        let al = Aligner::new(bw, bh, &valid, opts.whiten);
-        let (dx, dy) = if opts.align && i != ref0 { al.shift(&reference, &al.prepare(&img)) } else { (0.0, 0.0) };
-        Ok::<_, String>((dx, dy))
-    });
-    let mut shifts_b = Vec::with_capacity(n);
-    for (i, r) in b_out.into_iter().enumerate() {
-        shifts_b.push(r.map_err(|e| format!("frame {i}: {e}"))?);
-    }
-    let whole = |v: f64| if opts.integer_shifts { (v * b as f64).round() / b as f64 } else { v };
-    for sh in &mut shifts_b {
-        *sh = (whole(sh.0), whole(sh.1));
-    }
-    let mut mean_b = vec![0f32; bw * bh];
-    {
-        let mut s = Ser::open(path).map_err(|e| e.to_string())?;
-        for i in 0..n {
-            let img = get(&mut s, i)?;
-            accumulate_shifted(&mut mean_b, &img.d, bw, bh, shifts_b[i].0, shifts_b[i].1);
+    let (mut shifts_b, mut score, mut bright, _) = align_and_score(&reference)?;
+    let mut refine_change = 0.0;
+    if opts.refine > 0.0 && opts.align && n >= 8 {
+        let mut ord: Vec<usize> = (0..n).collect();
+        by(&score, &mut ord);
+        let top = ((n as f64 * opts.refine).round() as usize).clamp(3, n);
+        let mut mean_top = vec![0f32; bw * bh];
+        {
+            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
+            for &i in &ord[..top] {
+                accumulate_shifted(&mut mean_top, &get(&mut s, i)?.d, bw, bh, shifts_b[i].0, shifts_b[i].1);
+            }
         }
-    }
-    for v in &mut mean_b {
-        *v /= n as f32;
-    }
-
-    // pass C: how well each aligned frame's detail agrees with the mean's
-    let lm = laplacian(&mean_b, bw, bh, &valid);
-    let var_m: f64 = lm.iter().zip(&valid).filter(|(_, &v)| v).map(|(&l, _)| l as f64 * l as f64).sum::<f64>().max(1e-30);
-    let c_out = run_parallel(n, opts.threads, |i| {
-        let mut s = Ser::open(path).map_err(|e| e.to_string())?;
-        let img = get(&mut s, i)?;
-        let mut al = vec![0f32; bw * bh];
-        accumulate_shifted(&mut al, &img.d, bw, bh, shifts_b[i].0, shifts_b[i].1);
-        let l = laplacian(&al, bw, bh, &valid);
-        let cov: f64 = l.iter().zip(&lm).zip(&valid).filter(|(_, &v)| v).map(|((&a, &b), _)| a as f64 * b as f64).sum();
-        let mean_v = al.iter().zip(&valid).filter(|(_, &v)| v).map(|(&v, _)| v as f64).sum::<f64>() / valid.iter().filter(|&&v| v).count().max(1) as f64;
-        Ok::<_, String>(if mean_v > 0.0 { cov / var_m / mean_v } else { 0.0 }) // per unit brightness: dimmer frames are not penalised
-    });
-    let mut score = vec![0f64; n];
-    for (i, r) in c_out.into_iter().enumerate() {
-        score[i] = r.map_err(|e| format!("frame {i}: {e}"))?;
+        for v in &mut mean_top {
+            *v /= top as f32;
+        }
+        let reference2 = aligner0.prepare(&Img { w: bw, h: bh, d: mean_top });
+        let (shifts2, score2, bright2, _) = align_and_score(&reference2)?;
+        refine_change = (shifts_b.iter().zip(&shifts2).map(|(a, c)| (a.0 - c.0).powi(2) + (a.1 - c.1).powi(2)).sum::<f64>() / n as f64).sqrt() * b as f64;
+        (shifts_b, score, bright) = (shifts2, score2, bright2);
     }
     drop(cache);
 
     let mut order: Vec<usize> = (0..n).collect();
-    let by = |v: &Vec<f64>, o: &mut Vec<usize>| o.sort_by(|&x, &y| v[y].partial_cmp(&v[x]).unwrap_or(std::cmp::Ordering::Equal));
     match opts.rank {
         Rank::Reference => by(&score, &mut order),
         Rank::Laplacian => by(&lap, &mut order),
@@ -242,9 +273,28 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     let kept: Vec<usize> = order[..kept_n].to_vec();
     let rank_seconds = t0.elapsed().as_secs_f64();
 
+    // brightness of every kept frame brought to the median one (light changes during a burst)
+    let target = {
+        let mut v: Vec<f64> = kept.iter().map(|&i| bright[i]).collect();
+        v.sort_by(|a, c| a.partial_cmp(c).unwrap_or(std::cmp::Ordering::Equal));
+        v[v.len() / 2]
+    };
+    let scale = |i: usize| if bright[i] > 0.0 { (target / bright[i]).clamp(0.5, 2.0) as f32 } else { 1.0 };
+
     // pass D: the kept frames at full resolution, shifted onto the reference, into two accumulators (even and odd ranks) so
     // the quality of the stack can be measured without noise
     let t1 = Instant::now();
+    let load = |my: &mut Ser, idx: usize| -> Option<Vec<f32>> {
+        let raw = my.read_frame(idx).ok()?;
+        let mut frame = cal.apply(&raw);
+        let sc = scale(idx);
+        if sc != 1.0 {
+            for v in &mut frame {
+                *v *= sc;
+            }
+        }
+        Some(frame)
+    };
     let accs = Mutex::new(Vec::<(Vec<f32>, Vec<f32>, usize, usize)>::new());
     let next = AtomicUsize::new(0);
     std::thread::scope(|s| {
@@ -258,8 +308,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
                         break;
                     }
                     let idx = kept[k];
-                    let Ok(raw) = my.read_frame(idx) else { continue };
-                    let frame = cal.apply(&raw);
+                    let Some(frame) = load(&mut my, idx) else { continue };
                     let (fx, fy) = (shifts_b[idx].0 * b as f64, shifts_b[idx].1 * b as f64);
                     if k % 2 == 0 {
                         accumulate_shifted(&mut even, &frame, w, h, fx, fy);
@@ -280,7 +329,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         ne += a;
         no += c;
     }
-    let data: Vec<f32> = even.iter().zip(&odd).map(|(e, o)| (e + o) / kept_n as f32).collect();
+    let mut data: Vec<f32> = even.iter().zip(&odd).map(|(e, o)| (e + o) / (ne + no).max(1) as f32).collect();
     let signal = if ne > 0 && no > 0 {
         let ea: Vec<f32> = even.iter().map(|v| v / ne as f32).collect();
         let oa: Vec<f32> = odd.iter().map(|v| v / no as f32).collect();
@@ -289,6 +338,62 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     } else {
         0.0
     };
+
+    // sigma clipping: the spread of the kept frames about their mean, then the mean without the outliers (hot pixels, cosmic
+    // rays, a frame with a bird in it)
+    let mut clipped_fraction = 0.0;
+    if opts.clip > 0.0 && kept_n >= 5 {
+        let mean_px = data.clone();
+        let run = |pass: u8, std: &[f32]| -> Vec<(Vec<f32>, Vec<f32>)> {
+            let out = Mutex::new(Vec::new());
+            let next = AtomicUsize::new(0);
+            std::thread::scope(|s| {
+                for _ in 0..opts.threads.max(1).min(kept_n) {
+                    s.spawn(|| {
+                        let mut my = Ser::open(path).expect("reopen");
+                        let (mut a, mut c) = (vec![0f32; w * h], vec![0f32; w * h]);
+                        let mut sh = vec![0f32; w * h];
+                        loop {
+                            let k = next.fetch_add(1, Ordering::Relaxed);
+                            if k >= kept_n {
+                                break;
+                            }
+                            let idx = kept[k];
+                            let Some(frame) = load(&mut my, idx) else { continue };
+                            sh.iter_mut().for_each(|v| *v = 0.0);
+                            accumulate_shifted(&mut sh, &frame, w, h, shifts_b[idx].0 * b as f64, shifts_b[idx].1 * b as f64);
+                            for i in 0..w * h {
+                                let d = sh[i] - mean_px[i];
+                                if pass == 0 {
+                                    a[i] += d * d;
+                                } else if std[i] <= 0.0 || d.abs() <= opts.clip * std[i] {
+                                    a[i] += sh[i];
+                                    c[i] += 1.0;
+                                }
+                            }
+                        }
+                        out.lock().unwrap().push((a, c));
+                    });
+                }
+            });
+            out.into_inner().unwrap()
+        };
+        let mut var = vec![0f32; w * h];
+        for (a, _) in run(0, &[]) {
+            for (v, x) in var.iter_mut().zip(a) { *v += x; }
+        }
+        let std: Vec<f32> = var.iter().map(|v| (v / (kept_n - 1) as f32).sqrt()).collect();
+        let (mut sum, mut cnt) = (vec![0f32; w * h], vec![0f32; w * h]);
+        for (a, c) in run(1, &std) {
+            for i in 0..w * h { sum[i] += a[i]; cnt[i] += c[i]; }
+        }
+        let total: f64 = cnt.iter().map(|&c| c as f64).sum();
+        clipped_fraction = 1.0 - total / (w * h * kept_n) as f64;
+        for i in 0..w * h {
+            if cnt[i] > 0.0 { data[i] = sum[i] / cnt[i]; }
+        }
+    }
+
     let shifts: Vec<(usize, f64, f64)> = kept.iter().map(|&i| (i, shifts_b[i].0 * b as f64, shifts_b[i].1 * b as f64)).collect();
     let rms = (shifts.iter().map(|s| s.1 * s.1 + s.2 * s.2).sum::<f64>() / shifts.len().max(1) as f64).sqrt();
     let report = Report {
@@ -298,6 +403,8 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         kept_frames: kept,
         shifts,
         shift_rms_px: rms,
+        refine_change_px: refine_change,
+        clipped_fraction,
         signal,
         first_timestamp: ser.timestamp(0),
         rank_seconds,
