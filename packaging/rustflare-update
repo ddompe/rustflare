@@ -57,5 +57,8 @@ if [ -n "$SUMS_URL" ]; then
 else
     echo "warning: release has no SHA256SUMS; skipping verification" >&2
 fi
-apt-get install -y "$TMP/$DEB_NAME"
+# Keep the local /etc/default/rustflare (password, listen address, repository) instead of stopping at dpkg's
+# "configuration file modified" prompt: with no terminal that prompt aborts the upgrade and leaves the package
+# unconfigured, so the service would never restart on the new binary.
+DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$TMP/$DEB_NAME"
 echo "updated to $LATEST"

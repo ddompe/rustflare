@@ -50,3 +50,7 @@ The simulated camera and mount are always available in the UI. Open the simulate
 ## Run from source (development)
 
 See [Development](development.md). In short: `cd web && npm install && npm run build && cd .. && cargo run --release -p rustflare-server`.
+
+## Upgrading by hand
+
+`sudo rustflare-update` keeps your edited `/etc/default/rustflare` automatically. With plain `dpkg -i` from a script or ssh (no terminal), dpkg stops at its "configuration file modified" question, the upgrade is left half-done and the service is not restarted on the new version. Use `sudo dpkg --force-confold -i rustflare_*.deb` (or `sudo apt install ./rustflare_*.deb` in a terminal, where you can answer N).
