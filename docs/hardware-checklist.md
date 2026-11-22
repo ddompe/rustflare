@@ -26,6 +26,8 @@ Everything below was built and tested on the simulators; each item needs the rea
 
 | new | Session log | More > Session log on during a tracking/guiding session (20+ min on the Sun): the log appears under `<drive>/logs/`; copy it off and run the replay test (docs/development.md); it should pass |
 
+| new | ROI | Camera > Frame size: 50 % and 25 % in the phone UI; fps overlay jumps; tracking restarts; back to Full (measured via the API on 2026-11-21: 57 -> 153 fps) |
+
 ## M2: UI
 
 | Issue | Check |

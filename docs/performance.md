@@ -25,3 +25,13 @@ Total about 60 % of one core out of four: plenty of headroom while recording (th
 - A Pi 5 specific build (`-C target-cpu=cortex-a76`): safe only if Pi 4 and older are not supported; keep the generic build as the default and offer a Pi 5 flavour if profiling on the Pi shows a win.
 - Reusing the JPEG and gray buffers, and moving the tracker's per-frame passes to strided sampling.
 - A profile with recording on and several viewers.
+
+## Region of interest (measured on the Pi 5 with the Apollo-M MINI, 2026-11-21)
+
+| Frame size | Camera fps |
+|---|---|
+| Full, 1944x1472 | 57 |
+| 50 %, 968x736 | 153 |
+| 25 %, 480x368 | 153 |
+
+At 50 % the frame rate is limited by the exposure (6.46 ms at the current setting, about 155 fps), not by USB: the full frame is limited by the USB 3 readout (~326 MB/s). A shorter exposure would raise the small-frame rate further. ROI is centred (Camera > Frame size); Player One and the simulator support it, ZWO ASI is not done yet (the driver needs `ASISetStartPos`).
