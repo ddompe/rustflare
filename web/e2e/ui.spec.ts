@@ -206,8 +206,8 @@ test('mask size and focus score are overlay widgets that start apart', async ({ 
   await expect.poll(async () => !!(await (await page.request.get('/api/status')).json()).sun, { timeout: 10_000 }).toBe(true).catch(() => {})
   const hasSun = !!(await (await page.request.get('/api/status')).json()).sun
   test.skip(!hasSun, 'the simulator scene has no Sun in view')
-  await put(page, '/coronagraph', { enabled: true, scale: 1.03 })
-  await put(page, '/focus', { enabled: true })
+  await expect.poll(async () => (await put(page, '/coronagraph', { enabled: true, scale: 1.03 })).ok(), { timeout: 10_000 }).toBe(true)
+  await expect.poll(async () => (await put(page, '/focus', { enabled: true })).ok(), { timeout: 10_000 }).toBe(true)
   await page.goto('/')
   const mask = page.getByRole('button', { name: /Prominence mask size overlay/ })
   await expect(mask).toBeVisible()

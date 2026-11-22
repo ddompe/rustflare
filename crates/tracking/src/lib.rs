@@ -10,5 +10,5 @@ pub mod guiding;
 pub mod solar;
 pub mod tracker;
 
-pub use guiding::{CalAction, Calibration, Calibrator, GuideCommand, GuideParams, Guider};
+pub use guiding::{CalAction, Calibration, Calibrator, DeadReckoning, DriftModel, GuideCommand, GuideParams, Guider};
 pub use tracker::{fit_limb_auto, limb_fits, locate_sun, LimbFit, Position, SunLocation, TrackError, Tracker};

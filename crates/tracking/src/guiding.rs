@@ -104,11 +104,25 @@ pub struct Guider {
     filtered_error: Option<Vec2>,
     /// The last correction was large, so the error dwarfs any seeing: re-check quickly instead of averaging for long.
     quick: bool,
+    /// Total image motion (pixels) the pulses sent so far were meant to produce. Position minus this is what the mount
+    /// would have done on its own: its drift, whatever the guider did.
+    applied: Vec2,
 }
 
 impl Guider {
     pub fn new(target: Vec2, cal: Calibration, params: GuideParams) -> Guider {
-        Guider { target, cal, params, samples: VecDeque::new(), pending: VecDeque::new(), pulse_end: None, judge_after: None, filtered_error: None, quick: false }
+        Guider { target, cal, params, samples: VecDeque::new(), pending: VecDeque::new(), pulse_end: None, judge_after: None, filtered_error: None, quick: false, applied: Vec2::default() }
+    }
+
+    /// Image motion the guide pulses so far were meant to cause, in pixels (from the calibration).
+    pub fn applied(&self) -> Vec2 {
+        self.applied
+    }
+
+    /// Forget the samples gathered so far (they came from another source, e.g. dead reckoning).
+    pub fn reset_samples(&mut self) {
+        self.samples.clear();
+        self.filtered_error = None;
     }
 
     /// Offset of the *averaged* position from the target (what the guider acts on), once available.
@@ -174,11 +188,93 @@ impl Guider {
             let v = if px > 0.0 { speed } else { -speed };
             let cmd = if i == 0 { GuideCommand { primary: v, secondary: 0.0 } } else { GuideCommand { primary: 0.0, secondary: v } };
             self.pending.push_back((cmd, dur));
+            let dir = if i == 0 { self.cal.primary_dir } else { self.cal.secondary_dir };
+            self.applied = self.applied + dir * (self.cal.rate[i] * v * dur.as_secs_f64());
         }
         let (cmd, dur) = self.pending.pop_front()?;
         self.pulse_end = Some(now + dur);
         self.samples.clear();
         Some(cmd)
+    }
+}
+
+/// What the mount does on its own, learned while guiding works: position minus the motion the pulses caused is the drift,
+/// whatever the guider did about it. Its least-squares slope over the last minutes is the unguided drift in pixels per
+/// second, along both image axes at once (so per mount axis too: the calibration maps one onto the other).
+#[derive(Default)]
+pub struct DriftModel {
+    samples: VecDeque<(Instant, Vec2)>,
+}
+
+impl DriftModel {
+    const SPAN: Duration = Duration::from_secs(600);
+    const MIN_SPAN: Duration = Duration::from_secs(60);
+
+    pub fn clear(&mut self) {
+        self.samples.clear();
+    }
+
+    /// A good measurement while guiding: `pos` is where the Sun was seen, `applied` the guider's `applied()` at that moment.
+    /// Keeps about one sample a second.
+    pub fn observe(&mut self, now: Instant, pos: Vec2, applied: Vec2) {
+        if self.samples.back().is_some_and(|(t, _)| now.duration_since(*t) < Duration::from_secs(1)) {
+            return;
+        }
+        self.samples.push_back((now, pos - applied));
+        while self.samples.front().is_some_and(|(t, _)| now.duration_since(*t) > Self::SPAN) {
+            self.samples.pop_front();
+        }
+    }
+
+    /// Unguided drift, px/s, once there are at least a minute of good measurements.
+    pub fn drift(&self) -> Option<Vec2> {
+        let (first, last) = (self.samples.front()?, self.samples.back()?);
+        if self.samples.len() < 20 || last.0.duration_since(first.0) < Self::MIN_SPAN {
+            return None;
+        }
+        let n = self.samples.len() as f64;
+        let ts: Vec<f64> = self.samples.iter().map(|(t, _)| t.duration_since(first.0).as_secs_f64()).collect();
+        let tm = ts.iter().sum::<f64>() / n;
+        let (mx, my) = (self.samples.iter().map(|(_, p)| p.x).sum::<f64>() / n, self.samples.iter().map(|(_, p)| p.y).sum::<f64>() / n);
+        let stt: f64 = ts.iter().map(|t| (t - tm) * (t - tm)).sum();
+        if stt < 1e-9 {
+            return None;
+        }
+        let (mut sx, mut sy) = (0.0, 0.0);
+        for ((_, p), t) in self.samples.iter().zip(&ts) {
+            sx += (t - tm) * (p.x - mx);
+            sy += (t - tm) * (p.y - my);
+        }
+        Some(Vec2::new(sx / stt, sy / stt))
+    }
+}
+
+/// Stands in for the measurement while the Sun cannot be seen (cloud, trees, an eclipse): the last good position, moved on
+/// by the learned drift and by whatever the guide pulses did since, so the guider keeps the framing instead of giving up.
+pub struct DeadReckoning {
+    t0: Instant,
+    pos0: Vec2,
+    applied0: Vec2,
+    drift: Vec2,
+}
+
+impl DeadReckoning {
+    pub fn new(t0: Instant, pos0: Vec2, applied0: Vec2, drift: Vec2) -> DeadReckoning {
+        DeadReckoning { t0, pos0, applied0, drift }
+    }
+
+    /// Where the Sun should be now, given the guider's current `applied()`.
+    pub fn position(&self, now: Instant, applied: Vec2) -> Vec2 {
+        self.pos0 + self.drift * now.duration_since(self.t0).as_secs_f64() + (applied - self.applied0)
+    }
+
+    /// How far the pulses have moved the image since the last real measurement, pixels.
+    pub fn moved_px(&self, applied: Vec2) -> f64 {
+        (applied - self.applied0).len()
+    }
+
+    pub fn age(&self, now: Instant) -> Duration {
+        now.duration_since(self.t0)
     }
 }
 
@@ -382,6 +478,40 @@ mod tests {
         let mut g = Guider::new(target, cal, GuideParams::default());
         let (_, worst) = run(&mut w, &mut g, 120.0, 20.0);
         assert!(worst < 10.0, "still {worst:.1} px off after 100 s");
+    }
+
+    #[test]
+    fn dead_reckoning_keeps_the_framing_while_the_sun_is_hidden() {
+        let mut w = World::new(TRACKING_DRIFT, 2.0);
+        let cal = calibrate(&mut w);
+        let target = w.pos;
+        let mut g = Guider::new(target, cal, GuideParams::default());
+        let mut dm = DriftModel::default();
+        // five minutes of good guiding teaches the drift
+        let start = w.elapsed();
+        while w.elapsed() - start < 300.0 {
+            let m = w.measured();
+            dm.observe(w.now, m, g.applied());
+            if let Some(c) = g.step(w.now, m) { w.cmd = c; }
+            w.tick();
+        }
+        let d = dm.drift().expect("drift learned");
+        assert!((d - TRACKING_DRIFT).len() < 0.15, "learned {d:?} but the mount drifts {TRACKING_DRIFT:?}");
+        // then four minutes in which nothing is measured: with and without dead reckoning
+        let (mut with, mut without) = (World::new(TRACKING_DRIFT, 2.0), World::new(TRACKING_DRIFT, 2.0));
+        let _ = (&mut with, &mut without);
+        let dr = DeadReckoning::new(w.now, w.pos, g.applied(), d);
+        let start = w.elapsed();
+        let mut worst = 0f64;
+        while w.elapsed() - start < 240.0 {
+            let virt = dr.position(w.now, g.applied());
+            if let Some(c) = g.step(w.now, virt) { w.cmd = c; }
+            w.tick();
+            worst = worst.max((w.pos - target).len());
+        }
+        assert!(worst < 12.0, "the framing moved {worst:.1} px in four minutes of dead reckoning");
+        // for comparison, doing nothing for the same time moves it by drift x time
+        assert!(TRACKING_DRIFT.len() * 240.0 > 100.0);
     }
 
     #[test]

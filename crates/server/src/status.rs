@@ -56,6 +56,8 @@ pub struct GuidingStatus {
     pub error_px: Option<f64>,
     /// The target was lost while guiding: pulses are paused and guiding resumes by itself when the limb is found again.
     pub held: bool,
+    /// The Sun cannot be seen, but guiding goes on from the drift measured while it could.
+    pub dead_reckoning: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -322,7 +324,7 @@ impl Default for Status {
             sun: None,
             mount: None,
             tracking: None,
-            guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None, held: false },
+            guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None, held: false, dead_reckoning: false },
             capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0 },
             error: None,
             seq: 0,

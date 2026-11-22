@@ -323,6 +323,17 @@ pub struct Engine {
     save_lost: bool,
     /// Last trustworthy Sun measurement (with the frame size): held for the mask and overlays while clouds hide the limb.
     sun_model: crate::sunmodel::SunModel,
+    /// Filters the tracker's positions before the guider sees them (same idea as the Sun model, for the guide centre).
+    guide_gate: crate::sunmodel::SunModel,
+    /// What the mount does on its own, learned while guiding works.
+    drift_model: DriftModel,
+    /// While the Sun cannot be seen: the guider is fed a dead-reckoned position so the framing holds.
+    dead: Option<DeadReckoning>,
+    /// Last trustworthy guide position: when, where, and the guider's applied motion then.
+    last_good: Option<(Instant, Vec2, Vec2)>,
+    /// A guide pulse is running (or just ended): the image moves on purpose, so the gate must follow the measurements.
+    pulsing: bool,
+    pulse_settle_until: Instant,
     manual_slew_until: Instant,
     sun_held: bool,
     /// When the tracker started failing (it is only called lost after a couple of seconds: shadows come and go).
@@ -434,6 +445,12 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         auto_flip: crate::config::read(storage.config_file()).get("auto_flip").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         cal_generation: 0,
         sun_model: Default::default(),
+        guide_gate: Default::default(),
+        drift_model: DriftModel::default(),
+        dead: None,
+        last_good: None,
+        pulsing: false,
+        pulse_settle_until: Instant::now(),
         manual_slew_until: Instant::now(),
         sun_held: false,
         fail_since: None,
@@ -862,6 +879,8 @@ impl Engine {
                                 Some(cal) => {
                                     self.status.guiding.target = Some((target.x, target.y));
                                     self.guide = GuideState::Guiding(Guider::new(target, cal, self.guide_params));
+                                    self.drift_model.clear();
+                                    self.dead = None;
                                     f.phase = "centring";
                                 }
                             }
@@ -878,6 +897,8 @@ impl Engine {
                         let target = Vec2::new(t.0, t.1);
                         self.status.guiding.target = Some(t);
                         self.guide = GuideState::Guiding(Guider::new(target, cal, self.guide_params));
+                        self.drift_model.clear();
+                        self.dead = None;
                         f.good_since = None;
                         f.phase = "re-centring";
                     }
@@ -939,6 +960,7 @@ impl Engine {
             self.status.colour = ColourStatus { mode: col.mode, r: col.r, b: col.b, applied: col.applied };
         }
         self.status.guiding.held = self.guide_hold.is_some();
+        self.status.guiding.dead_reckoning = self.dead.is_some();
         self.status.session_log = SessionLogStatus { lost_frames: self.save_lost, lost_saved: self.lost_saved, enabled: self.slog.enabled(), lines: self.slog.lines, frames: self.slog.frames, bytes: self.slog.bytes, file: self.slog.file_name() };
         self.status.last_flip = self.last_flip.clone();
         self.status.auto_flip = AutoFlipStatus {
@@ -1304,6 +1326,7 @@ impl Engine {
                 self.stop_guiding_quietly();
                 let p = t.position();
                 self.tracker = Some(t);
+                self.guide_gate.reset();
                 self.lost = false;
                 Ok(json!({}))
             }
@@ -1329,6 +1352,8 @@ impl Engine {
                 self.status.guiding.target = Some((pos.x, pos.y));
                 self.event("guiding_start", json!({ "target": [pos.x, pos.y], "centred": center }));
                 self.guide = GuideState::Guiding(Guider::new(pos, self.calibration.unwrap(), self.guide_params));
+                self.drift_model.clear();
+                self.dead = None;
                 Ok(json!({}))
             }
             Command::StopGuiding => {
@@ -1863,6 +1888,7 @@ impl Engine {
 
     fn stop_guiding_quietly(&mut self) {
         self.guide_hold = None;
+        self.dead = None;
         let was_active = !matches!(self.guide, GuideState::Off);
         if was_active { self.event("guiding_stop", json!({})); }
         self.guide = GuideState::Off;
@@ -2030,19 +2056,48 @@ impl Engine {
                 self.fail_since = None;
                 self.fail_saved = false;
                 self.status.tracking = Some(TrackingStatus { mode: t.mode(), x: p.pos.x, y: p.pos.y, radius: p.radius, lost: false });
+                let mode = t.mode();
                 let was_lost = self.lost;
                 self.lost = false;
-                if was_lost { self.event("tracking_found", json!({ "x": p.pos.x, "y": p.pos.y, "radius": p.radius, "resuming_guiding": self.guide_hold.is_some() })); }
+                if was_lost { self.event("tracking_found", json!({ "x": p.pos.x, "y": p.pos.y, "radius": p.radius, "resuming_guiding": self.guide_hold.is_some(), "dead_reckoned_s": self.dead.as_ref().map(|d| d.age(now).as_secs_f64()) })); }
                 if was_lost && matches!(self.guide, GuideState::Off) && self.mount_tracking {
                     if let Some((target, cal)) = self.guide_hold.take() {
                         log::info!("tracking found again: guiding resumed");
                         self.event("guiding_resumed", json!({ "target": [target.x, target.y] }));
                         self.status.guiding.target = Some((target.x, target.y));
                         self.guide = GuideState::Guiding(Guider::new(target, cal, self.guide_params));
+                        self.drift_model.clear();
+                        self.dead = None;
                         self.status.error = None;
                     }
                 }
-                self.step_guide(now, p.pos);
+                // What the guider sees must be a trustworthy position: shadows, cloud and flapping fits are gated out by a model of
+                // the guide centre. When the position is not trustworthy and the drift is known the guider is fed a dead-reckoned one.
+                let free = self.mount_state.slewing == Some(true) || self.goto.is_some() || self.flip.is_some() || now < self.manual_slew_until
+                    || matches!(self.guide, GuideState::Calibrating(_)) || self.pulsing || now < self.pulse_settle_until;
+                let dims = (frame.width, frame.height);
+                let trusted = if p.held {
+                    None
+                } else if p.radius.is_some() && mode != "anchor" {
+                    let loc = SunLocation { pos: p.pos, radius: p.radius.unwrap_or(1000.0), partial: true, radius_from_optics: None, fit_rms: None };
+                    self.guide_gate.update(Some(loc), now, dims, free).filter(|e| !e.predicted).map(|e| e.sun.pos)
+                } else {
+                    Some(p.pos)
+                };
+                match trusted {
+                    Some(gp) => {
+                        if self.dead.take().is_some() {
+                            if let GuideState::Guiding(g) = &mut self.guide { g.reset_samples(); }
+                            self.event("dead_reckoning_end", json!({}));
+                            self.status.error = None;
+                        }
+                        let applied = if let GuideState::Guiding(g) = &self.guide { g.applied() } else { Vec2::default() };
+                        if matches!(self.guide, GuideState::Guiding(_)) { self.drift_model.observe(now, gp, applied); }
+                        self.last_good = Some((now, gp, applied));
+                        self.step_guide(now, gp);
+                    }
+                    None => self.dead_reckon(now),
+                }
             }
             Err(e) => {
                 let since = *self.fail_since.get_or_insert(now);
@@ -2060,14 +2115,44 @@ impl Engine {
                 }
                 if first {
                     let held = match (&self.guide, self.calibration) { (GuideState::Guiding(g), Some(c)) => Some((g.target, c)), _ => None };
+                    let drift = self.drift_model.drift();
                     log::warn!("tracking lost: {e}");
-                    self.event("tracking_lost", json!({ "why": e.to_string(), "was_guiding": held.is_some(), "seconds_since_exposure_change": self.last_exposure_change.elapsed().as_secs_f64() }));
-                    self.status.error = Some(format!("tracking lost: {e}"));
-                    self.stop_guiding_quietly();
-                    self.guide_hold = held; // pulses stop while blind; the mount keeps tracking on its own
+                    self.event("tracking_lost", json!({ "why": e.to_string(), "was_guiding": held.is_some(), "drift_px_s": drift.map(|d| [d.x, d.y]), "seconds_since_exposure_change": self.last_exposure_change.elapsed().as_secs_f64() }));
+                    match (&self.guide, drift, self.last_good) {
+                        (GuideState::Guiding(_), Some(d), Some((t0, p0, a0))) => {
+                            // keep guiding on the learned drift: the framing is what matters
+                            self.dead = Some(DeadReckoning::new(t0, p0, a0, d));
+                            self.event("dead_reckoning_start", json!({ "drift_px_s": [d.x, d.y] }));
+                            self.status.error = Some(format!("tracking lost: {e}. Guiding goes on from the measured drift"));
+                        }
+                        _ => {
+                            self.status.error = Some(format!("tracking lost: {e}"));
+                            self.stop_guiding_quietly();
+                            self.guide_hold = held; // pulses stop while blind; the mount keeps tracking on its own
+                        }
+                    }
                 }
+                self.dead_reckon(now);
             }
         }
+    }
+
+    /// Guides on a dead-reckoned position while the Sun cannot be seen, and gives up (pausing guiding) if that goes on too long
+    /// or the corrections add up to too much to trust.
+    fn dead_reckon(&mut self, now: Instant) {
+        let Some(dr) = self.dead.as_ref() else { return };
+        let GuideState::Guiding(g) = &self.guide else { self.dead = None; return };
+        let (applied, target) = (g.applied(), g.target);
+        if dr.age(now) > Duration::from_secs(15 * 60) || dr.moved_px(applied) > 300.0 || !self.mount_tracking {
+            let held = self.calibration.map(|c| (target, c));
+            self.event("dead_reckoning_gave_up", json!({ "age_s": dr.age(now).as_secs_f64(), "moved_px": dr.moved_px(applied) }));
+            self.stop_guiding_quietly();
+            self.guide_hold = held;
+            self.status.error = Some("tracking lost for too long: guiding paused until the Sun is back".into());
+            return;
+        }
+        let virt = dr.position(now, applied);
+        self.step_guide(now, virt);
     }
 
     /// Always-on event log: one JSON line per tracking, guiding, exposure or flip event in `<storage>/logs/<date>/events.jsonl`
@@ -2145,7 +2230,7 @@ impl Engine {
             "lanes": lanes, "lost": self.lost, "guide_hold": self.guide_hold.map(|(t, _)| [t.x, t.y]),
             "seconds_since_exposure_change": self.last_exposure_change.elapsed().as_secs_f64(),
             "tracker_position": self.tracker.as_ref().map(|t| { let p = t.position(); json!({ "x": p.pos.x, "y": p.pos.y, "radius": p.radius }) }),
-            "sun_held": self.sun_held, "learned_drift_px_s": self.sun_model.learned_drift().map(|d| [d.x, d.y]), "sun_for_mask": self.corona.lock().ok().and_then(|c| c.sun),
+            "dead_reckoning": self.dead.is_some(), "unguided_drift_px_s": self.drift_model.drift().map(|d| [d.x, d.y]), "sun_held": self.sun_held, "learned_drift_px_s": self.sun_model.learned_drift().map(|d| [d.x, d.y]), "sun_for_mask": self.corona.lock().ok().and_then(|c| c.sun),
             "mount_tracking": self.mount_tracking, "fps": self.fps_ema, "save_lost_frames": self.save_lost, "lost_saved": self.lost_saved,
             "auto_flip": { "enabled": self.auto_flip.enabled, "recorded": self.auto_pre.is_some(), "done": self.auto_done },
             "flip_phase": self.flip.as_ref().map(|f| f.phase), "calibration_generation": self.cal_generation,
@@ -2202,6 +2287,8 @@ impl Engine {
             },
         }
         if let Some(c) = cmd {
+            self.pulsing = c != GuideCommand::STOP;
+            if !self.pulsing { self.pulse_settle_until = now + Duration::from_millis(1500); }
             self.slog.note_pulse(c.primary, c.secondary);
             let r = match self.mount.as_mut() {
                 Some(m) => m.guide(RadPerSec(c.primary * SIDEREAL_RATE.0), RadPerSec(c.secondary * SIDEREAL_RATE.0)).map_err(s),
