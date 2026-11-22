@@ -39,7 +39,7 @@ export interface Status {
     state: 'idle' | 'single' | 'sequence' | 'bursts' | 'flats' | 'flushing'
     phase: string; done: number; total: number | null; file: string | null; last_file: string | null
     burst: number | null; bursts_total: number | null; next_in_s: number | null
-    dropped?: number; paused?: boolean; paused_reason?: string | null; buffer_queued: number; buffer_capacity: number; buffer_mb: number; ram_available_mb: number | null; disk_mb_s: number
+    dropped?: number; paused?: boolean; paused_reason?: string | null; stopped_early?: string | null; buffer_queued: number; buffer_capacity: number; buffer_mb: number; ram_available_mb: number | null; disk_mb_s: number
   }
   error: string | null
   seq: number

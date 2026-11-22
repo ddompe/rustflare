@@ -1601,6 +1601,7 @@ impl Engine {
                 let cap = self.buffer_capacity(frame_bytes);
                 self.buffer_cap = cap;
                 let kind = if interval.is_some() { "burst" } else { "seq" };
+                self.status.capture.stopped_early = None;
                 self.event("capture_start", json!({ "kind": "sequence" }));
                 self.last_capture = Some(rs);
                 self.job = Job::Capture(Box::new(CaptureJob {
@@ -1676,6 +1677,7 @@ impl Engine {
                 let _ = std::fs::write(dir.join("session.json"), serde_json::to_vec_pretty(&manifest).unwrap_or_default());
                 let total = cycles.map(|c| c * lanes.len() as u32);
                 let n_lanes = lanes.len();
+                self.status.capture.stopped_early = None;
                 self.event("capture_start", json!({ "kind": "lanes" }));
                 self.last_capture = Some(rs);
                 self.job = Job::Capture(Box::new(CaptureJob {
@@ -2485,6 +2487,10 @@ impl Engine {
             "capture": self.status.capture.state,
         });
         self.slog.write(now, rec, frame);
+        if let Some(e) = self.slog.error.take() {
+            self.event("session_log_stopped", json!({ "why": e }));
+            self.status.error = Some(format!("the session log stopped: {e} (was the drive removed?)"));
+        }
         if self.slog.capped {
             self.slog.capped = false;
             self.status.error = Some("session log stopped: it reached its 200 MB size cap".into());
@@ -2791,6 +2797,7 @@ impl Engine {
         }
 
         let (stem, taken, started) = (stem.clone(), *taken, *started);
+        let in_ram = job.sink.queued(); // frames still waiting for the disk: gone if the drive is
         job.sink.end();
         let sc = self.sidecar(
             if job.kind == "burst" { "burst" } else { "sequence" },
@@ -2801,6 +2808,9 @@ impl Engine {
         );
         self.write_sidecar(&stem, &sc);
         if let Some(why) = stop {
+            let note = format!("The recording stopped on its own: {why}. {taken} frames were captured, and about {in_ram} that were still in memory may not have reached the drive.");
+            self.event("capture_stopped_early", json!({ "why": why, "frames": taken, "frames_in_ram": in_ram }));
+            self.status.capture.stopped_early = Some(note);
             self.status.error = Some(format!("recording stopped: {why} ({taken} frames in this burst)"));
             return self.fail_capture_keep(job);
         }

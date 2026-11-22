@@ -28,6 +28,8 @@ pub struct SessionLog {
     pub frames: u64,
     pub bytes: u64,
     pub capped: bool,
+    /// Set when a write failed (drive removed, disk full): the log stops, and the engine reports it once.
+    pub error: Option<String>,
 }
 
 impl SessionLog {
@@ -91,12 +93,23 @@ impl SessionLog {
         }
         let mut line = record.to_string();
         line.push('\n');
-        if out.write_all(line.as_bytes()).is_ok() {
-            self.lines += 1;
-            self.bytes += line.len() as u64;
+        match out.write_all(line.as_bytes()) {
+            Ok(()) => {
+                self.lines += 1;
+                self.bytes += line.len() as u64;
+            }
+            Err(e) => {
+                self.error = Some(e.to_string());
+            }
         }
         if self.lines % 30 == 0 {
-            let _ = out.flush();
+            if let Err(e) = out.flush() {
+                self.error = Some(e.to_string());
+            }
+        }
+        if self.error.is_some() {
+            self.stop();
+            return;
         }
         if self.bytes >= CAP_BYTES {
             self.capped = true;

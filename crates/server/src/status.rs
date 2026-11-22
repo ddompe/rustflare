@@ -85,6 +85,9 @@ pub struct CaptureStatus {
     /// A recording is paused (by you or for a meridian flip) and can be resumed, and why.
     pub paused: bool,
     pub paused_reason: Option<String>,
+    /// Why the last recording stopped on its own (drive removed, disk full, write error) and what was lost. It stays until the
+    /// next recording starts, unlike `error`, which any later command clears.
+    pub stopped_early: Option<String>,
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -332,7 +335,7 @@ impl Default for Status {
             mount: None,
             tracking: None,
             guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None, held: false, dead_reckoning: false },
-            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0, paused: false, paused_reason: None },
+            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0, paused: false, paused_reason: None, stopped_early: None },
             error: None,
             seq: 0,
         }

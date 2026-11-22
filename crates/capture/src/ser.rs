@@ -13,6 +13,9 @@ use rustflare_core::{Error, Frame, PixelFormat, Result};
 
 const HEADER_LEN: usize = 178;
 const FRAME_COUNT_OFFSET: u64 = 38;
+/// The header's frame count is brought up to date every this many frames, so a file cut short (drive pulled, power lost)
+/// still declares the frames it holds and opens in a stacker; only the buffer since the last checkpoint is at risk.
+const CHECKPOINT_FRAMES: usize = 50;
 /// 100 ns ticks between 0001-01-01 and 1970-01-01.
 const EPOCH_TICKS: u64 = 621_355_968_000_000_000;
 
@@ -71,6 +74,21 @@ impl SerWriter {
         }
         self.w.write_all(&f.data)?;
         self.stamps.push(ticks(f.captured_at));
+        if self.stamps.len() % CHECKPOINT_FRAMES == 0 {
+            self.checkpoint()?;
+        }
+        Ok(())
+    }
+
+    /// Writes the current frame count into the header and returns to the end of the data.
+    fn checkpoint(&mut self) -> Result<()> {
+        let (w, h, f) = self.format;
+        let end = HEADER_LEN as u64 + self.stamps.len() as u64 * w as u64 * h as u64 * f.bytes_per_pixel() as u64;
+        self.w.flush()?;
+        self.w.seek(SeekFrom::Start(FRAME_COUNT_OFFSET))?;
+        self.w.write_all(&(self.stamps.len() as u32).to_le_bytes())?;
+        self.w.flush()?;
+        self.w.seek(SeekFrom::Start(end))?;
         Ok(())
     }
 
@@ -103,6 +121,21 @@ impl SerWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_cut_short_still_declares_the_frames_up_to_the_last_checkpoint() {
+        let path = std::env::temp_dir().join(format!("rustflare-cut-{}.ser", std::process::id()));
+        let mut w = SerWriter::create(&path, 4, 2, PixelFormat::Mono16, "cam", "scope").unwrap();
+        let f = Frame::new(4, 2, PixelFormat::Mono16, vec![7u8; 16]);
+        for _ in 0..130 { w.write_frame(&f).unwrap(); }
+        w.w.flush().unwrap();
+        std::mem::forget(w); // the process dies here: no finalize, no timestamp trailer
+        let bytes = std::fs::read(&path).unwrap();
+        let count = u32::from_le_bytes(bytes[38..42].try_into().unwrap());
+        assert_eq!(count, 100, "header count after 130 frames with a checkpoint every 50");
+        assert!(bytes.len() >= HEADER_LEN + 100 * 16, "all 100 declared frames are in the file");
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[test]
     fn writes_valid_ser_layout() {
