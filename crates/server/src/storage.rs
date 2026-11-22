@@ -148,6 +148,12 @@ impl Storage {
         &self.config_file
     }
 
+    /// The always-on logs (events, mount commands) live next to the settings file, on the Pi's own disk, so they survive the
+    /// capture drive being ejected. They are kept inside a size and age limit (see `logs::prune`).
+    pub fn internal_log_dir(&self) -> PathBuf {
+        self.config_file.parent().map(|p| p.join("logs")).unwrap_or_else(|| PathBuf::from("logs"))
+    }
+
     pub fn dir(&self) -> PathBuf {
         self.state.lock().unwrap().dir.clone()
     }

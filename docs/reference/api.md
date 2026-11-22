@@ -95,7 +95,7 @@ Read-only except the snapshot and the switch. See [Debugging and logs](debugging
 | `GET /api/debug/state` | engine internals: the Sun used for the mask, whether it is a prediction, learned drift, lane state, dead reckoning |
 | `GET /api/debug/events?n=` | the last `n` events (tracking lost/found, guiding, exposure, lanes, captures, flips) |
 | `GET /api/debug/mount?n=&skip_polls=1` | the last `n` commands sent to the mount and its replies |
-| `GET /api/debug/logs` | every file in the logs folder, newest first; fetch them from `/files/<path>` |
+| `GET /api/debug/logs` | every file in the logs folders, newest first; drive files from `/files/<path>`, internal ones (`internal/...`) from `/api/debug/internal/<day>/<file>` |
 | `POST /api/debug/snapshot` | saves the latest full frame and a note; returns their URLs |
 | `PUT /api/debug/lost-frames` | `{"enabled"}`: keep the frame when tracking is lost (on by default) |
 

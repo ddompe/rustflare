@@ -4,6 +4,7 @@ mod api;
 mod config;
 mod engine;
 mod files;
+mod logs;
 mod preview;
 mod security;
 mod sessionlog;

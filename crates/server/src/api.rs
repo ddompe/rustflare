@@ -81,6 +81,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/debug/state", get(|s| run(s, Command::DebugState)))
         .route("/api/debug/snapshot", post(|s| run(s, Command::DebugSnapshot)))
         .route("/api/debug/logs", get(debug_logs))
+        .route("/api/debug/internal/*path", get(debug_internal))
         .route("/api/debug/events", get(debug_events))
         .route("/api/debug/mount", get(debug_mount))
         .route("/api/capture/darks", post(capture_darks))
@@ -434,21 +435,37 @@ async fn session_log(s: State<AppState>, Json(b): Json<SessionLogBody>) -> Res {
 /// Lists the files in the logs folder (events, session logs, lost-frame pictures), newest first; fetch them from /files/<path>.
 async fn debug_logs(State(st): State<AppState>) -> Json<Value> {
     let root = st.storage.dir();
-    let mut out: Vec<(std::time::SystemTime, String, u64)> = Vec::new();
-    let mut stack = vec![root.join("logs")];
-    while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() { stack.push(p); continue }
-            if let (Ok(m), Ok(rel)) = (e.metadata(), p.strip_prefix(&root)) {
-                out.push((m.modified().unwrap_or(std::time::UNIX_EPOCH), rel.to_string_lossy().into_owned(), m.len()));
+    let mut out: Vec<(std::time::SystemTime, String, u64, &'static str)> = Vec::new();
+    for (base, label, prefix) in [(root.join("logs"), "drive", root.clone()), (st.storage.internal_log_dir(), "internal", st.storage.internal_log_dir())] {
+        let mut stack = vec![base];
+        while let Some(d) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&d) else { continue };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() { stack.push(p); continue }
+                if let (Ok(m), Ok(rel)) = (e.metadata(), p.strip_prefix(&prefix)) {
+                    let rel = rel.to_string_lossy().into_owned();
+                    out.push((m.modified().unwrap_or(std::time::UNIX_EPOCH), if label == "internal" { format!("internal/{rel}") } else { rel }, m.len(), label));
+                }
             }
         }
     }
     out.sort_by(|a, b| b.0.cmp(&a.0));
     out.truncate(500);
-    Json(json!(out.into_iter().map(|(t, p, n)| json!({ "path": p, "bytes": n, "modified_unix": t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) })).collect::<Vec<_>>()))
+    Json(json!(out.into_iter().map(|(t, p, n, w)| json!({ "path": p, "bytes": n, "where": w, "modified_unix": t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) })).collect::<Vec<_>>()))
+}
+
+/// Serves a file of the internal logs (events, mount commands): `GET /api/debug/internal/<day>/<file>`.
+async fn debug_internal(State(st): State<AppState>, axum::extract::Path(path): axum::extract::Path<String>, req: axum::extract::Request) -> Res {
+    if path.split('/').any(|c| c == ".." || c.is_empty()) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let (mut parts, body) = req.into_parts();
+    parts.uri = match format!("/{path}").parse() { Ok(u) => u, Err(_) => return StatusCode::BAD_REQUEST.into_response() };
+    match ServeDir::new(st.storage.internal_log_dir()).oneshot(axum::http::Request::from_parts(parts, body)).await {
+        Ok(r) => r.into_response(),
+        Err(e) => match e {},
+    }
 }
 
 /// The last `n` (default 300) lines of the newest mount command log (`logs/<date>/mount.jsonl`): every command and reply.
@@ -456,7 +473,7 @@ async fn debug_logs(State(st): State<AppState>) -> Json<Value> {
 async fn debug_mount(State(st): State<AppState>, axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>) -> Json<Value> {
     let n: usize = q.get("n").and_then(|v| v.parse().ok()).unwrap_or(300).min(5000);
     let skip = q.get("skip_polls").is_some_and(|v| v != "0");
-    let mut days: Vec<_> = std::fs::read_dir(st.storage.dir().join("logs")).map(|r| r.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    let mut days: Vec<_> = std::fs::read_dir(st.storage.internal_log_dir()).map(|r| r.flatten().map(|e| e.path()).collect()).unwrap_or_default();
     days.sort();
     let mut lines: Vec<Value> = Vec::new();
     for d in days.iter().rev() {
@@ -475,7 +492,7 @@ async fn debug_mount(State(st): State<AppState>, axum::extract::Query(q): axum::
 /// The last `n` (default 200) lines of the newest events log: tracking, guiding, exposure, lane and flip events.
 async fn debug_events(State(st): State<AppState>, axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>) -> Json<Value> {
     let n: usize = q.get("n").and_then(|v| v.parse().ok()).unwrap_or(200).min(5000);
-    let mut days: Vec<_> = std::fs::read_dir(st.storage.dir().join("logs")).map(|r| r.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    let mut days: Vec<_> = std::fs::read_dir(st.storage.internal_log_dir()).map(|r| r.flatten().map(|e| e.path()).collect()).unwrap_or_default();
     days.sort();
     let mut lines: Vec<Value> = Vec::new();
     for d in days.iter().rev() {

@@ -303,26 +303,31 @@ impl DriftModel {
         }
     }
 
-    /// Unguided drift, px/s, once there are at least a minute of good measurements.
+    /// Unguided drift, px/s, once there are at least a minute of good measurements. A median of pairwise slopes (Theil-Sen), so
+    /// a few bad measurements cannot produce a wild drift, and capped at what a mount can really do.
     pub fn drift(&self) -> Option<Vec2> {
         let (first, last) = (self.samples.front()?, self.samples.back()?);
         if self.samples.len() < 20 || last.0.duration_since(first.0) < Self::MIN_SPAN {
             return None;
         }
-        let n = self.samples.len() as f64;
-        let ts: Vec<f64> = self.samples.iter().map(|(t, _)| t.duration_since(first.0).as_secs_f64()).collect();
-        let tm = ts.iter().sum::<f64>() / n;
-        let (mx, my) = (self.samples.iter().map(|(_, p)| p.x).sum::<f64>() / n, self.samples.iter().map(|(_, p)| p.y).sum::<f64>() / n);
-        let stt: f64 = ts.iter().map(|t| (t - tm) * (t - tm)).sum();
-        if stt < 1e-9 {
+        let step = (self.samples.len() / 80).max(1);
+        let pts: Vec<(f64, Vec2)> = self.samples.iter().step_by(step).map(|(t, p)| (t.duration_since(first.0).as_secs_f64(), *p)).collect();
+        let (mut sx, mut sy) = (Vec::new(), Vec::new());
+        for i in 0..pts.len() {
+            for j in i + 1..pts.len() {
+                let dt = pts[j].0 - pts[i].0;
+                if dt >= 10.0 {
+                    sx.push((pts[j].1.x - pts[i].1.x) / dt);
+                    sy.push((pts[j].1.y - pts[i].1.y) / dt);
+                }
+            }
+        }
+        if sx.len() < 10 {
             return None;
         }
-        let (mut sx, mut sy) = (0.0, 0.0);
-        for ((_, p), t) in self.samples.iter().zip(&ts) {
-            sx += (t - tm) * (p.x - mx);
-            sy += (t - tm) * (p.y - my);
-        }
-        Some(Vec2::new(sx / stt, sy / stt))
+        let med = |v: &mut Vec<f64>| { v.sort_by(|a, b| a.total_cmp(b)); v[v.len() / 2] };
+        let d = Vec2::new(med(&mut sx), med(&mut sy));
+        Some(if d.len() > 6.0 { d * (6.0 / d.len()) } else { d })
     }
 }
 

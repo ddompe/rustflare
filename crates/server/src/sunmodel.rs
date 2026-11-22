@@ -32,7 +32,11 @@ const HISTORY_MIN_SAMPLES: usize = 8;
 const TAU_POS: f64 = 3.0; // the real drift is about a pixel a second: smooth hard, the drift term removes the lag
 const TAU_RADIUS: f64 = 20.0;
 /// Drift (px/s) is learned slowly and capped: the mount tracks the Sun, what is left is small.
-const MAX_DRIFT: f64 = 25.0;
+const MAX_DRIFT: f64 = 6.0; // the real drift is 0.2 to 4 px/s: anything bigger is a bad estimate
+/// While predicting, the estimate never moves further than this fraction of the radius from the last accepted measurement.
+const MAX_EXTRAPOLATION_RADII: f64 = 0.35;
+/// Measured radii further than this from the optics' radius are not believed.
+const RADIUS_PRIOR_TOL: f64 = 0.06;
 
 /// What the model says for the frame just seen.
 #[derive(Copy, Clone, Debug)]
@@ -62,6 +66,8 @@ struct State {
     vel: Vec2,
     at: Instant,
     last_measured: Instant,
+    /// Where the Sun was when a measurement last agreed: predictions stay near it.
+    anchor: Vec2,
     partial: bool,
     dims: (u32, u32),
     /// Measurements that have agreed with the model: a young model (started on one frame, maybe a bad one) is easy to correct.
@@ -106,24 +112,28 @@ impl SunModel {
 
     /// Feeds the detector's result for one frame (`None`: nothing found) and returns the model's estimate.
     /// `free`: the mount is slewing (or being moved by hand): the Sun really moves, so follow the measurements directly.
-    pub fn update(&mut self, meas: Option<SunLocation>, now: Instant, dims: (u32, u32), free: bool) -> Option<Estimate> {
+    pub fn update(&mut self, meas: Option<SunLocation>, now: Instant, dims: (u32, u32), free: bool, radius_prior: Option<f64>) -> Option<Estimate> {
         if self.state.is_some_and(|s| s.dims != dims) {
             self.reset();
         }
         let Some(mut s) = self.state else {
             // nothing to predict from yet: the first measurement starts the model
             let m = meas?;
-            self.state = Some(State { pos: m.pos, radius: m.radius, vel: self.learned.unwrap_or(Vec2::new(0.0, 0.0)), at: now, last_measured: now, partial: m.partial, dims, confirmed: 0 });
+            self.state = Some(State { pos: m.pos, radius: m.radius, vel: self.learned.unwrap_or(Vec2::new(0.0, 0.0)), at: now, last_measured: now, anchor: m.pos, partial: m.partial, dims, confirmed: 0 });
             return Some(Estimate { sun: m, predicted: false, since_measured_s: 0.0 });
         };
-        // predict forward
+        // predict forward, but never far from the last place a measurement agreed
         let dt = now.saturating_duration_since(s.at).as_secs_f64().min(600.0);
         s.pos = s.pos + s.vel * dt;
+        let off = s.pos - s.anchor;
+        if !free && off.len() > MAX_EXTRAPOLATION_RADII * s.radius {
+            s.pos = s.anchor + off * (MAX_EXTRAPOLATION_RADII * s.radius / off.len());
+        }
         s.at = now;
         let mut predicted = true;
         if let Some(m) = meas {
             let step = (m.pos - s.pos).len();
-            let radius_ok = (m.radius / s.radius - 1.0).abs() <= GATE_RADIUS;
+            let radius_ok = (m.radius / s.radius - 1.0).abs() <= GATE_RADIUS && radius_prior.map_or(true, |p| (m.radius / p - 1.0).abs() <= RADIUS_PRIOR_TOL);
             let small = SMALL_STEP_RADII * s.radius;
             let gate = GATE_RADII * s.radius;
             // weight of this measurement: full for a drift-sized step, falling off towards the gate, and low when only the
@@ -141,6 +151,7 @@ impl SunModel {
                 let a = (1.0 - (-dt / TAU_POS).exp()) * weight;
                 if free {
                     s.pos = m.pos;
+                    s.anchor = m.pos;
                     s.vel = Vec2::new(0.0, 0.0);
                     s.radius = m.radius;
                     self.history.clear();
@@ -166,6 +177,7 @@ impl SunModel {
                 }
                 s.partial = m.partial;
                 s.last_measured = now;
+                s.anchor = s.pos;
                 s.confirmed = s.confirmed.saturating_add(1);
                 predicted = false;
                 self.pending.clear();
@@ -180,7 +192,9 @@ impl SunModel {
         if self.pending.len() >= RELOCK_MIN_SAMPLES {
             // the biggest group of disagreeing measurements that agree with each other (shadow circles are all different,
             // a Sun that really moved is the same place again and again)
-            let close = |a: &SunLocation, b: &SunLocation| (a.pos - b.pos).len() <= RELOCK_SPREAD_RADII * a.radius.max(b.radius);
+            // after a long time without any agreeing measurement the model is probably wrong: accept a looser cluster
+            let spread = if now.saturating_duration_since(s.last_measured) > Duration::from_secs(20) { 2.0 * RELOCK_SPREAD_RADII } else { RELOCK_SPREAD_RADII };
+            let close = |a: &SunLocation, b: &SunLocation| (a.pos - b.pos).len() <= spread * a.radius.max(b.radius);
             let (mut best, mut best_n) = (0usize, 0usize);
             for (i, (_, a)) in self.pending.iter().enumerate() {
                 let n = self.pending.iter().filter(|(_, b)| close(a, b)).count();
@@ -196,6 +210,7 @@ impl SunModel {
                 if span >= RELOCK_MIN_SPAN && (s.confirmed < 40 || (r / s.radius - 1.0).abs() <= 0.1) {
                     let partial = group.last().unwrap().1.partial;
                     s.pos = mean;
+                    s.anchor = mean;
                     s.radius = r;
                     s.vel = self.learned.unwrap_or(Vec2::new(0.0, 0.0));
                     self.history.clear();
@@ -207,6 +222,9 @@ impl SunModel {
                 }
             }
         }
+        if let Some(p) = radius_prior {
+            s.radius = s.radius.clamp(p * (1.0 - RADIUS_PRIOR_TOL), p * (1.0 + RADIUS_PRIOR_TOL));
+        }
         self.state = Some(s);
         let since = now.saturating_duration_since(s.last_measured).as_secs_f64();
         Some(Estimate {
@@ -217,7 +235,8 @@ impl SunModel {
     }
 }
 
-/// Least-squares velocity (px/s) of the accepted measurements, if they span enough time.
+/// Robust velocity (px/s) of the accepted measurements, if they span enough time: the median of the slopes between pairs
+/// of samples (Theil-Sen), so a few bad measurements cannot produce a wild drift.
 fn drift_slope(h: &VecDeque<(Instant, Vec2)>) -> Option<Vec2> {
     if h.len() < HISTORY_MIN_SAMPLES {
         return None;
@@ -226,20 +245,23 @@ fn drift_slope(h: &VecDeque<(Instant, Vec2)>) -> Option<Vec2> {
     if h.back()?.0.saturating_duration_since(t0) < HISTORY_MIN_SPAN {
         return None;
     }
-    let n = h.len() as f64;
-    let ts: Vec<f64> = h.iter().map(|(t, _)| t.saturating_duration_since(t0).as_secs_f64()).collect();
-    let tm = ts.iter().sum::<f64>() / n;
-    let (mx, my) = (h.iter().map(|(_, p)| p.x).sum::<f64>() / n, h.iter().map(|(_, p)| p.y).sum::<f64>() / n);
-    let stt: f64 = ts.iter().map(|t| (t - tm) * (t - tm)).sum();
-    if stt < 1e-9 {
+    let step = (h.len() / 60).max(1);
+    let pts: Vec<(f64, Vec2)> = h.iter().step_by(step).map(|(t, p)| (t.saturating_duration_since(t0).as_secs_f64(), *p)).collect();
+    let (mut sx, mut sy) = (Vec::new(), Vec::new());
+    for i in 0..pts.len() {
+        for j in i + 1..pts.len() {
+            let dt = pts[j].0 - pts[i].0;
+            if dt >= 5.0 {
+                sx.push((pts[j].1.x - pts[i].1.x) / dt);
+                sy.push((pts[j].1.y - pts[i].1.y) / dt);
+            }
+        }
+    }
+    if sx.len() < 10 {
         return None;
     }
-    let (mut sx, mut sy) = (0.0, 0.0);
-    for ((_, p), t) in h.iter().zip(&ts) {
-        sx += (t - tm) * (p.x - mx);
-        sy += (t - tm) * (p.y - my);
-    }
-    Some(Vec2::new(sx / stt, sy / stt))
+    let med = |v: &mut Vec<f64>| { v.sort_by(|a, b| a.total_cmp(b)); v[v.len() / 2] };
+    Some(Vec2::new(med(&mut sx), med(&mut sy)))
 }
 
 #[cfg(test)]
@@ -255,7 +277,7 @@ mod tests {
     fn run(m: &mut SunModel, t0: Instant, from: usize, n: usize, f: impl Fn(usize) -> Option<SunLocation>) -> Estimate {
         let mut last = None;
         for i in from..from + n {
-            last = m.update(f(i), t0 + Duration::from_millis(40 * i as u64), D, false);
+            last = m.update(f(i), t0 + Duration::from_millis(40 * i as u64), D, false, None);
         }
         last.unwrap()
     }
@@ -280,14 +302,38 @@ mod tests {
     #[test]
     fn keeps_predicting_through_a_long_dropout_like_totality() {
         let (mut m, t0) = (SunModel::default(), Instant::now());
-        // drifting 3 px/s (25 fps: 0.12 px per frame) for 60 s, learned
-        run(&mut m, t0, 0, 1500, |i| Some(loc(1000.0 + 0.12 * i as f64, 700.0, 1200.0)));
+        // drifting 1 px/s (25 fps: 0.04 px per frame) for 60 s, learned
+        run(&mut m, t0, 0, 1500, |i| Some(loc(1000.0 + 0.04 * i as f64, 700.0, 1200.0)));
         // then no detection for 5 minutes (7500 frames)
         let e = run(&mut m, t0, 1500, 7500, |_| None);
         assert!(e.predicted && e.since_measured_s > 290.0);
-        let expected_x = 1000.0 + 0.12 * 9000.0;
-        assert!((e.sun.pos.x - expected_x).abs() < 0.15 * 1200.0, "x {} expected about {}", e.sun.pos.x, expected_x);
+        let expected_x = 1000.0 + 0.04 * 9000.0;
+        assert!((e.sun.pos.x - expected_x).abs() < 0.1 * 1200.0, "x {} expected about {}", e.sun.pos.x, expected_x);
         assert!((e.sun.radius - 1200.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn a_runaway_drift_cannot_carry_the_estimate_away() {
+        // seen on the real Sun: cloud spoiled the measurements, the drift estimate went to its cap, and the held estimate
+        // slid 1100 px away in under a minute. The velocity is capped at 6 px/s and the estimate stays near its anchor.
+        let (mut m, t0) = (SunModel::default(), Instant::now());
+        // a steady 8 px/s measured for 60 s (more than any real drift): the model's velocity is capped
+        run(&mut m, t0, 0, 1500, |i| Some(loc(1000.0 + 0.32 * i as f64, 700.0, 1200.0)));
+        let anchor_x = 1000.0 + 0.32 * 1499.0;
+        let e = run(&mut m, t0, 1500, 15000, |_| None); // ten minutes of nothing
+        assert!(e.predicted);
+        assert!((e.sun.pos - Vec2::new(anchor_x, 700.0)).len() <= 0.36 * 1200.0, "moved {} px from the last good place", (e.sun.pos - Vec2::new(anchor_x, 700.0)).len());
+    }
+
+    #[test]
+    fn the_radius_stays_near_the_optics_radius() {
+        let (mut m, t0) = (SunModel::default(), Instant::now());
+        let mut last = None;
+        for i in 0..3000 {
+            // measurements that read the radius 15 % small (hazy limb) for two minutes
+            last = m.update(Some(loc(1000.0, 700.0, 1020.0)), t0 + Duration::from_millis(40 * i), D, false, Some(1200.0));
+        }
+        assert!(last.unwrap().sun.radius >= 1200.0 * 0.94 - 1.0, "radius {}", last.unwrap().sun.radius);
     }
 
     #[test]
@@ -305,7 +351,7 @@ mod tests {
         run(&mut m, t0, 0, 10, |_| Some(loc(1000.0, 700.0, 1200.0)));
         let mut e = None;
         for i in 10..40 {
-            e = m.update(Some(loc(1000.0 + 20.0 * i as f64, 700.0, 1200.0)), t0 + Duration::from_millis(40 * i as u64), D, true);
+            e = m.update(Some(loc(1000.0 + 20.0 * i as f64, 700.0, 1200.0)), t0 + Duration::from_millis(40 * i as u64), D, true, None);
         }
         assert!((e.unwrap().sun.pos.x - (1000.0 + 20.0 * 39.0)).abs() < 1.0);
     }
@@ -313,7 +359,7 @@ mod tests {
     #[test]
     fn starts_without_a_measurement_only_when_it_has_one() {
         let mut m = SunModel::default();
-        assert!(m.update(None, Instant::now(), D, false).is_none());
+        assert!(m.update(None, Instant::now(), D, false, None).is_none());
     }
 
     /// Deterministic noise in -1..1.
@@ -359,9 +405,9 @@ mod tests {
         assert!((d.x - 3.0).abs() < 0.5 && d.y.abs() < 0.5, "{d:?}");
         // the camera restarts: the first frame starts a new model, which already knows how it drifts
         m.reset();
-        let e = m.update(Some(loc(1500.0, 700.0, 1200.0)), t0 + Duration::from_secs(130), D, false).unwrap();
+        let e = m.update(Some(loc(1500.0, 700.0, 1200.0)), t0 + Duration::from_secs(130), D, false, None).unwrap();
         // 60 s of nothing: it moved on by about 3 px/s
-        let e2 = m.update(None, t0 + Duration::from_secs(190), D, false).unwrap();
+        let e2 = m.update(None, t0 + Duration::from_secs(190), D, false, None).unwrap();
         assert!((e2.sun.pos.x - e.sun.pos.x - 180.0).abs() < 40.0, "{} -> {}", e.sun.pos.x, e2.sun.pos.x);
         // after a meridian flip the image is turned over: the drift is the other way
         m.flipped();

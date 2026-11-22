@@ -374,6 +374,7 @@ pub struct Engine {
     /// A recording paused by the user: what is left of it, and when it was paused.
     paused: Option<ResumeSpec>,
     trace_dir: Option<std::path::PathBuf>,
+    last_prune: Option<Instant>,
     /// The automatic flip has been started (or given up) for this crossing of the meridian.
     auto_done: bool,
     last_auto_check: Instant,
@@ -495,6 +496,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         resume_at: None,
         paused: None,
         trace_dir: None,
+        last_prune: None,
         auto_done: false,
         last_auto_check: Instant::now(),
         last_auto_warn: None,
@@ -825,10 +827,17 @@ impl Engine {
 
     /// Keeps the mount command log pointed at today's storage folder (it can change at run time).
     fn sync_mount_trace(&mut self) {
-        let dir = self.storage.dir().join("logs");
+        let dir = self.storage.internal_log_dir();
         if self.trace_dir.as_ref() != Some(&dir) {
             rustflare_mount::trace::set_dir(Some(dir.clone()));
             self.trace_dir = Some(dir);
+        }
+        // keep the always-on logs inside their limit: at start and then once an hour
+        if self.last_prune.map_or(true, |t| t.elapsed() > Duration::from_secs(3600)) {
+            self.last_prune = Some(Instant::now());
+            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let n = crate::logs::prune(&self.trace_dir.clone().unwrap_or_default(), crate::logs::MAX_TOTAL_BYTES, crate::logs::MAX_DAYS, &today);
+            if n > 0 { log::info!("logs: removed {n} old day folder(s)"); }
         }
     }
 
@@ -2249,7 +2258,7 @@ impl Engine {
         // the image moves on purpose while slewing, calibrating or pulsing: follow the measurements then
         let free = self.mount_state.slewing == Some(true) || self.goto.is_some() || self.flip.is_some() || now < self.manual_slew_until
             || matches!(self.guide, GuideState::Calibrating(_)) || self.pulsing || now < self.pulse_settle_until;
-        let est = self.sun_model.update(meas, now, dims, free);
+        let est = self.sun_model.update(meas, now, dims, free, self.radius_hint());
         let was_held = self.sun_held;
         self.sun_held = est.is_some_and(|e| e.predicted && e.since_measured_s > 1.0);
         if self.sun_held != was_held && self.last_sun_event.elapsed() > Duration::from_secs(5) {
@@ -2383,7 +2392,7 @@ impl Engine {
     /// (small: events, not frames). Explains afterwards what the software did and when. Capped at 20 MB a day.
     fn event(&self, kind: &str, detail: Value) {
         let now = chrono::Utc::now();
-        let dir = self.storage.dir().join("logs").join(now.format("%Y-%m-%d").to_string());
+        let dir = self.storage.internal_log_dir().join(now.format("%Y-%m-%d").to_string());
         let path = dir.join("events.jsonl");
         if std::fs::metadata(&path).map_or(false, |m| m.len() > 20 * 1024 * 1024) || std::fs::create_dir_all(&dir).is_err() {
             return;
