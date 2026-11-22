@@ -25,6 +25,7 @@ export function Progress({ status, onStop }: { status: Status; onStop: () => voi
         </>
       )}
       <div className="hint-text">{c.done}{c.total != null ? ` / ${c.total}` : ''} frames {c.file && `· ${c.file}`}</div>
+      {['sequence', 'bursts'].includes(c.state) && <button type="button" className="wide big" onClick={() => { api('POST', '/capture/pause').catch(() => {}) }}>Pause recording</button>}
       {active && <button type="button" className="danger wide big" onClick={onStop}>Stop recording</button>}
     </div>
   )
@@ -57,6 +58,16 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
       <Section title="Recording" error={err}>
         <Progress status={status} onStop={() => run(() => api('POST', '/capture/stop'))} />
         <StorageLine status={status} onChange={() => goto('more', 'storage')} />
+      </Section>
+    )
+  }
+
+  if (c.paused) {
+    return (
+      <Section title="Recording paused" error={err}>
+        <p className="hint-text">{c.paused_reason ?? 'Paused'}. {c.paused_reason === 'paused by you' ? 'Resume carries on with what was left (new files in the same style, named "-resumed"), or discard it.' : 'It starts again by itself when the flip is done, or discard it.'}</p>
+        {c.paused_reason === 'paused by you' && <button type="button" className="wide big" onClick={() => run(() => api('POST', '/capture/resume'))}>Resume recording</button>}
+        <button type="button" className="danger wide big" onClick={() => run(() => api('POST', '/capture/stop'))}>Discard</button>
       </Section>
     )
   }
