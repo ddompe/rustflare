@@ -17,6 +17,9 @@ pub struct Prepared {
 
 /// Plans and window for one image size; build once per thread.
 pub struct Aligner {
+    /// The size of the images given in, and of the (centred) crop that is transformed: FFTs are fast for sizes made of small primes only.
+    full_w: usize,
+    full_h: usize,
     w: usize,
     h: usize,
     window: Vec<f32>,
@@ -38,9 +41,18 @@ fn transpose(src: &[C], w: usize, h: usize) -> Vec<C> {
     out
 }
 
+/// The largest size not above `n` whose only prime factors are 2, 3 and 5.
+fn smooth_size(n: usize) -> usize {
+    (1..=n).rev().find(|&m| { let mut r = m; for p in [2, 3, 5] { while r % p == 0 { r /= p; } } r == 1 }).unwrap_or(n)
+}
+
 impl Aligner {
     /// `valid` marks pixels with signal (see `image::valid_mask`); the window fades the correlation out of the rest.
-    pub fn new(w: usize, h: usize, valid: &[bool], whiten: f32) -> Aligner {
+    pub fn new(full_w: usize, full_h: usize, valid_full: &[bool], whiten: f32) -> Aligner {
+        let (w, h) = (smooth_size(full_w), smooth_size(full_h));
+        let (ox, oy) = ((full_w - w) / 2, (full_h - h) / 2);
+        let valid: Vec<bool> = (0..w * h).map(|i| valid_full[(i / w + oy) * full_w + i % w + ox]).collect();
+        let valid = &valid[..];
         let mut p = FftPlanner::<f32>::new();
         let hann = |i: usize, n: usize| 0.5 - 0.5 * (std::f32::consts::TAU * (i as f32 + 0.5) / n as f32).cos();
         // a smooth taper instead of a hard edge: a static edge next to bright glow would pull every shift towards zero
@@ -52,7 +64,7 @@ impl Aligner {
                 window[y * w + x] = hann(x, w) * hann(y, h) * taper[y * w + x] * m[y * w + x];
             }
         }
-        Aligner { w, h, window, fw: p.plan_fft_forward(w), fh: p.plan_fft_forward(h), iw: p.plan_fft_inverse(w), ih: p.plan_fft_inverse(h), whiten }
+        Aligner { full_w, full_h, w, h, window, fw: p.plan_fft_forward(w), fh: p.plan_fft_forward(h), iw: p.plan_fft_inverse(w), ih: p.plan_fft_inverse(h), whiten }
     }
 
     /// Spectrum in [w rows][h columns] layout.
@@ -79,12 +91,14 @@ impl Aligner {
     }
 
     pub fn prepare(&self, img: &Img) -> Prepared {
-        assert_eq!((img.w, img.h), (self.w, self.h));
+        assert_eq!((img.w, img.h), (self.full_w, self.full_h));
+        let (ox, oy) = ((self.full_w - self.w) / 2, (self.full_h - self.h) / 2);
+        let pix = |i: usize| img.d[(i / self.w + oy) * self.full_w + i % self.w + ox];
         // high-pass against the local average (over the signal only), so the broad glow does not dominate; then the window
         let wt: Vec<f32> = self.window.iter().map(|&w| if w > 0.0 { 1.0 } else { 0.0 }).collect();
-        let num = box_blur(&img.d.iter().zip(&wt).map(|(v, m)| v * m).collect::<Vec<_>>(), self.w, self.h, HIGHPASS);
+        let num = box_blur(&(0..self.w * self.h).map(|i| pix(i) * wt[i]).collect::<Vec<_>>(), self.w, self.h, HIGHPASS);
         let den = box_blur(&wt, self.w, self.h, HIGHPASS);
-        let buf: Vec<C> = (0..self.w * self.h).map(|i| C::new(if den[i] > 1e-3 { (img.d[i] - num[i] / den[i]) * self.window[i] } else { 0.0 }, 0.0)).collect();
+        let buf: Vec<C> = (0..self.w * self.h).map(|i| C::new(if den[i] > 1e-3 { (pix(i) - num[i] / den[i]) * self.window[i] } else { 0.0 }, 0.0)).collect();
         Prepared { spec: self.forward(buf) }
     }
 

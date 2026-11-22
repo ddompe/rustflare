@@ -62,55 +62,69 @@ fn newer(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// Stack one recording: write its FITS under `out` (mirroring the folder structure below `root`) and return the manifest entry.
+pub fn stack_one(root: &Path, out: &Path, src: &Path, opts: &Options, cals: &CalSet, float: bool) -> Result<Entry, String> {
+    let target = output_path(root, out, src);
+    let rel = src.strip_prefix(root).unwrap_or(src).to_string_lossy().to_string();
+    let settings = Settings::from_sidecar(src);
+    let (cal, notes) = cals.for_settings(settings);
+    let t0 = std::time::Instant::now();
+    let stacked = stack_ser(src, opts, &cal)?;
+    write_fits(&target, &stacked, src, opts, float, settings).map_err(|e| format!("{}: {e}", target.display()))?;
+    let r = &stacked.report;
+    Ok(Entry {
+        source: rel,
+        output: target.strip_prefix(out).unwrap_or(&target).to_string_lossy().to_string(),
+        frames: r.frames,
+        kept: r.kept,
+        signal: r.signal,
+        shift_rms_px: r.shift_rms_px,
+        refine_change_px: r.refine_change_px,
+        clipped_fraction: r.clipped_fraction,
+        exposure_us: settings.exposure_us,
+        gain: settings.gain,
+        dark_applied: r.dark_applied,
+        flat_applied: r.flat_applied,
+        notes,
+        seconds: t0.elapsed().as_secs_f64(),
+    })
+}
+
+/// Add `entry` to the manifest in `out` (replacing an older entry for the same source), written atomically.
+pub fn record(out: &Path, entry: &Entry) -> Result<(), String> {
+    let path = out.join("manifest.json");
+    let mut manifest: Vec<Entry> = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    manifest.retain(|e| e.source != entry.source);
+    manifest.push(entry.clone());
+    std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(&manifest).unwrap_or_default()).and_then(|_| std::fs::rename(&tmp, &path)).map_err(|e| e.to_string())
+}
+
+/// Whether `src` has a stack at least as new as itself.
+pub fn is_stacked(root: &Path, out: &Path, src: &Path) -> bool {
+    let target = output_path(root, out, src);
+    target.exists() && newer(&target, src)
+}
+
 /// Stack every recording under `root` into `out` (default `root/stacks`). Returns the entries of this run.
 pub fn run(root: &Path, out: Option<&Path>, opts: &Options, cals: &CalSet, float: bool, force: bool, log: &dyn Fn(&str)) -> Result<Vec<Entry>, String> {
     let out = out.map(|p| p.to_path_buf()).unwrap_or_else(|| root.join("stacks"));
-    let manifest_path = out.join("manifest.json");
-    let mut manifest: Vec<Entry> = std::fs::read_to_string(&manifest_path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
     let mut done = Vec::new();
     for src in find_recordings(root) {
-        let target = output_path(root, &out, &src);
         let rel = src.strip_prefix(root).unwrap_or(&src).to_string_lossy().to_string();
-        if !force && target.exists() && newer(&target, &src) {
+        if !force && is_stacked(root, &out, &src) {
             log(&format!("skip {rel} (already stacked)"));
             continue;
         }
-        let settings = Settings::from_sidecar(&src);
-        let (cal, notes) = cals.for_settings(settings);
-        let t0 = std::time::Instant::now();
-        let stacked = match stack_ser(&src, opts, &cal) {
-            Ok(s) => s,
-            Err(e) => {
-                log(&format!("{rel}: {e}"));
-                continue;
+        match stack_one(root, &out, &src, opts, cals, float) {
+            Ok(entry) => {
+                log(&format!("{rel}: {} of {} frames, shift rms {:.2} px, {:.1} s", entry.kept, entry.frames, entry.shift_rms_px, entry.seconds));
+                record(&out, &entry)?; // after every recording, so a stopped run keeps what it did
+                done.push(entry);
             }
-        };
-        write_fits(&target, &stacked, &src, opts, float, settings).map_err(|e| format!("{}: {e}", target.display()))?;
-        let r = &stacked.report;
-        let entry = Entry {
-            source: rel.clone(),
-            output: target.strip_prefix(&out).unwrap_or(&target).to_string_lossy().to_string(),
-            frames: r.frames,
-            kept: r.kept,
-            signal: r.signal,
-            shift_rms_px: r.shift_rms_px,
-            refine_change_px: r.refine_change_px,
-            clipped_fraction: r.clipped_fraction,
-            exposure_us: settings.exposure_us,
-            gain: settings.gain,
-            dark_applied: r.dark_applied,
-            flat_applied: r.flat_applied,
-            notes,
-            seconds: t0.elapsed().as_secs_f64(),
-        };
-        log(&format!("{rel}: {} of {} frames, shift rms {:.2} px, {:.1} s", entry.kept, entry.frames, entry.shift_rms_px, entry.seconds));
-        manifest.retain(|e| e.source != entry.source);
-        manifest.push(entry.clone());
-        done.push(entry);
-        std::fs::create_dir_all(&out).map_err(|e| e.to_string())?;
-        // written after every recording, so a stopped run keeps what it did
-        let tmp = manifest_path.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(&manifest).unwrap_or_default()).and_then(|_| std::fs::rename(&tmp, &manifest_path)).map_err(|e| e.to_string())?;
+            Err(e) => log(&format!("{rel}: {e}")),
+        }
     }
     Ok(done)
 }

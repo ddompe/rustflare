@@ -19,12 +19,12 @@ const isSer = (p: string) => p.toLowerCase().endsWith('.ser')
 const base = (p: string) => p.split('/').slice(1).join('/')
 const day = (p: string) => p.split('/')[0]
 
-/** The captures list without the .json notes files (they travel with their capture). */
+/** The captures list without the .json notes files and the .ready markers (they travel with their capture). */
 function useFiles(refreshKey: unknown) {
   const [all, setAll] = useState<FileEntry[]>([])
   const load = () => api<FileEntry[]>('GET', '/files').then(setAll).catch(() => {})
   useEffect(() => { load() }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
-  const files = all.filter((f) => !(f.path.endsWith('.json') && all.some((o) => o.path !== f.path && o.path.startsWith(f.path.slice(0, -5)))))
+  const files = all.filter((f) => !f.path.endsWith('.ready') && !(f.path.endsWith('.json') && all.some((o) => o.path !== f.path && o.path.startsWith(f.path.slice(0, -5)))))
   return { files, load }
 }
 

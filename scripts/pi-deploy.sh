@@ -14,5 +14,5 @@ STATE="$(ssh "$HOST" 'curl -sk -m 10 https://localhost:8443/api/status || curl -
 echo "capture state on the Pi: $STATE"
 if [ "$STATE" != "idle" ] && [ "$FORCE" != 1 ]; then echo "not idle: stop the recording first, or use --force" >&2; exit 1; fi
 scp -q "$DEB" "$HOST:/tmp/rf.deb"
-ssh "$HOST" 'sudo apt-get install -y --allow-downgrades /tmp/rf.deb 2>&1 | tail -2; rm -f /tmp/rf.deb; sleep 8; systemctl is-active rustflare'
+ssh "$HOST" 'sudo apt-get install -y --allow-downgrades -o Dpkg::Options::=--force-confold /tmp/rf.deb 2>&1 | tail -2; rm -f /tmp/rf.deb; sleep 8; systemctl is-active rustflare'
 ssh "$HOST" 'curl -sk -m 10 https://localhost:8443/api/status || curl -s -m 10 http://localhost:8080/api/status' | python3 -c 'import sys,json; d=json.load(sys.stdin); print("camera:", d["camera"] and d["camera"]["name"], "| mount:", d["mount"] and d["mount"]["info"])'

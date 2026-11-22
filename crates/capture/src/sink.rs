@@ -288,7 +288,25 @@ impl Active {
             Format::Ser => self.part_path(1),
             Format::Png | Format::Fits => self.spec.stem.clone(),
         };
+        write_ready_marker(&path, self.frames, self.parts.max(1));
         Ok((Finished { path, frames: self.frames, parts: self.parts.max(1) }, rate))
+    }
+}
+
+/// Where the "this recording is complete" marker for `recording` is: `<name>.ready` next to the SER file or the image folder. It is
+/// written last, after the file is finalized and flushed, so a watcher (the stacker) can trust it: the burst's sidecar is written
+/// when the burst ends, while its frames may still be queued for the writer.
+pub fn ready_marker_path(recording: &std::path::Path) -> PathBuf {
+    let mut name = recording.as_os_str().to_os_string();
+    name.push(".ready");
+    PathBuf::from(name)
+}
+
+fn write_ready_marker(path: &std::path::Path, frames: u32, parts: u32) {
+    let marker = ready_marker_path(path);
+    let text = format!("{{\"frames\":{frames},\"parts\":{parts}}}\n");
+    if let Err(e) = std::fs::write(&marker, text) {
+        log::warn!("could not write {}: {e}", marker.display()); // not fatal: the recording itself is safe
     }
 }
 
@@ -331,6 +349,9 @@ mod tests {
         assert!(sink.error().is_none());
         let len = std::fs::metadata(dir.join("b1.ser")).unwrap().len();
         assert_eq!(len, 178 + 20 * (32 + 8));
+        // the marker appears once the file is complete, and says what is in it
+        let marker = std::fs::read_to_string(dir.join("b1.ser.ready")).unwrap();
+        assert!(marker.contains("\"frames\":20") && marker.contains("\"parts\":1"), "{marker}");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -346,6 +367,9 @@ mod tests {
         wait_done(&sink);
         let fin = sink.take_finished();
         assert_eq!((fin[0].frames, fin[0].parts), (8, 3));
+        // one marker for the whole split recording, written when its last part is closed
+        assert!(std::fs::read_to_string(dir.join("b.ser.ready")).unwrap().contains("\"parts\":3"));
+        assert!(!dir.join("b_part2.ser.ready").exists());
         for f in ["b.ser", "b_part2.ser", "b_part3.ser"] {
             assert!(std::fs::metadata(dir.join(f)).unwrap().len() <= max, "{f}");
         }

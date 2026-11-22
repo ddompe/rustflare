@@ -1,0 +1,25 @@
+[Unit]
+Description=Rustflare stacker (stacks finished recordings at low priority)
+Documentation=https://github.com/ddompe/rustflare
+After=rustflare.service
+
+[Service]
+# Off by default: `sudo systemctl enable --now rustflare-stack`. Settings: /var/lib/rustflare/stack.json
+# Same account as the recorder (see `rustflare-user`), or it cannot read the drive.
+User=rustflare
+Group=rustflare
+StateDirectory=rustflare
+WorkingDirectory=/var/lib/rustflare
+ExecStart=/usr/bin/rustflare-stack watch --state-dir /var/lib/rustflare
+Restart=on-failure
+RestartSec=10
+# It must never get in the way of a recording: lowest CPU and disk priority, a CPU and memory ceiling.
+Nice=19
+CPUWeight=10
+CPUQuota=200%
+IOSchedulingClass=idle
+IOWeight=10
+MemoryMax=2G
+
+[Install]
+WantedBy=multi-user.target

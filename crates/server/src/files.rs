@@ -163,6 +163,7 @@ pub fn delete(root: &Path, rel: &str) -> Result<u64, String> {
     if side != p && side.is_file() {
         let _ = std::fs::remove_file(side);
     }
+    let _ = std::fs::remove_file(rustflare_capture::sink::ready_marker_path(&p)); // the "complete" marker goes with its recording
     Ok(freed)
 }
 

@@ -7,6 +7,9 @@
 set -eu
 DROPIN_DIR=/etc/systemd/system/rustflare.service.d
 DROPIN="$DROPIN_DIR/user.conf"
+# the stacker runs as the same account, or it cannot read the drive
+STACK_DIR=/etc/systemd/system/rustflare-stack.service.d
+STACK_DROPIN="$STACK_DIR/user.conf"
 RESTART=1
 [ "${1:-}" = "--no-restart" ] && { RESTART=0; shift; }
 
@@ -19,10 +22,12 @@ USER_NAME="$1"
 id "$USER_NAME" >/dev/null 2>&1 || { echo "no such user: $USER_NAME" >&2; exit 1; }
 
 if [ "$USER_NAME" = rustflare ]; then
-    rm -f "$DROPIN"
+    rm -f "$DROPIN" "$STACK_DROPIN"
 else
     mkdir -p "$DROPIN_DIR"
     printf '[Service]\nUser=%s\nGroup=%s\n' "$USER_NAME" "$(id -gn "$USER_NAME")" > "$DROPIN"
+    mkdir -p "$STACK_DIR"
+    cp "$DROPIN" "$STACK_DROPIN"
     for g in dialout plugdev; do
         getent group "$g" >/dev/null && usermod -aG "$g" "$USER_NAME" || true
     done
@@ -30,5 +35,8 @@ fi
 mkdir -p /var/lib/rustflare
 chown -R "$USER_NAME:$(id -gn "$USER_NAME")" /var/lib/rustflare
 systemctl daemon-reload
-if [ "$RESTART" = 1 ]; then systemctl restart rustflare.service || true; fi
+if [ "$RESTART" = 1 ]; then
+    systemctl restart rustflare.service || true
+    systemctl is-active --quiet rustflare-stack.service && systemctl restart rustflare-stack.service || true
+fi
 echo "Rustflare now runs as: $USER_NAME"

@@ -1518,6 +1518,7 @@ name = "rustflare-capture"
 version = "0.4.0"
 dependencies = [
  "libc",
+ "log",
  "png",
  "rustflare-core",
 ]

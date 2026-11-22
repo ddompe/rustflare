@@ -69,6 +69,14 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 | new | Aim > Go to: pick Moon, Jupiter, Saturn, Mars in turn (the selector shows altitude; one below the horizon should warn and offer *Go anyway*). Check the mount arrives within a degree or two, tracking starts (lunar rate for the Moon), and how far the target is from the frame centre (note it: the planets use approximate elements) |
 | new | Record a short planetary video (SER, short exposure, high gain) and check it plays; try *Home when finished* at the end of a counted recording |
 
+## Stacker (rustflare-stack)
+
+| Check | How |
+|---|---|
+| Stack alongside a real recording | `sudo systemctl enable --now rustflare-stack`, then run lane recordings with bursts every 30 s for an hour on the Sun: `stack-status.json` shows *paused* while a burst writes and *working* in the gaps; no dropped frames and no capture stalls longer than before (#86); temperature stays under 70 C |
+| Quality on a real flat and dark | Take a raw flat and a dark at the recording's exposure and gain (Camera tab), set them in `stack.json`, compare a stack with and without (disc texture, dust, hot pixels) |
+| Compare with AutoStakkert or Siril | Stack one disc burst and one prominence burst in your tool and with `rustflare-stack session`; compare the FITS by eye and tell us which is sharper |
+
 ## M2: UI
 
 | Issue | Check |

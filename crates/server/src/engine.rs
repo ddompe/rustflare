@@ -388,6 +388,8 @@ pub struct Engine {
     paused: Option<ResumeSpec>,
     trace_dir: Option<std::path::PathBuf>,
     last_prune: Option<Instant>,
+    /// What the capture-state file last said and when (it is rewritten on a change and every 10 s as a heartbeat).
+    state_file: Option<(String, Instant)>,
     /// The automatic flip has been started (or given up) for this crossing of the meridian.
     auto_done: bool,
     last_auto_check: Instant,
@@ -511,6 +513,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         paused: None,
         trace_dir: None,
         last_prune: None,
+        state_file: None,
         auto_done: false,
         last_auto_check: Instant::now(),
         last_auto_warn: None,
@@ -840,7 +843,32 @@ impl Engine {
     }
 
     /// Keeps the mount command log pointed at today's storage folder (it can change at run time).
+    /// Tells other programs on this machine (the stacker) whether the recorder is busy and where it writes: `capture.state` next to the
+    /// settings file, `{"state":"idle","busy":false,"next_in_s":null,"dir":"...","updated":<unix seconds>}`. `busy` is true while
+    /// frames are being recorded or written out; a recording that is waiting for its next burst is not busy and says how long the
+    /// gap is. It is rewritten on a change and every 10 s: a file that has not been refreshed for a while means the recorder is not
+    /// running (so nothing is recording).
+    fn write_state_file(&mut self) {
+        let c = &self.status.capture;
+        let busy = c.state != "idle" && c.next_in_s.is_none();
+        let key = format!("{}/{}", c.state, busy);
+        if let Some((last, at)) = &self.state_file {
+            if *last == key && at.elapsed() < Duration::from_secs(10) {
+                return;
+            }
+        }
+        let path = self.storage.config_file().with_file_name("capture.state");
+        let updated = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let body = json!({ "state": c.state, "busy": busy, "next_in_s": c.next_in_s, "dir": self.storage.dir().to_string_lossy(), "updated": updated }).to_string();
+        let tmp = path.with_extension("state.tmp");
+        if std::fs::write(&tmp, body).and_then(|_| std::fs::rename(&tmp, &path)).is_err() {
+            return; // a read-only settings folder: nothing to tell
+        }
+        self.state_file = Some((key, Instant::now()));
+    }
+
     fn sync_mount_trace(&mut self) {
+        self.write_state_file();
         let dir = self.storage.internal_log_dir();
         if self.trace_dir.as_ref() != Some(&dir) {
             rustflare_mount::trace::set_dir(Some(dir.clone()));

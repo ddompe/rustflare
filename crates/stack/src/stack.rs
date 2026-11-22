@@ -166,6 +166,14 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         }
     }
     let t0 = Instant::now();
+    let trace = std::env::var_os("RF_STACK_TRACE").is_some();
+    let lap_t = |what: &str, since: &mut Instant| {
+        if trace {
+            eprintln!("  {what}: {:.2} s", since.elapsed().as_secs_f64());
+        }
+        *since = Instant::now();
+    };
+    let mut tp = Instant::now();
     let b = opts.bin.max(1);
     let (bw, bh) = (w / b, h / b);
 
@@ -198,9 +206,15 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         lap[i] = sh;
         cache.push(img);
     }
+    lap_t("read, bin, score every frame (pass A)", &mut tp);
     let get = |s: &mut Ser, i: usize| -> Result<Img, String> { match &cache[i] { Some(img) => Ok(img.clone()), None => binned_of(s, i) } };
     let ref0 = (0..n).max_by(|&x, &y| lap[x].partial_cmp(&lap[y]).unwrap_or(std::cmp::Ordering::Equal)).unwrap_or(0);
 
+    // With multi-point alignment the global shift only has to land within the points' search range, so it is found on 4x4-binned images
+    // (four times less to transform) and not refined; the points do the fine work.
+    let fast = opts.multipoint && opts.align && opts.clip == 0.0 && n >= 8;
+    let (b4w, b4h) = (bw / 2, bh / 2);
+    let valid4: Vec<bool> = (0..b4w * b4h).map(|i| { let (x, y) = (i % b4w * 2, i / b4w * 2); valid[y * bw + x] && valid[y * bw + x + 1] && valid[(y + 1) * bw + x] && valid[(y + 1) * bw + x + 1] }).collect();
     // alignment against a reference, then scoring against the aligned mean: shifts (binned pixels), score, brightness, aligned mean
     let aligner0 = Aligner::new(bw, bh, &valid, opts.whiten);
     let whole = |v: f64| if opts.integer_shifts { (v * b as f64).round() / b as f64 } else { v };
@@ -208,8 +222,16 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         let b_out = run_parallel(n, opts.threads, |i| {
             let mut s = Ser::open(path).map_err(|e| e.to_string())?;
             let img = get(&mut s, i)?;
-            let al = Aligner::new(bw, bh, &valid, opts.whiten);
-            let (dx, dy) = if opts.align { al.shift(reference, &al.prepare(&img)) } else { (0.0, 0.0) };
+            let (dx, dy) = if !opts.align {
+                (0.0, 0.0)
+            } else if fast {
+                let al = Aligner::new(b4w, b4h, &valid4, opts.whiten);
+                let (a, c) = al.shift(reference, &al.prepare(&bin(&img.d, bw, bh, 2)));
+                (a * 2.0, c * 2.0)
+            } else {
+                let al = Aligner::new(bw, bh, &valid, opts.whiten);
+                al.shift(reference, &al.prepare(&img))
+            };
             Ok::<_, String>((whole(dx), whole(dy)))
         });
         let mut shifts = Vec::with_capacity(n);
@@ -251,11 +273,17 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     // so the reference carries less noise and less of one frame's seeing)
     let reference = {
         let mut s = Ser::open(path).map_err(|e| e.to_string())?;
-        aligner0.prepare(&get(&mut s, ref0)?)
+        let img = get(&mut s, ref0)?;
+        if fast {
+            Aligner::new(b4w, b4h, &valid4, opts.whiten).prepare(&bin(&img.d, bw, bh, 2))
+        } else {
+            aligner0.prepare(&img)
+        }
     };
     let (mut shifts_b, mut score, mut bright, _) = align_and_score(&reference)?;
+    lap_t("align and score against the best frame", &mut tp);
     let mut refine_change = 0.0;
-    if opts.refine > 0.0 && opts.align && n >= 8 {
+    if opts.refine > 0.0 && opts.align && n >= 8 && !fast {
         let mut ord: Vec<usize> = (0..n).collect();
         by(&score, &mut ord);
         let top = ((n as f64 * opts.refine).round() as usize).clamp(3, n);
@@ -273,6 +301,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         let (shifts2, score2, bright2, _) = align_and_score(&reference2)?;
         refine_change = (shifts_b.iter().zip(&shifts2).map(|(a, c)| (a.0 - c.0).powi(2) + (a.1 - c.1).powi(2)).sum::<f64>() / n as f64).sqrt() * b as f64;
         (shifts_b, score, bright) = (shifts2, score2, bright2);
+        lap_t("align and score again against the refined reference", &mut tp);
     }
     let mut order: Vec<usize> = (0..n).collect();
     match opts.rank {
@@ -464,11 +493,13 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         }
         mp_seconds = t2.elapsed().as_secs_f64();
     }
+    lap_t("multi-point", &mut tp);
     drop(cache);
     signal_global = if aps_n > 0 { signal_global } else { signal };
 
     // sigma clipping: the spread of the kept frames about their mean, then the mean without the outliers (hot pixels, cosmic
     // rays, a frame with a bird in it)
+    lap_t("global stack of the kept frames (pass D)", &mut tp);
     let mut clipped_fraction = 0.0;
     if opts.clip > 0.0 && kept_n >= 5 && aps_n == 0 {
         let mean_px = data.clone();

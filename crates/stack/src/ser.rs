@@ -15,6 +15,8 @@ pub struct Part {
     file: File,
     /// Frames this part holds.
     pub frames: usize,
+    /// Frames its header declares (0 while a recording is still running and nothing has been checkpointed).
+    declared: usize,
 }
 
 /// One recording: the first file and any `_partN` files that continue it.
@@ -84,7 +86,7 @@ impl Ser {
             let len = file.metadata().map_err(|e| SerError(e.to_string()))?.len();
             let by_size = (len.saturating_sub(HEADER_LEN) / fb) as usize;
             let frames = if declared == 0 { by_size } else { declared.min(by_size) };
-            parts.push(Part { path: p, file, frames });
+            parts.push(Part { path: p, file, frames, declared });
         }
         let (width, height, depth, color_id, instrument) = geom.ok_or_else(|| SerError("no file".into()))?;
         if depth != 8 && depth != 16 {
@@ -99,6 +101,11 @@ impl Ser {
             stamp_offset.push(HEADER_LEN + p.frames as u64 * frame_bytes);
         }
         Ok(Ser { parts, width, height, depth, color_id, instrument, frame_bytes, stamp_offset })
+    }
+
+    /// Every part holds all the frames its header declares and the timestamp trailer after them: the writer has finished the file.
+    pub fn is_complete(&self) -> bool {
+        self.parts.iter().all(|p| p.declared > 0 && p.declared == p.frames && p.file.metadata().map(|m| m.len() >= HEADER_LEN + p.declared as u64 * (self.frame_bytes + 8)).unwrap_or(false))
     }
 
     pub fn frames(&self) -> usize { self.parts.iter().map(|p| p.frames).sum() }

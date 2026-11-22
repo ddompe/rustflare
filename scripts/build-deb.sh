@@ -30,6 +30,8 @@ fi
 # --features ble: Bluetooth mount link over BlueZ/D-Bus (pure Rust zbus, bluez is a Recommends), ADR 0015
 # --features playerone: Player One camera support (bundles the vendor library, see ADR 0006)
 cargo zigbuild --release -p rustflare-server --features playerone,asi,ble --target "$TARGET.$GLIBC"
+# the stacker: no native dependencies, a separate low-priority program (docs/project/proposal-onboard-stacking.md)
+cargo zigbuild --release -p rustflare-stack --target "$TARGET.$GLIBC"
 
 mkdir -p dist
 # A local build without --version must sort ABOVE the released version it is based on (dpkg: 0.2.6 < 0.2.6+dev...

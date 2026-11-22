@@ -1,9 +1,10 @@
 //! `rustflare-stack stack <file.ser>...` and `rustflare-stack session <folder>`: rank, align and stack recordings into FITS stills.
 
-use rustflare_stack::{calib::{CalSet, Settings}, output::write_fits, session, stack::{stack_ser, Options, Rank}};
+use rustflare_stack::{calib::{CalSet, Settings}, output::write_fits, session, stack::{stack_ser, Options, Rank}, watch};
 use std::path::PathBuf;
 
 const USAGE: &str = "usage: rustflare-stack stack <file.ser>... [options]
+       rustflare-stack watch [--state-dir DIR] [--root DIR] [--once]   stack recordings as they finish (settings: DIR/stack.json)
        rustflare-stack session <folder> [options]       every recording under the folder, into <folder>/stacks/
 options:
   --keep PERCENT     frames to keep, the best first (default 25)
@@ -20,6 +21,21 @@ options:
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mode = args.first().cloned().unwrap_or_default();
+    if mode == "watch" {
+        let (mut state_dir, mut root, mut once) = (PathBuf::from("/var/lib/rustflare"), None::<PathBuf>, false);
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--state-dir" => { i += 1; state_dir = args.get(i).map(PathBuf::from).unwrap_or(state_dir); }
+                "--root" => { i += 1; root = args.get(i).map(PathBuf::from); }
+                "--once" => once = true,
+                other => { eprintln!("unknown option {other}\n{USAGE}"); std::process::exit(2) }
+            }
+            i += 1;
+        }
+        watch::watch(&state_dir, root.as_deref(), once, &|m| println!("{m}"));
+        return;
+    }
     if (mode != "stack" && mode != "session") || args.len() < 2 {
         eprintln!("{USAGE}");
         std::process::exit(2);

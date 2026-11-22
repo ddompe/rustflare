@@ -9,3 +9,4 @@ pub mod output;
 pub mod ser;
 pub mod session;
 pub mod stack;
+pub mod watch;
