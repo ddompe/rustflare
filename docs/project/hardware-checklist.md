@@ -1,6 +1,6 @@
 # Hardware verification checklist
 
-Everything below was built and tested on the simulators; each item needs the real device. The installed build on the Pi is `0.2.6+dev…` (see `dpkg -s rustflare`). Tick off an item, then close its GitHub issue.
+Everything below was built and tested on the simulators; each item needs the real device. The build on the Pi at the time of writing is `0.4.0` (see `dpkg -s rustflare`). Tick off an item, then close its GitHub issue.
 
 ## Verified on real hardware
 
