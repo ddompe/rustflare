@@ -6,15 +6,15 @@ Frames go into a RAM buffer and are written to disk in the background, so the ca
 
 ## What to record
 
-- **Single frame**: one still.
-- **Sequence**: stop by frame count and/or duration.
-- **Bursts**: for example "100 frames every 30 s". Set frames or seconds per burst, the spacing (start to start) and how many bursts (blank means until you press Stop). Live view and guiding keep running between bursts.
-- **Prominence video**: raw video in two lanes, the disc at your current exposure and a longer exposure (a multiple you choose) for the prominences, alternating. Nothing is combined or stretched; every lane and cycle is its own short SER video in a `prominence_...` session folder, ready for lucky-imaging stacks that become the frames of a time-lapse. (Prominence pair, below, takes single PNG stills with a ready-made composite.)
-- **HDR bracketing lanes**: for eclipses and the Moon. Define 2 to 6 lanes, each with a name, exposure, optional gain and a frame count or duration. They are cycled in order for the number of cycles you give, and "Start a new cycle every" sets a steady time-lapse cadence. Every lane and cycle is its own short raw video in an `hdr_...` session folder, one sub-folder per lane. Stack each video into one frame; the stacks of a lane, in cycle order, make a time-lapse, and the lanes merge into HDR frames. Your exposure and gain are restored at the end. The file manager shows these sessions as their own kinds, with a per-lane list and a filter.
+One form covers everything you record. Pick the kind at the top:
 
-## Prominence pair
+- **Sequence**: frames at the current exposure, stopped by frame count and/or duration. Fill in **Repeat every (s)** to turn it into repeated recordings, for example "100 frames every 30 s" (start to start), with a number of repeats (blank means until you press Stop). Live view and guiding keep running between repeats.
+- **+ Prominence**: two lanes alternate, the disc at your current exposure and a longer exposure (a multiple you choose) for the prominences. Nothing is combined or stretched: every lane and cycle is its own short raw SER video in its own folder, inside a `prominence_...` session folder, ready for lucky-imaging stacks that become the frames of a time-lapse. Turn on **Coronagraph** to black out the Sun's disc in the saved frames of the prominence lane (the disc lane stays raw; it needs the Sun in view).
+- **HDR lanes**: for eclipses and the Moon. Define 2 to 6 lanes, each with a name, exposure, optional gain and a frame count (presets for partial phase, diamond ring and totality). They are cycled in order for the number of cycles you give; "Repeat a cycle every" sets a steady time-lapse cadence. Every lane and cycle is its own short raw video in an `hdr_...` session folder, one sub-folder per lane. Stack each video into one frame; the stacks of a lane, in cycle order, make a time-lapse, and the lanes merge into HDR frames.
 
-Saves a disc frame, a longer exposure for the prominences and their composite. Judge the exposure first with the [Prominence view](screen.md#prominence-view).
+For both lane kinds your exposure and gain are restored at the end, and the frames right after each exposure change are discarded. The file manager shows these sessions as their own kinds, with a per-lane list and a filter.
+
+**Stills** (below the form): a single frame as PNG, and the prominence pair, a disc PNG, a long-exposure PNG and a composite for a quick look. Judge the exposure first with the [Prominence view](screen.md#prominence-view). For data you will process, use the + Prominence recording instead.
 
 ## Format
 

@@ -107,6 +107,8 @@ pub enum Command {
     SetDarkApplied { enabled: bool },
     /// Prominence view: mask the Sun's disc in the live view (display only).
     SetCoronagraph { enabled: bool, scale: f64 },
+    /// White balance of a colour camera: mode off / auto / manual, manual red and blue gains (green = 1).
+    SetColour { mode: String, r: f64, b: f64 },
     /// Guiding tuning; takes effect the next time guiding starts.
     SetGuideParams { window_s: f64, deadband_px: f64, gain: f64, speed: f64, fast_speed: f64, fast_above_px: f64 },
     /// Switch flat-field correction of the live view on or off (a master flat must exist).
@@ -311,6 +313,7 @@ pub struct Engine {
     preview_tx: SyncSender<Frame>,
     flat: rustflare_capture::SharedFlat,
     corona: preview::SharedCorona,
+    colour: preview::SharedColour,
     demand: Arc<preview::Demand>,
     slog: crate::sessionlog::SessionLog,
     last_preview: Instant,
@@ -330,6 +333,16 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
     let (jpeg_tx, jpeg_rx) = watch::channel(None);
     let sky = SimSky::new();
     let corona: preview::SharedCorona = Default::default();
+    let colour: preview::SharedColour = Default::default();
+    {
+        let c = crate::config::read(storage.config_file());
+        if let Some(v) = c.get("colour") {
+            let mut g = colour.lock().unwrap();
+            g.mode = match v.get("mode").and_then(|m| m.as_str()) { Some("off") => "off", Some("manual") => "manual", _ => "auto" };
+            g.r = v.get("r").and_then(|x| x.as_f64()).unwrap_or(1.0).clamp(0.25, 4.0);
+            g.b = v.get("b").and_then(|x| x.as_f64()).unwrap_or(1.0).clamp(0.25, 4.0);
+        }
+    }
     {
         let c = crate::config::read(storage.config_file());
         let mut g = corona.lock().unwrap();
@@ -381,9 +394,10 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         storage,
         status: first_status,
         status_tx,
-        preview_tx: preview::spawn(jpeg_tx, stretch, flat.clone(), corona.clone()),
+        preview_tx: preview::spawn(jpeg_tx, stretch, flat.clone(), corona.clone(), colour.clone()),
         flat,
         corona,
+        colour,
         demand,
         slog: Default::default(),
         last_preview: Instant::now(),
@@ -751,6 +765,8 @@ impl Engine {
         {
             let c = self.corona.lock().unwrap();
             self.status.coronagraph = CoronagraphStatus { enabled: c.enabled, scale: c.scale };
+            let col = self.colour.lock().unwrap();
+            self.status.colour = ColourStatus { mode: col.mode, r: col.r, b: col.b, applied: col.applied };
         }
         self.status.session_log = SessionLogStatus { enabled: self.slog.enabled(), lines: self.slog.lines, frames: self.slog.frames, bytes: self.slog.bytes, file: self.slog.file_name() };
         self.status.last_flip = self.last_flip.clone();
@@ -937,6 +953,21 @@ impl Engine {
                 }
                 self.guide_params = GuideParams { window: Duration::from_secs_f64(window_s), deadband_px, gain, speed, fast_speed, fast_above_px, ..self.guide_params };
                 crate::config::set(self.storage.config_file(), "guide", json!({ "window_s": window_s, "deadband_px": deadband_px, "gain": gain, "speed": speed, "fast_speed": fast_speed, "fast_above_px": fast_above_px }))?;
+                Ok(json!({}))
+            }
+            Command::SetColour { mode, r, b } => {
+                let mode: &'static str = match mode.as_str() { "off" => "off", "auto" => "auto", "manual" => "manual", o => return Err(format!("unknown white balance mode {o} (use off, auto or manual)")) };
+                if !(0.25..=4.0).contains(&r) || !(0.25..=4.0).contains(&b) {
+                    return Err("gains must be between 0.25 and 4".into());
+                }
+                {
+                    let mut c = self.colour.lock().unwrap();
+                    c.mode = mode;
+                    c.r = r;
+                    c.b = b;
+                    c.applied = [1.0; 3];
+                }
+                crate::config::set(self.storage.config_file(), "colour", json!({ "mode": mode, "r": r, "b": b }))?;
                 Ok(json!({}))
             }
             Command::SetCoronagraph { enabled, scale } => {
@@ -1895,7 +1926,18 @@ impl Engine {
                 let path = stem.with_extension(if fits { "fits" } else { "png" });
                 let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
                 let meta = rustflare_capture::FitsMeta { instrument: self.status.camera.as_ref().map(|c| c.name.clone()), exposure_us: ctl(CTRL_EXPOSURE_US), gain: ctl("gain"), object: Some("Sun".into()), comments: vec![] };
-                let r = std::fs::create_dir_all(path.parent().unwrap()).map_err(s).and_then(|_| if fits { rustflare_capture::write_fits(&path, &frame, &meta).map_err(s) } else { write_png(&path, &frame).map_err(s) });
+                let gains = { let c = self.colour.lock().unwrap(); match c.mode { "off" => [1.0; 3], "manual" => [c.r, 1.0, c.b], _ => frame.bayer.map(|p| rustflare_capture::debayer::auto_white_balance(&frame, p)).unwrap_or([1.0; 3]) } };
+                let r = std::fs::create_dir_all(path.parent().unwrap()).map_err(s).and_then(|_| {
+                    if fits {
+                        rustflare_capture::write_fits(&path, &frame, &meta).map_err(s)
+                    } else if let Some(p) = frame.bayer {
+                        // a colour camera: the raw mosaic as <name>_raw.png and the debayered, white-balanced picture as <name>.png
+                        write_png(&stem.with_file_name(format!("{}_raw", stem.file_name().unwrap().to_string_lossy())).with_extension("png"), &frame).map_err(s)?;
+                        rustflare_capture::write_png_rgb(&path, &rustflare_capture::debayer::bilinear(&frame, p, gains)).map_err(s)
+                    } else {
+                        write_png(&path, &frame).map_err(s)
+                    }
+                });
                 match r {
                     Ok(()) => {
                         let sc = self.sidecar("single", json!({ "width": frame.width, "height": frame.height }));

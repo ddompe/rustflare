@@ -20,6 +20,18 @@ pub fn read_png(path: &Path) -> Result<Frame> {
     }
 }
 
+/// Writes a 16-bit colour PNG (the debayered picture of a one-shot-colour frame, white balance applied).
+pub fn write_png_rgb(path: &Path, img: &crate::debayer::Rgb16) -> Result<()> {
+    let file = BufWriter::new(File::create(path)?);
+    let mut enc = png::Encoder::new(file, img.width, img.height);
+    enc.set_color(png::ColorType::Rgb);
+    enc.set_depth(png::BitDepth::Sixteen);
+    let data: Vec<u8> = img.data.iter().flat_map(|v| v.to_be_bytes()).collect();
+    let mut w = enc.write_header().map_err(|e| Error::Io(std::io::Error::other(e)))?;
+    w.write_image_data(&data).map_err(|e| Error::Io(std::io::Error::other(e)))?;
+    Ok(())
+}
+
 /// Writes a grayscale PNG (8 or 16 bit). 16-bit PNG samples are big-endian, so swap.
 pub fn write_png(path: &Path, frame: &Frame) -> Result<()> {
     let file = BufWriter::new(File::create(path)?);

@@ -31,6 +31,8 @@ export function App() {
   const setTab = (t: TabId) => { setTabState(t); setSavedTab(t) }
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null)
   const [full, setFull] = useState(false)
+  const [theme, setTheme] = useSetting<'night' | 'day'>('ui.theme', 'night')
+  useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const panelRef = useRef<HTMLElement>(null)
   useEffect(() => { panelRef.current?.scrollTo(0, 0) }, [tab])
@@ -68,8 +70,12 @@ export function App() {
         <img className="mark" src="/logo-mark.svg" alt="" width="26" height="26" />
         <h1>Rust<span>Flare</span></h1>
         <span className={`conn ${connected ? 'ok' : 'bad'}`}><i aria-hidden="true" />{connected ? 'Online' : 'Reconnecting…'}</span>
-        <button type="button" className="hidebtn" onClick={() => setFull(true)}>Hide controls</button>
         {cam && <span className="camname">{cam.name} · {cam.width}×{cam.height} · {cam.bits}-bit{cam.bayer ? ` · colour ${cam.bayer}` : ''}</span>}
+        <span className="hright">
+          {status?.mount && <button type="button" className="hstop" onClick={() => { api('POST', '/mount/stop').catch(() => {}) }} aria-label="Stop the mount">STOP</button>}
+          <button type="button" className="themebtn" onClick={() => setTheme(theme === 'night' ? 'day' : 'night')} aria-label={theme === 'night' ? 'Switch to the daylight theme' : 'Switch to the night theme'}>{theme === 'night' ? '☀' : '☾'}</button>
+          <button type="button" className="hidebtn" onClick={() => setFull(true)}>Hide controls</button>
+        </span>
       </header>
       {((status?.error && !(status.tracking?.lost && /tracking lost/i.test(status.error))) || (!connected && !status)) && (
         <div className="banner" role="alert">{status?.error ?? 'Connecting to the RustFlare server…'}</div>

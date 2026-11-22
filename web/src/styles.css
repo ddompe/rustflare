@@ -432,3 +432,24 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .lost-badge { top: 3.6rem; z-index: 3; }
 .range-more summary { cursor: pointer; padding: .35rem 0; color: var(--muted); font-size: .9rem; }
 button:disabled.danger { background: var(--raised); color: var(--faint); border-color: var(--line); }
+
+/* Daylight theme: for bright sun on a phone screen. The live image itself stays black. */
+:root[data-theme='day'] { color-scheme: light; --bg: #f6f3ef; --surface: #ffffff; --raised: #e9e3dd; --line: #7d726b; --line-soft: #cfc7c0; --fg: #14110f; --muted: #3a332f; --faint: #554c47; --accent: #c4470f; --accent-ink: #ffffff; --accent-hover: #a63a0b; --ok: #14683a; --bad: #b3261e; --warn: #8a5a00; --info: #0b6a80; --danger: #b3261e; --focus: 0 0 0 3px var(--bg), 0 0 0 5px #14110f; }
+:root[data-theme='day'] .top h1 { color: var(--fg); }
+.hright { margin-left: auto; display: flex; align-items: center; gap: .4rem; }
+.camname { margin-left: 0; margin-right: .5rem; }
+.hstop { min-height: 36px; padding: 0 .8rem; font-weight: 800; background: var(--danger); color: #fff; border-color: transparent; }
+.themebtn { min-height: 36px; min-width: 36px; padding: 0 .5rem; }
+.hidebtn { margin-left: 0; }
+
+/* Daylight theme repairs: surfaces that were written as fixed dark colours */
+:root[data-theme='day'] input:not([type=range]):not([type=checkbox]), :root[data-theme='day'] select, :root[data-theme='day'] .seg button { background: #fff; border-color: var(--line); color: var(--fg); }
+:root[data-theme='day'] .seg button[aria-checked='true'], :root[data-theme='day'] .seg button.on, :root[data-theme='day'] .seg [aria-checked='true'] { background: var(--accent); color: var(--accent-ink); }
+:root[data-theme='day'] .sw-track { background: #cfc7c0; border-color: var(--line); }
+:root[data-theme='day'] input[type=range]::-webkit-slider-runnable-track { background: #b8aea6; }
+:root[data-theme='day'] .hist svg { background: #fff; }
+:root[data-theme='day'] .banner { background: #fde4e0; color: #5c1410; }
+/* controls drawn on top of the (always dark) image keep light-on-dark */
+:root[data-theme='day'] .live-tools button, :root[data-theme='day'] .live .hud, :root[data-theme='day'] .live button { color: #fff; }
+.hidebtn { white-space: nowrap; }
+@media (max-width: 480px) { .hidebtn { font-size: .78rem; padding: 0 .5rem; } .top .conn { display: none; } }

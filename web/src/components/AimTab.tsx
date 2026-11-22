@@ -283,7 +283,7 @@ function GoToSun({ status, disabled }: { status: Status; disabled: boolean }) {
   return (
     <div className="home">
       {!ask ? (
-        <button type="button" className="wide" disabled={disabled || !status.site} onClick={() => setAsk(true)}>Go to Sun</button>
+        <button type="button" className="wide primary" disabled={disabled || !status.site} onClick={() => setAsk(true)}>Go to Sun</button>
       ) : (
         <div className="confirm" role="alertdialog" aria-label="Go to the Sun">
           <p>The mount will slew to the Sun's position computed from your site and the Pi's clock, then start solar tracking. Make sure the telescope and cables are clear.</p>

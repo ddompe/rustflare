@@ -34,3 +34,7 @@ The round **Prominence view** button in the picture's tool column blacks out the
 ## Problems
 
 A red banner shows the last problem (camera error, lost target, storage unavailable, mount error, lost mount link). See [Troubleshooting](troubleshooting.md).
+
+## Header: STOP, theme and Hide controls
+
+With a mount connected, a red **STOP** in the header stops the mount from any tab. The sun or moon button switches between the night theme (dark, easy on dark-adapted eyes) and a **daylight theme** (light, high contrast, for bright sun on a phone screen); the image stays black in both. **Hide controls** shows the image only.

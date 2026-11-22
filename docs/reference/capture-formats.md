@@ -64,7 +64,7 @@ curl -X POST localhost:8080/api/capture/lanes -H 'content-type: application/json
 Colour cameras (Player One and ZWO ASI colour models report their filter layout) are handled as raw Bayer sensors:
 
 - **Live view:** each 2x2 block of the mosaic becomes one colour pixel (a "superpixel" demosaic, no interpolation), so the preview is in colour at half the sensor resolution and costs about the same as the mono preview.
-- **Recordings stay raw.** SER files are the undemosaiced mosaic with the Bayer pattern in the header (COLORID 8 to 11), which is what AutoStakkert, PIPP, Siril and others expect for planetary and lunar work; they debayer when stacking. FITS files carry `BAYERPAT`, `XBAYROFF` and `YBAYROFF`. PNG stills are raw too.
+- **Recordings stay raw.** SER files are the undemosaiced mosaic with the Bayer pattern in the header (COLORID 8 to 11), which is what AutoStakkert, PIPP, Siril and others expect for planetary and lunar work; they debayer when stacking. FITS files carry `BAYERPAT`, `XBAYROFF` and `YBAYROFF`. A single-frame PNG is saved both raw (`_raw.png`) and as a debayered (bilinear), white-balanced 16-bit colour PNG.
 - **Tracking and guiding** run on the raw mosaic (fine for a bright disc; the Sun is found by its edge).
 - **Flats and darks** are per photosite on the raw mosaic, so they correct each colour separately.
 - Do not use hardware binning with a colour camera: it destroys the pattern.

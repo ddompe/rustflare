@@ -28,7 +28,7 @@ Cap on, the same exposure and gain as on the Sun, then *Capture darks*. The mast
 
 ## Colour cameras
 
-Colour cameras show a colour live view (half resolution). Recordings stay raw (undemosaiced, with the Bayer pattern in the file), which is what stacking software such as AutoStakkert, PIPP and Siril expects. Do not use hardware binning with a colour camera. See [Capture formats](../reference/capture-formats.md#colour-cameras).
+Colour cameras show a colour live view (half resolution) with white balance (Camera tab > Colour: **Auto** makes the bright disc neutral, **Manual** sets red and blue gains, **Off** shows the sensor's own colours). A single-frame PNG from a colour camera is saved twice: `..._raw.png` (the mosaic) and a debayered, white-balanced 16-bit colour `.png`. Recordings stay raw (undemosaiced, with the Bayer pattern in the file), which is what stacking software such as AutoStakkert, PIPP and Siril expects. Do not use hardware binning with a colour camera. See [Capture formats](../reference/capture-formats.md#colour-cameras).
 
 ## Reconnecting
 

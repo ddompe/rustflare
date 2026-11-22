@@ -7,6 +7,7 @@ import { DeviceCard } from './DeviceCard'
 import { Flats } from './Flats'
 import { Darks } from './Darks'
 import { RoiControl } from './RoiControl'
+import { ColourControl } from './ColourControl'
 import { CameraCatalog, useDatasheet } from '../datasheet'
 
 const fmt = (c: Control, v: number) => {
@@ -191,6 +192,11 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
       {rest.length > 0 && (
         <Disclosure title="More camera controls" summary={rest.map((c) => c.label.split(' (')[0]).join(', ')}>
           {rest.map((c) => <Slider key={c.id} c={c} />)}
+        </Disclosure>
+      )}
+      {status?.camera?.bayer && (
+        <Disclosure title="Colour" summary={`white balance ${status.colour?.mode ?? ""}`}>
+          <ColourControl status={status} />
         </Disclosure>
       )}
       <Disclosure title="Frame size" summary={status?.roi ? `${status.roi.width}×${status.roi.height}` : ''}>

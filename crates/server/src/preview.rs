@@ -20,6 +20,21 @@ pub struct Corona {
 }
 pub type SharedCorona = Arc<std::sync::Mutex<Corona>>;
 
+/// White balance of the colour live view and the colour stills of a one-shot-colour camera.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Colour {
+    /// "off" (sensor colours), "auto" (the bright disc is made neutral) or "manual".
+    pub mode: &'static str,
+    pub r: f64,
+    pub b: f64,
+    /// Gains in effect now (auto: measured on the latest frame, smoothed; manual: the sliders).
+    pub applied: [f64; 3],
+}
+impl Default for Colour {
+    fn default() -> Self { Colour { mode: "auto", r: 1.0, b: 1.0, applied: [1.0; 3] } }
+}
+pub type SharedColour = Arc<std::sync::Mutex<Colour>>;
+
 /// Sets every pixel inside the circle to zero.
 pub fn mask_disc(frame: &mut Frame, cx: f64, cy: f64, r: f64) {
     let (w, h) = (frame.width as i64, frame.height as i64);
@@ -110,7 +125,7 @@ fn stretch_range(frame: &Frame, skip_zero: bool) -> (f64, f64) {
 /// Colour preview of a raw Bayer frame: each 2x2 block becomes one RGB pixel (the two greens averaged), so there is no
 /// interpolation, no colour fringes and the cost is one pass over the pixels. The picture has half the sensor resolution
 /// (further reduced to fit the preview width); recordings keep the full raw mosaic.
-fn encode_bayer(frame: &Frame, pattern: rustflare_core::BayerPattern, stretch: bool, masked: bool) -> Option<Vec<u8>> {
+fn encode_bayer(frame: &Frame, pattern: rustflare_core::BayerPattern, stretch: bool, masked: bool, gains: [f64; 3]) -> Option<Vec<u8>> {
     let (bw, bh) = (frame.width as usize / 2, frame.height as usize / 2);
     let f = bw.div_ceil(MAX_WIDTH as usize).max(1);
     let (w, h) = (bw / f, bh / f);
@@ -133,7 +148,7 @@ fn encode_bayer(frame: &Frame, pattern: rustflare_core::BayerPattern, stretch: b
                 n[*c] += 1;
             }
             for c in 0..3 {
-                rgb.push(map(sum[c] / n[c].max(1)));
+                rgb.push(map(((sum[c] / n[c].max(1)) as f64 * gains[c]) as i64));
             }
         }
     }
@@ -142,9 +157,15 @@ fn encode_bayer(frame: &Frame, pattern: rustflare_core::BayerPattern, stretch: b
     Some(out)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn encode(frame: &Frame, stretch: bool, masked: bool) -> Option<Vec<u8>> {
+    encode_with(frame, stretch, masked, [1.0; 3])
+}
+
+/// `gains`: white balance for a colour (Bayer) frame; ignored for mono.
+pub fn encode_with(frame: &Frame, stretch: bool, masked: bool, gains: [f64; 3]) -> Option<Vec<u8>> {
     if let Some(p) = frame.bayer {
-        return encode_bayer(frame, p, stretch, masked);
+        return encode_bayer(frame, p, stretch, masked, gains);
     }
     let f = frame.width.div_ceil(MAX_WIDTH).max(1) as usize;
     let (w, h) = (frame.width as usize / f, frame.height as usize / f);
@@ -186,7 +207,7 @@ pub fn encode(frame: &Frame, stretch: bool, masked: bool) -> Option<Vec<u8>> {
 }
 
 /// Returns a sender; frames are dropped (never queued) while the encoder is busy.
-pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::SharedFlat, corona: SharedCorona) -> SyncSender<Frame> {
+pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::SharedFlat, corona: SharedCorona, colour: SharedColour) -> SyncSender<Frame> {
     let (ftx, frx) = sync_channel::<Frame>(1);
     std::thread::Builder::new()
         .name("preview".into())
@@ -207,7 +228,25 @@ pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::Shar
                 // Not forced to stretch: the point of the mask is to judge the exposure, so the picture must keep showing
                 // the real brightness unless the viewer chose auto-stretch (which would hide any exposure change).
                 let st = stretch.load(Ordering::Relaxed);
-                if let Some(jpg) = encode(&frame, st, mask.is_some()) {
+                let gains = match frame.bayer {
+                    None => [1.0; 3],
+                    Some(p) => {
+                        let mut c = colour.lock().unwrap();
+                        let g = match c.mode {
+                            "off" => [1.0; 3],
+                            "manual" => [c.r, 1.0, c.b],
+                            _ => {
+                                // auto: measured on this frame, smoothed so the picture does not flicker
+                                let m = rustflare_capture::debayer::auto_white_balance(&frame, p);
+                                let o = c.applied;
+                                if o == [1.0; 3] { m } else { [o[0] * 0.8 + m[0] * 0.2, 1.0, o[2] * 0.8 + m[2] * 0.2] }
+                            }
+                        };
+                        c.applied = g;
+                        g
+                    }
+                };
+                if let Some(jpg) = encode_with(&frame, st, mask.is_some(), gains) {
                     tx.send_replace(Some(Arc::new(jpg)));
                 }
             }

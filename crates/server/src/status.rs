@@ -219,6 +219,15 @@ pub struct DarksStatus {
 }
 
 #[derive(Clone, Serialize)]
+pub struct ColourStatus {
+    pub mode: &'static str,
+    pub r: f64,
+    pub b: f64,
+    /// Gains in effect (red, green, blue).
+    pub applied: [f64; 3],
+}
+
+#[derive(Clone, Serialize)]
 pub struct CoronagraphStatus {
     pub enabled: bool,
     pub scale: f64,
@@ -227,6 +236,7 @@ pub struct CoronagraphStatus {
 #[derive(Clone, Serialize)]
 pub struct Status {
     pub coronagraph: CoronagraphStatus,
+    pub colour: ColourStatus,
     pub darks: DarksStatus,
     pub perf: PerfStatus,
     /// Region of interest of the open camera (None: no camera or not supported).
@@ -263,6 +273,7 @@ impl Default for Status {
             perf: PerfStatus::default(),
             darks: DarksStatus { available: false, applied: false, name: None, exposure_us: None, gain: None, matches_camera: false },
             coronagraph: CoronagraphStatus { enabled: false, scale: 1.03 },
+            colour: ColourStatus { mode: "auto", r: 1.0, b: 1.0, applied: [1.0; 3] },
             guide_params: GuideParamsStatus { window_s: 10.0, deadband_px: 3.0, gain: 0.7, speed: 0.2, fast_speed: 0.8, fast_above_px: 20.0 },
             flats: FlatsStatus { available: false, applied: false, name: None },
             site: None,
