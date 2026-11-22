@@ -104,3 +104,11 @@ export function RangeField({ label, value, min, max, step, show, onChange }: { l
     </div>
   )
 }
+
+/** "about 14:32 (in 1 h 12 min)" for a time `seconds` from now. */
+export function endsText(seconds: number): string {
+  const when = new Date(Date.now() + seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const m = Math.round(seconds / 60)
+  const left = seconds < 90 ? `in ${Math.max(1, Math.round(seconds))} s` : m < 90 ? `in ${m} min` : `in ${Math.floor(m / 60)} h ${m % 60} min`
+  return `about ${when} (${left})`
+}

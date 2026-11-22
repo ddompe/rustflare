@@ -43,8 +43,8 @@ pub struct Site {
 /// What was recording, to start it again after an automatic meridian flip paused it.
 #[derive(Clone)]
 enum ResumeSpec {
-    Bursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String> },
-    Lanes { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> },
+    Bursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String>, home_when_done: bool },
+    Lanes { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String>, home_when_done: bool },
 }
 
 /// Unattended meridian flip, saved in the settings file under `auto_flip`.
@@ -168,8 +168,8 @@ pub enum Command {
     /// One burst (`interval_s` = None) or a schedule of bursts, recorded through the RAM buffer.
     /// `frames` / `seconds`: when a burst ends. `interval_s`: start-to-start spacing. `bursts`: None = until stopped.
     /// HDR bracketing: cycle through lanes (own exposure, own directory); `cycles` None = until stopped.
-    CaptureLanes { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> },
-    CaptureBursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String> },
+    CaptureLanes { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String>, home_when_done: bool },
+    CaptureBursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String>, home_when_done: bool },
     SetBuffer { mb: u64 },
     /// Reconnect the last camera and mount automatically at startup (and after a camera error).
     SetStartup { enabled: bool },
@@ -268,6 +268,11 @@ struct CaptureJob {
     sink: FrameSink,
     /// RAM buffer full: drop the new frame (keeps the camera at full speed) instead of waiting for the disk.
     drop_when_full: bool,
+    /// Send the mount home when this recording finishes by itself (not when stopped, paused or failed).
+    home_when_done: bool,
+    /// Bursts finished so far and their total time, to estimate when the recording will end.
+    bursts_done: u32,
+    burst_time_sum: f64,
 }
 
 enum FlatPhase {
@@ -804,14 +809,14 @@ impl Engine {
         let Job::Capture(j) = &self.job else { return None };
         let done = j.burst_no.saturating_sub(1);
         match self.last_capture.clone()? {
-            ResumeSpec::Bursts { name, frames, seconds, interval_s, bursts, format, on_full } => {
+            ResumeSpec::Bursts { name, frames, seconds, interval_s, bursts, format, on_full, home_when_done } => {
                 let bursts = bursts.map(|b| b.saturating_sub(done).max(1));
-                Some(ResumeSpec::Bursts { name, frames, seconds, interval_s, bursts, format, on_full })
+                Some(ResumeSpec::Bursts { name, frames, seconds, interval_s, bursts, format, on_full, home_when_done })
             }
-            ResumeSpec::Lanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full } => {
+            ResumeSpec::Lanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full, home_when_done } => {
                 let n = lanes.len().max(1) as u32;
                 let cycles = cycles.map(|c| c.saturating_sub(done / n).max(1));
-                Some(ResumeSpec::Lanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full })
+                Some(ResumeSpec::Lanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full, home_when_done })
             }
         }
     }
@@ -823,8 +828,8 @@ impl Engine {
             Some(format!("{base}{suffix}"))
         };
         match spec {
-            ResumeSpec::Bursts { name, frames, seconds, interval_s, bursts, format, on_full } => Command::CaptureBursts { name: more(name), frames, seconds, interval_s, bursts, format, on_full },
-            ResumeSpec::Lanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full } => Command::CaptureLanes { name: more(name), kind, cycle_interval_s, lanes, cycles, format, on_full },
+            ResumeSpec::Bursts { name, frames, seconds, interval_s, bursts, format, on_full, home_when_done } => Command::CaptureBursts { name: more(name), frames, seconds, interval_s, bursts, format, on_full, home_when_done },
+            ResumeSpec::Lanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full, home_when_done } => Command::CaptureLanes { name: more(name), kind, cycle_interval_s, lanes, cycles, format, on_full, home_when_done },
         }
     }
 
@@ -1090,6 +1095,7 @@ impl Engine {
         self.status.guiding.held = self.guide_hold.is_some();
         self.status.guiding.dead_reckoning = self.dead.is_some();
         self.status.session_log = SessionLogStatus { lost_frames: self.save_lost, lost_saved: self.lost_saved, enabled: self.slog.enabled(), lines: self.slog.lines, frames: self.slog.frames, bytes: self.slog.bytes, file: self.slog.file_name() };
+        self.status.capture.eta_s = self.capture_eta();
         self.status.capture.paused = self.paused.is_some() || self.resume_after_flip.is_some();
         self.status.capture.paused_reason = if self.paused.is_some() { Some("paused by you".into()) } else if self.resume_after_flip.is_some() { Some("paused for the meridian flip".into()) } else { None };
         self.status.last_flip = self.last_flip.clone();
@@ -1567,8 +1573,8 @@ impl Engine {
                 self.set_capture("single", "waiting for frame", None);
                 Ok(json!({}))
             }
-            Command::CaptureBursts { name, frames, seconds, interval_s, bursts, format, on_full } => {
-                let rs = ResumeSpec::Bursts { name: name.clone(), frames, seconds, interval_s, bursts, format: format.clone(), on_full: on_full.clone() };
+            Command::CaptureBursts { name, frames, seconds, interval_s, bursts, format, on_full, home_when_done } => {
+                let rs = ResumeSpec::Bursts { name: name.clone(), frames, seconds, interval_s, bursts, format: format.clone(), on_full: on_full.clone(), home_when_done };
                 self.require_capture_ready()?;
                 if frames.is_none() && seconds.is_none() {
                     return Err("give a frame count and/or a duration per burst".into());
@@ -1622,14 +1628,17 @@ impl Engine {
                     last_check: Instant::now(),
                     sink: FrameSink::new(cap),
                     drop_when_full,
+                    home_when_done,
+                    bursts_done: 0,
+                    burst_time_sum: 0.0,
                 }));
                 self.status.capture.dropped = 0;
                 self.set_capture(if interval.is_some() { "bursts" } else { "sequence" }, "starting", frames);
                 self.status.capture.bursts_total = total_bursts;
                 Ok(json!({ "buffer_frames": cap, "fits_in_buffer": frames.map_or(true, |f| f as usize <= cap) }))
             }
-            Command::CaptureLanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full } => {
-                let rs = ResumeSpec::Lanes { name: name.clone(), kind: kind.clone(), cycle_interval_s, lanes: lanes.clone(), cycles, format: format.clone(), on_full: on_full.clone() };
+            Command::CaptureLanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full, home_when_done } => {
+                let rs = ResumeSpec::Lanes { name: name.clone(), kind: kind.clone(), cycle_interval_s, lanes: lanes.clone(), cycles, format: format.clone(), on_full: on_full.clone(), home_when_done };
                 if cycle_interval_s.is_some_and(|i| i < 1.0) {
                     return Err("the time between cycles must be at least 1 s".into());
                 }
@@ -1698,6 +1707,9 @@ impl Engine {
                     last_check: Instant::now(),
                     sink: FrameSink::new(cap),
                     drop_when_full,
+                    home_when_done,
+                    bursts_done: 0,
+                    burst_time_sum: 0.0,
                 }));
                 self.status.capture.dropped = 0;
                 self.set_capture("bursts", "starting", None);
@@ -2400,6 +2412,83 @@ impl Engine {
         self.step_guide(now, GuideInput::Pos(virt));
     }
 
+    /// The recording finished by itself and the owner asked for the mount to go home afterwards: stop guiding and send it.
+    fn home_after_capture(&mut self) {
+        if self.mount.is_none() {
+            return;
+        }
+        if self.flip.is_some() || self.goto.is_some() {
+            self.status.error = Some("the recording finished but a flip or GoTo is running: the mount was not sent home".into());
+            return;
+        }
+        if let Err(e) = self.require_not_parked() {
+            self.event("home_when_done_skipped", json!({ "why": e }));
+            return;
+        }
+        self.stop_guiding_quietly();
+        match self.mount.as_mut().map(|m| m.go_home().map_err(s)) {
+            Some(Ok(())) => {
+                self.mount_tracking = false; // the mount stops tracking to go home; the next poll confirms
+                self.event("home_when_done", json!({}));
+                log::info!("recording finished: sending the mount home");
+            }
+            Some(Err(e)) => {
+                self.event("home_when_done_failed", json!({ "why": e }));
+                self.status.error = Some(format!("the recording finished but the mount could not be sent home: {e}"));
+            }
+            None => {}
+        }
+    }
+
+    /// Seconds until the running recording ends, as far as can be told: `None` when it runs until stopped.
+    fn capture_eta(&self) -> Option<f64> {
+        let Job::Capture(job) = &self.job else { return None };
+        let total = job.total_bursts?;
+        let now = Instant::now();
+        let fps = self.status.camera.as_ref().map_or(30.0, |c| c.fps.max(1.0));
+        let spec_burst = || match (job.burst_seconds, job.burst_frames) {
+            (Some(sec), Some(n)) => sec.min(n as f64 / fps),
+            (Some(sec), None) => sec,
+            (None, Some(n)) => n as f64 / fps,
+            _ => 0.0,
+        };
+        let avg_burst = if job.bursts_done > 0 { job.burst_time_sum / job.bursts_done as f64 } else { spec_burst() };
+        let (rem_current, started_at, next_wait) = match &job.phase {
+            CapPhase::Capturing { started, taken, .. } => {
+                let el = started.elapsed().as_secs_f64();
+                let by_secs = job.burst_seconds.map(|sec| sec - el);
+                let rate = if el > 0.5 && *taken > 0 { *taken as f64 / el } else { fps };
+                let by_frames = job.burst_frames.map(|n| n.saturating_sub(*taken) as f64 / rate);
+                let rem = match (by_secs, by_frames) { (Some(a), Some(b)) => a.min(b), (Some(a), None) => a, (None, Some(b)) => b, _ => 0.0 };
+                (rem.max(0.0), Some(*started), None)
+            }
+            CapPhase::Waiting { next_at } => (0.0, None, Some(next_at.saturating_duration_since(now).as_secs_f64())),
+        };
+        let left = total.saturating_sub(job.burst_no) as f64; // bursts not yet started
+        if let Some(l) = &job.lanes {
+            let n = l.specs.len().max(1) as u32;
+            let cycles_total = (total / n).max(1);
+            let pos = (job.burst_no.saturating_sub(1)) % n; // index of the current (or just finished) burst in its cycle
+            let in_cycle_after = (n - 1 - pos) as f64;
+            let cycle_idx = (job.burst_no.saturating_sub(1)) / n;
+            let full_after = cycles_total.saturating_sub(cycle_idx + 1) as f64;
+            let one_cycle = avg_burst * n as f64;
+            return Some(match (l.cycle_interval, next_wait) {
+                (Some(c), _) if full_after > 0.0 => {
+                    let to_next_cycle = (c.as_secs_f64() - l.cycle_started.elapsed().as_secs_f64()).max(0.0);
+                    to_next_cycle + (full_after - 1.0) * c.as_secs_f64() + one_cycle
+                }
+                (None, Some(w)) => w + left * avg_burst,
+                _ => rem_current + in_cycle_after * avg_burst + full_after * one_cycle,
+            });
+        }
+        match (job.interval, started_at, next_wait) {
+            (Some(i), Some(st), _) if left > 0.0 => Some((st + i).saturating_duration_since(now).as_secs_f64() + (left - 1.0) * i.as_secs_f64() + avg_burst),
+            (Some(i), None, Some(w)) if left > 0.0 => Some(w + (left - 1.0) * i.as_secs_f64() + avg_burst),
+            _ => Some(rem_current + left * avg_burst),
+        }
+    }
+
     /// Always-on event log: one JSON line per tracking, guiding, exposure or flip event in `<storage>/logs/<date>/events.jsonl`
     /// (small: events, not frames). Explains afterwards what the software did and when. Capped at 20 MB a day.
     fn event(&self, kind: &str, detail: Value) {
@@ -2824,13 +2913,19 @@ impl Engine {
             self.status.error = Some(format!("recording stopped: {why} ({taken} frames in this burst)"));
             return self.fail_capture_keep(job);
         }
+        job.bursts_done += 1;
+        job.burst_time_sum += started.elapsed().as_secs_f64();
         let last = (job.interval.is_none() && job.lanes.is_none()) || job.total_bursts.is_some_and(|t| job.burst_no >= t);
         if last {
             self.restore_lanes(&job);
+            let home = job.home_when_done;
             let CaptureJob { sink, .. } = *job;
             sink.close();
             self.draining = Some(sink);
             self.finish_capture(None, "captured; writing buffered frames to disk");
+            if home {
+                self.home_after_capture();
+            }
             return Job::Idle;
         }
         let next_at = if let Some(l) = &job.lanes {

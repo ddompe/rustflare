@@ -1,5 +1,5 @@
 import { api, Status } from '../api'
-import { Disclosure, Empty, Field, Section, Segmented, Switch, useAction } from './ui'
+import { Disclosure, Empty, endsText, Field, Section, Segmented, Switch, useAction } from './ui'
 import { StorageLine } from './Storage'
 import { FileManagerButton } from './FileManager'
 import { ProminencePair } from './ProminencePair'
@@ -17,6 +17,7 @@ export function Progress({ status, onStop }: { status: Status; onStop: () => voi
     <div className="progress">
       <div className="prog-title"><b>{c.state}</b>: {c.phase}</div>
       {c.burst != null && <div className="muted">burst {c.burst}{c.bursts_total ? ` of ${c.bursts_total}` : ''}{c.next_in_s != null ? ` · next in ${c.next_in_s.toFixed(0)} s` : ''}</div>}
+      {c.eta_s != null && c.eta_s > 0 && <div className="muted">Ends {endsText(c.eta_s)}</div>}
       {c.total != null && c.state !== 'flushing' && <progress max={c.total} value={c.done} aria-label="Frames captured" />}
       {c.state !== 'flats' && c.buffer_capacity > 0 && (
         <>
@@ -45,6 +46,7 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
   const [repeats, setRepeats] = useSetting('capture.bursts', '')
   const [factor, setFactor] = useSetting('capture.promvid_factor', '8')
   const [mask, setMask] = useSetting('capture.promvid_mask', false)
+  const [home, setHome] = useSetting('capture.home_when_done', false)
   const [lanesJson, setLanesJson] = useSetting('capture.lanes', JSON.stringify(PRESETS['Partial phase']))
   const { err, run } = useAction()
   const c = status?.capture
@@ -88,8 +90,28 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
   const every_s = n(every) ?? 0
   const diskNeed = burstSecs && every_s ? burstBytes / Math.max(every_s, burstSecs) / 1e6 : 0
 
+  // when will it end? Needs a known count of repeats or cycles (or a single recording)
+  const fps = cam.fps > 0 ? cam.fps : 30
+  const laneSecs = (l: { exposure_ms?: string; frames?: string; seconds?: string }, expUs: number) => {
+    const sec = parseFloat(l.seconds ?? '')
+    if (sec > 0) return sec
+    const fr = parseInt(l.frames ?? '', 10) || 0
+    return (fr + 2) * Math.max(expUs / 1e6, 1 / fps) // two frames after each exposure change are thrown away
+  }
+  const reps = n(repeats)
+  let planSecs = 0
+  if (kind === 'plain') {
+    if (burstSecs > 0) planSecs = repeating ? (reps ? (reps - 1) * Math.max(every_s, burstSecs) + burstSecs : 0) : burstSecs
+  } else {
+    const specs = kind === 'hdr'
+      ? lanes.map((l) => ({ us: (parseFloat(l.exposure_ms) || 0) * 1000, frames: l.frames }))
+      : [{ us: exp ?? 0, frames: frames }, { us: (exp ?? 0) * (parseFloat(factor) || 8), frames: frames }]
+    const cycle = specs.reduce((a, l) => a + laneSecs({ frames: l.frames, seconds }, l.us), 0)
+    if (cycle > 0 && reps) planSecs = (reps - 1) * Math.max(every_s, cycle) + cycle
+  }
+
   const start = () => {
-    const q = recordRequest({ kind, name, format, onFull, frames, seconds, every, repeats, factor, mask, lanes }, cam)
+    const q = recordRequest({ kind, name, format, onFull, frames, seconds, every, repeats, factor, mask, lanes, home }, cam)
     return run(() => api('POST', q.path, q.body))
   }
 
@@ -129,8 +151,12 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
               ? ` Fits in the RAM buffer (${bufFrames} frames), so the disk can be slower than the camera.`
               : ` Larger than the RAM buffer (${bufFrames} frames): once it is full, capture slows to disk speed.`)}
             {diskNeed > 0 && ` Average disk load ≈ ${diskNeed.toFixed(0)} MB/s.`}
+            {planSecs > 0 && <> <b>Ends {endsText(planSecs)}</b> if started now.</>}
           </p>
         )}
+        {planSecs === 0 && (repeating || lanesMode) && !reps && <p className="hint-text">Give a number of {lanesMode ? 'cycles' : 'repeats'} to see when it will end; left empty it runs until you stop it.</p>}
+        <Switch label="Send the mount home when the recording finishes" checked={home} disabled={!status?.mount} onChange={setHome}
+          hint={!status?.mount ? 'Connect the mount first (Aim tab).' : home ? 'Only when it finishes by itself (a set number of repeats or cycles, or a frame or time limit). Guiding stops and the mount slews to its home position: keep the cables and counterweight clear. Stopping the recording, an error or a pause does not move the mount.' : 'Off: the mount stays where it is.'} />
         <Segmented label="File format" value={format} onChange={setFormat} options={lanesMode ? [{ id: 'ser', label: 'SER video' }, { id: 'fits', label: 'FITS' }] : [{ id: 'ser', label: 'SER video' }, { id: 'png', label: 'PNG' }, { id: 'fits', label: 'FITS' }]} />
         <Segmented label="When the RAM buffer is full" value={onFull} onChange={setOnFull} options={[{ id: 'wait', label: 'Wait for the disk' }, { id: 'drop', label: 'Drop frames' }]} />
         <div className="hint-text">{onFull === 'drop' ? 'Keeps the camera at full speed; frames that do not fit are dropped and counted.' : 'Never loses a frame: a camera faster than the disk slows to disk speed once the buffer is full.'}{format === 'fits' ? ' FITS makes one file per frame, with exposure, gain and time in the header.' : ''}</div>

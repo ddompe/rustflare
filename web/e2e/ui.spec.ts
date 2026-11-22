@@ -255,3 +255,41 @@ test('the Record tab offers Pause recording, Resume recording and Discard', asyn
   await page.getByRole('button', { name: 'Stop recording' }).click()
   await expect.poll(async () => (await status()).state, { timeout: 15_000 }).toBe('idle')
 })
+
+test('the Record tab estimates when a repeating recording ends', async ({ page }) => {
+  await page.goto('/')
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).camera?.fps ?? 0, { timeout: 10_000 }).toBeGreaterThan(1)
+  await page.getByRole('tab', { name: /^Record/ }).click()
+  await page.getByRole('radio', { name: 'Sequence' }).check()
+  await page.getByLabel('Frames', { exact: true }).fill('20')
+  await page.getByLabel(/Repeat every/).fill('30')
+  await page.getByLabel(/Number of repeats/).fill('') // an earlier test may have left a number in the saved settings
+  await expect(page.getByText(/until you stop it/)).toBeVisible() // no number of repeats: runs until stopped
+  await page.getByLabel(/Number of repeats/).fill('4')
+  await expect(page.getByText(/Ends about \d\d?:\d\d/)).toBeVisible()
+  await page.getByLabel(/Number of repeats/).fill('')
+  await page.getByLabel(/Repeat every/).fill('')
+})
+
+test('the mount goes home when a recording finishes, only if asked', async ({ page }) => {
+  await page.goto('/')
+  await post(page, '/mount/tracking', { enabled: true })
+  await page.getByRole('tab', { name: /^Record/ }).click()
+  await page.getByRole('radio', { name: 'Sequence' }).check()
+  await page.getByLabel('Frames', { exact: true }).fill('3')
+  await page.getByLabel(/Repeat every/).fill('')
+  const sw = page.getByRole('switch', { name: 'Send the mount home when the recording finishes' })
+  await expect(sw).toBeEnabled()
+  const mount = async () => (await (await page.request.get('/api/status')).json()).mount
+  // off: nothing moves
+  await page.getByRole('button', { name: /^Start recording/ }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 15_000 }).toBe('idle')
+  await page.waitForTimeout(1500)
+  expect((await mount()).at_home).toBe(false)
+  // on: the mount is sent home after the recording ends by itself
+  await sw.check()
+  await page.getByRole('button', { name: /^Start recording/ }).click()
+  await expect.poll(async () => (await mount()).at_home, { timeout: 20_000 }).toBe(true)
+  await sw.uncheck()
+  await post(page, '/mount/tracking', { enabled: true })
+})

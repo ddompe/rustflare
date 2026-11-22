@@ -1,4 +1,5 @@
 import { api, Status } from '../api'
+import { endsText } from './ui'
 import { recipeLabel, recordRequest, savedRecipe } from '../recipe'
 
 export type TabId = 'camera' | 'aim' | 'track' | 'record' | 'more'
@@ -64,7 +65,7 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
             <b>{c.state === 'flushing' ? 'Saving' : c.state === 'flats' ? 'Flats' : 'Recording'}</b>
             <span className="cv">{c.done}{c.total != null ? `/${c.total}` : ''}</span><span className="cl">frames</span>
             <span className="muted rec-sub">
-              {c.burst != null && `burst ${c.burst}${c.bursts_total ? `/${c.bursts_total}` : ''}`}{c.next_in_s != null ? ` · next in ${c.next_in_s.toFixed(0)} s` : ''}
+              {c.burst != null && `burst ${c.burst}${c.bursts_total ? `/${c.bursts_total}` : ''}`}{c.next_in_s != null ? ` · next in ${c.next_in_s.toFixed(0)} s` : ''}{c.eta_s != null && c.eta_s > 0 ? ` · ends ${endsText(c.eta_s)}` : ''}
             </span>
             {c.total != null && c.state !== 'flushing' && <progress max={c.total} value={c.done} aria-label="Frames captured" />}
           </div>

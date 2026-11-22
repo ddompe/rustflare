@@ -10,11 +10,13 @@ pub struct SimMount {
     goto_until: Option<std::time::Instant>,
     /// Where the simulated mount believes it points (RA hours, Dec degrees).
     pointing: (f64, f64),
+    /// At the home position (after `go_home`, until it moves again).
+    at_home: bool,
 }
 
 impl SimMount {
     pub fn new(sky: SimSky) -> Self {
-        SimMount { sky, tracking: false, guide: [0.0; 2], slew: [0.0; 2], goto_until: None, pointing: (15.8, -19.9) }
+        SimMount { sky, tracking: false, guide: [0.0; 2], slew: [0.0; 2], goto_until: None, pointing: (15.8, -19.9), at_home: false }
     }
     fn push(&self) {
         self.sky.set_axis_rates(self.guide[0] + self.slew[0], self.guide[1] + self.slew[1]);
@@ -25,7 +27,7 @@ impl Mount for SimMount {
     fn info(&self) -> String { "Simulated mount".into() }
 
     fn state(&mut self) -> Result<MountState> {
-        Ok(MountState { tracking: Some(self.tracking), slewing: Some(self.goto_until.is_some_and(|t| std::time::Instant::now() < t)), at_home: Some(false), park: Some(ParkState::Unparked), alt_az: Some(false) })
+        Ok(MountState { tracking: Some(self.tracking), slewing: Some(self.goto_until.is_some_and(|t| std::time::Instant::now() < t)), at_home: Some(self.at_home && !self.goto_until.is_some_and(|t| std::time::Instant::now() < t)), park: Some(ParkState::Unparked), alt_az: Some(false) })
     }
 
     fn set_site_time(&mut self, _st: &SiteTime) -> Result<()> { Ok(()) }
@@ -34,16 +36,20 @@ impl Mount for SimMount {
 
     fn goto_equatorial(&mut self, ra: f64, dec: f64) -> Result<()> {
         self.pointing = (ra, dec);
+        self.at_home = false;
         self.goto_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
         self.set_tracking(false)
     }
 
     fn go_home(&mut self) -> Result<()> {
         self.stop()?;
+        self.goto_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(2)); // it takes a moment to get there
+        self.at_home = true;
         self.set_tracking(false) // like the real mount, it does not track at home
     }
 
     fn set_tracking(&mut self, enabled: bool) -> Result<()> {
+        if enabled { self.at_home = false; }
         self.tracking = enabled;
         self.sky.set_tracking(enabled);
         Ok(())

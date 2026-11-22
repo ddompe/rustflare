@@ -20,6 +20,12 @@ For both lane kinds your exposure and gain are restored at the end, and the fram
 
 **Stills** (below the form): a single frame as PNG, and the prominence pair, a disc PNG, a long-exposure PNG and a composite for a quick look. Judge the exposure first with the [Prominence view](screen.md#prominence-view). For data you will process, use the + Prominence recording instead.
 
+## When will it end, and sending the mount home
+
+With a number of repeats or cycles set (or a single recording), the Record tab shows **Ends about HH:MM (in 1 h 12 min)** under the plan, from the frame rate and exposures; while it records, the progress shows the same estimate from what has really happened. It is approximate: a recording that runs until you stop it has no end time.
+
+**Send the mount home when the recording finishes** (a switch above *File format*, off by default, needs the mount connected): when the recording ends by itself, guiding stops and the mount slews to its home position, which suits an unattended plan. Stopping the recording, pausing it, or an error never moves the mount, and it does nothing for a recording that runs until stopped. Keep the cables and counterweight clear.
+
 ## Pause, resume and stop
 
 While a sequence or lane recording runs, **Pause recording** (on this tab, and on the bar under the picture on the other tabs) stops writing and remembers what was left: the cycles or bursts not yet done. **Resume recording** carries on with them in new files in the same style, named `…-resumed`. **Discard** forgets the paused recording. **Stop recording** ends it for good.

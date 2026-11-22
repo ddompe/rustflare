@@ -216,22 +216,22 @@ async fn capture_single(s: State<AppState>, Json(b): Json<Single>) -> Res {
 }
 
 #[derive(Deserialize)]
-struct Sequence { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, format: Option<String>, on_full: Option<String> }
+struct Sequence { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, format: Option<String>, on_full: Option<String>, #[serde(default)] home_when_done: bool }
 async fn capture_sequence(s: State<AppState>, Json(b): Json<Sequence>) -> Res {
-    run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: None, bursts: None, format: b.format, on_full: b.on_full }).await
+    run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: None, bursts: None, format: b.format, on_full: b.on_full, home_when_done: b.home_when_done }).await
 }
 
 #[derive(Deserialize)]
-struct LanesBody { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<crate::engine::LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> }
+struct LanesBody { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<crate::engine::LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String>, #[serde(default)] home_when_done: bool }
 /// HDR bracketing lanes: each lane has its own exposure and output directory.
 async fn capture_lanes(s: State<AppState>, Json(b): Json<LanesBody>) -> Res {
-    run(s, Command::CaptureLanes { name: b.name, kind: b.kind, cycle_interval_s: b.cycle_interval_s, lanes: b.lanes, cycles: b.cycles, format: b.format, on_full: b.on_full }).await
+    run(s, Command::CaptureLanes { name: b.name, kind: b.kind, cycle_interval_s: b.cycle_interval_s, lanes: b.lanes, cycles: b.cycles, format: b.format, on_full: b.on_full, home_when_done: b.home_when_done }).await
 }
 
 #[derive(Deserialize)]
-struct Bursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: f64, bursts: Option<u32>, format: Option<String>, on_full: Option<String> }
+struct Bursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: f64, bursts: Option<u32>, format: Option<String>, on_full: Option<String>, #[serde(default)] home_when_done: bool }
 async fn capture_bursts(s: State<AppState>, Json(b): Json<Bursts>) -> Res {
-    run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: Some(b.interval_s), bursts: b.bursts, format: b.format, on_full: b.on_full }).await
+    run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: Some(b.interval_s), bursts: b.bursts, format: b.format, on_full: b.on_full, home_when_done: b.home_when_done }).await
 }
 
 #[derive(Deserialize)]

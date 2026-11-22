@@ -99,3 +99,5 @@ Read-only except the snapshot and the switch. See [Debugging and logs](debugging
 | `POST /api/debug/snapshot` | saves the latest full frame and a note; returns their URLs |
 | `PUT /api/debug/lost-frames` | `{"enabled"}`: keep the frame when tracking is lost (on by default) |
 
+
+`home_when_done` (boolean, default false) can be added to `/api/capture/sequence`, `/bursts` and `/lanes`: when the recording finishes by itself the mount is sent home (guiding stops first). `status.capture.eta_s` is the estimated seconds until the running recording ends (null when it runs until stopped).
