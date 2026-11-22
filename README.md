@@ -7,6 +7,12 @@
 
 <h1 align="center">RustFlare</h1>
 
+<p align="center">
+  <a href="https://github.com/ddompe/rustflare/actions/workflows/ci.yml"><img src="https://github.com/ddompe/rustflare/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/ddompe/rustflare/releases/latest"><img src="https://img.shields.io/github/v/release/ddompe/rustflare" alt="Latest release"></a>
+  <a href="https://ddompe.github.io/rustflare/manual/"><img src="https://img.shields.io/badge/docs-user%20manual-blue" alt="User manual"></a>
+</p>
+
 Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi next to the telescope, open a web page from your phone or laptop (an iPhone Home Screen app works well), and take the Sun from "where is it?" to a saved recording without a keyboard.
 
 ## Features
