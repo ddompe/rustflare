@@ -37,6 +37,8 @@ Everything below was built and tested on the simulators; each item needs the rea
 
 | new | HDR bracketing lanes | Record 3 lanes for a minute on the Sun: check one folder per lane, the exposure in each file's notes, that the first kept frame of each burst really has the new exposure (no leftover brightness), and that the exposure is restored |
 
+| new | Colour camera (OSC) | With a colour Player One or ASI: the header says colour with the pattern; the live view is in colour with plausible colours (pattern right: the Sun is not blue); a SER opens in AutoStakkert/Siril as the right Bayer pattern; ASI colour path has never run on hardware |
+
 ## M2: UI
 
 | Issue | Check |

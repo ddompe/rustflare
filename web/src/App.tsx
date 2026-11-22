@@ -69,7 +69,7 @@ export function App() {
         <h1>Rust<span>Flare</span></h1>
         <span className={`conn ${connected ? 'ok' : 'bad'}`}><i aria-hidden="true" />{connected ? 'Online' : 'Reconnecting…'}</span>
         <button type="button" className="hidebtn" onClick={() => setFull(true)}>Hide controls</button>
-        {cam && <span className="camname">{cam.name} · {cam.width}×{cam.height} · {cam.bits}-bit</span>}
+        {cam && <span className="camname">{cam.name} · {cam.width}×{cam.height} · {cam.bits}-bit{cam.bayer ? ` · colour ${cam.bayer}` : ''}</span>}
       </header>
       {(status?.error || (!connected && !status)) && (
         <div className="banner" role="alert">{status?.error ?? 'Connecting to the RustFlare server…'}</div>

@@ -25,18 +25,23 @@ impl CameraDriver for SimulatorDriver {
     fn name(&self) -> &'static str { "simulator" }
 
     fn enumerate(&self) -> Result<Vec<CameraInfo>> {
-        Ok(vec![CameraInfo { driver: "simulator".into(), id: "sim0".into(), name: "Simulated solar camera".into() }])
+        Ok(vec![
+            CameraInfo { driver: "simulator".into(), id: "sim0".into(), name: "Simulated solar camera".into() },
+            CameraInfo { driver: "simulator".into(), id: "sim_osc".into(), name: "Simulated colour camera (RGGB)".into() },
+        ])
     }
 
     fn open(&self, id: &str) -> Result<Box<dyn Camera>> {
-        if id != "sim0" {
+        if id != "sim0" && id != "sim_osc" {
             return Err(Error::NotFound(format!("simulator camera {id}")));
         }
-        Ok(Box::new(SimCamera { sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, roi: None, zoom: 1.0, rng: 0x9E3779B97F4A7C15 }))
+        Ok(Box::new(SimCamera { colour: id == "sim_osc", sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, roi: None, zoom: 1.0, rng: 0x9E3779B97F4A7C15 }))
     }
 }
 
 struct SimCamera {
+    /// Simulated one-shot-colour sensor (RGGB mosaic of a warm-white Sun).
+    colour: bool,
     sky: SimSky,
     exposure_us: f64,
     gain: f64,
@@ -67,8 +72,10 @@ impl SimCamera {
 
 impl Camera for SimCamera {
     fn info(&self) -> CameraInfo {
-        CameraInfo { driver: "simulator".into(), id: "sim0".into(), name: "Simulated solar camera".into() }
+        CameraInfo { driver: "simulator".into(), id: if self.colour { "sim_osc" } else { "sim0" }.into(), name: if self.colour { "Simulated colour camera (RGGB)" } else { "Simulated solar camera" }.into() }
     }
+
+    fn bayer(&self) -> Option<rustflare_core::BayerPattern> { self.colour.then_some(rustflare_core::BayerPattern::Rggb) }
 
     fn controls(&mut self) -> Result<Vec<ControlDesc>> {
         let c = |id: &str, label: &str, min, max, step, value, unit: Option<&str>, log| ControlDesc {
@@ -129,6 +136,8 @@ impl Camera for SimCamera {
                     let (dx, dy) = ((x as f64 - W as f64 / 2.0) / (W as f64 / 2.0), (y as f64 - H as f64 / 2.0) / (H as f64 / 2.0));
                     (1.0 - 0.15 * (dx * dx + dy * dy)) * level
                 };
+                // colour sensor: each photosite sees one channel of a warm Sun (R 1.0, G 0.8, B 0.55)
+                let signal = if self.colour { signal * [1.0, 0.8, 0.8, 0.55][((y & 1) * 2 + (x & 1)) as usize] } else { signal };
                 let v = (signal + black + self.noise() * 0.004).clamp(0.0, 1.0);
                 let q = (v * full).round() as u32;
                 if self.high_bit { data.extend_from_slice(&(q as u16).to_le_bytes()); } else { data.push(q as u8); }

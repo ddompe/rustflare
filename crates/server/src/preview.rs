@@ -107,7 +107,45 @@ fn stretch_range(frame: &Frame, skip_zero: bool) -> (f64, f64) {
     if hi - lo < full / 256.0 { (lo, lo + full / 256.0) } else { (lo, hi) }
 }
 
+/// Colour preview of a raw Bayer frame: each 2x2 block becomes one RGB pixel (the two greens averaged), so there is no
+/// interpolation, no colour fringes and the cost is one pass over the pixels. The picture has half the sensor resolution
+/// (further reduced to fit the preview width); recordings keep the full raw mosaic.
+fn encode_bayer(frame: &Frame, pattern: rustflare_core::BayerPattern, stretch: bool, masked: bool) -> Option<Vec<u8>> {
+    let (bw, bh) = (frame.width as usize / 2, frame.height as usize / 2);
+    let f = bw.div_ceil(MAX_WIDTH as usize).max(1);
+    let (w, h) = (bw / f, bh / f);
+    let (lo, hi) = if stretch { stretch_range(frame, masked) } else { (0.0, frame.format.full_scale() + 1.0) };
+    let lo_i = lo as i64;
+    let mul = ((255.0 / (hi - lo).max(1.0)) * 65536.0) as i64;
+    let sixteen = frame.format == PixelFormat::Mono16;
+    let stride = frame.width as usize;
+    let at = |x: usize, y: usize| -> i64 { if sixteen { let i = (y * stride + x) * 2; u16::from_le_bytes([frame.data[i], frame.data[i + 1]]) as i64 } else { frame.data[y * stride + x] as i64 } };
+    let map = |v: i64| -> u8 { if stretch { (((v - lo_i).max(0) * mul) >> 16).min(255) as u8 } else if sixteen { (v >> 8) as u8 } else { v as u8 } };
+    let blk = pattern.block();
+    let mut rgb = Vec::with_capacity(w * h * 3);
+    for by in 0..h {
+        for bx in 0..w {
+            let (x, y) = (bx * f * 2, by * f * 2);
+            let mut sum = [0i64; 3];
+            let mut n = [0i64; 3];
+            for (k, c) in blk.iter().enumerate() {
+                sum[*c] += at(x + (k & 1), y + (k >> 1));
+                n[*c] += 1;
+            }
+            for c in 0..3 {
+                rgb.push(map(sum[c] / n[c].max(1)));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    jpeg_encoder::Encoder::new(&mut out, 75).encode(&rgb, w as u16, h as u16, jpeg_encoder::ColorType::Rgb).ok()?;
+    Some(out)
+}
+
 pub fn encode(frame: &Frame, stretch: bool, masked: bool) -> Option<Vec<u8>> {
+    if let Some(p) = frame.bayer {
+        return encode_bayer(frame, p, stretch, masked);
+    }
     let f = frame.width.div_ceil(MAX_WIDTH).max(1) as usize;
     let (w, h) = (frame.width as usize / f, frame.height as usize / f);
     let (lo, hi) = if stretch { stretch_range(frame, masked) } else { (0.0, frame.format.full_scale() + 1.0) };
@@ -230,5 +268,34 @@ mod tests {
         assert_eq!(f.pixel(0, 0), 300);
         let (lo, hi) = stretch_range(&f, true);
         assert!(hi < 2000.0 && lo >= 250.0, "{lo} {hi}: the disc must not set the white point");
+    }
+
+    #[test]
+    fn bayer_preview_is_colour_and_orange_for_a_warm_mosaic() {
+        use rustflare_core::BayerPattern;
+        let (w, h) = (16usize, 8usize);
+        let mut d = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                // RGGB mosaic of a warm patch: R 60000, G 40000, B 20000
+                let v: u16 = match (x & 1, y & 1) { (0, 0) => 60000, (1, 1) => 20000, _ => 40000 };
+                d.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        let mut f = Frame::new(w as u32, h as u32, PixelFormat::Mono16, d);
+        f.bayer = Some(BayerPattern::Rggb);
+        let jpg = encode(&f, false, false).unwrap();
+        let img = image_dims(&jpg);
+        assert_eq!(img, (8, 4), "half resolution: one RGB pixel per 2x2 block");
+        // the same data flagged BGGR must come out blue instead (R and B swapped), so the pattern is honoured
+        let mut g = f.clone();
+        g.bayer = Some(BayerPattern::Bggr);
+        assert_ne!(encode(&g, false, false).unwrap(), jpg);
+    }
+
+    fn image_dims(jpg: &[u8]) -> (u16, u16) {
+        // SOF0 marker: FF C0, length, precision, height, width
+        let i = jpg.windows(2).position(|p| p == [0xFF, 0xC0]).unwrap();
+        (u16::from_be_bytes([jpg[i + 7], jpg[i + 8]]), u16::from_be_bytes([jpg[i + 5], jpg[i + 6]]))
     }
 }

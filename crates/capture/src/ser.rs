@@ -37,12 +37,17 @@ pub struct SerWriter {
 
 impl SerWriter {
     pub fn create(path: &Path, width: u32, height: u32, format: PixelFormat, instrument: &str, telescope: &str) -> Result<SerWriter> {
+        Self::create_color(path, width, height, format, None, instrument, telescope)
+    }
+
+    /// Like `create`, for a raw Bayer mosaic: the header carries the pattern so stacking software demosaics it.
+    pub fn create_color(path: &Path, width: u32, height: u32, format: PixelFormat, bayer: Option<rustflare_core::BayerPattern>, instrument: &str, telescope: &str) -> Result<SerWriter> {
         let mut w = BufWriter::new(File::create(path)?);
         let now = ticks(SystemTime::now());
         let mut h = Vec::with_capacity(HEADER_LEN);
         h.extend_from_slice(&fixed::<14>("LUCAM-RECORDER"));
         h.extend_from_slice(&0u32.to_le_bytes()); // camera series id
-        h.extend_from_slice(&0u32.to_le_bytes()); // colour id: mono
+        h.extend_from_slice(&bayer.map_or(0, |b| b.ser_color_id()).to_le_bytes()); // colour id: 0 mono, 8..11 Bayer
         h.extend_from_slice(&0u32.to_le_bytes()); // endianness flag, see module docs
         h.extend_from_slice(&width.to_le_bytes());
         h.extend_from_slice(&height.to_le_bytes());
@@ -116,5 +121,19 @@ mod tests {
         assert_eq!(u32::from_le_bytes(b[38..42].try_into().unwrap()), 3);
         assert_eq!(u32::from_le_bytes(b[26..30].try_into().unwrap()), 4); // width
         assert_eq!(u32::from_le_bytes(b[34..38].try_into().unwrap()), 16); // depth
+    }
+
+    #[test]
+    fn bayer_pattern_goes_into_the_colour_id() {
+        let dir = std::env::temp_dir().join(format!("rf-ser-bayer-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("c.ser");
+        let mut w = SerWriter::create_color(&path, 4, 2, PixelFormat::Mono8, Some(rustflare_core::BayerPattern::Gbrg), "cam", "scope").unwrap();
+        w.write_frame(&Frame::new(4, 2, PixelFormat::Mono8, vec![1; 8])).unwrap();
+        w.finalize().unwrap();
+        let b = std::fs::read(&path).unwrap();
+        assert_eq!(u32::from_le_bytes(b[18..22].try_into().unwrap()), 10);
+        std::fs::remove_file(&path).unwrap();
+        let _ = std::fs::remove_dir(&dir);
     }
 }

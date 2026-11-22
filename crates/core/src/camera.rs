@@ -54,6 +54,8 @@ pub trait Camera: Send {
     fn set_control(&mut self, id: &str, value: f64) -> Result<()>;
     /// Blocks until a frame (exposure + readout) is available or `timeout` elapses.
     fn capture(&mut self, timeout: Duration) -> Result<Frame>;
+    /// Colour filter layout when the sensor is a one-shot-colour one (frames are then raw Bayer mosaics).
+    fn bayer(&self) -> Option<crate::BayerPattern> { None }
     fn temperature_c(&mut self) -> Option<f64> { None }
     /// Physical pixel size in micrometres, if the driver knows it (used to compute the image scale).
     fn pixel_size_um(&self) -> Option<f64> { None }

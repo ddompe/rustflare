@@ -17,6 +17,45 @@ impl PixelFormat {
     }
 }
 
+/// Colour filter array layout of a one-shot-colour sensor, as seen from the top-left of the frame.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+pub enum BayerPattern {
+    Rggb,
+    Bggr,
+    Grbg,
+    Gbrg,
+}
+
+impl BayerPattern {
+    /// Channel (0 = R, 1 = G, 2 = B) at the four positions of a 2x2 block: (0,0), (1,0), (0,1), (1,1).
+    pub fn block(self) -> [usize; 4] {
+        match self {
+            BayerPattern::Rggb => [0, 1, 1, 2],
+            BayerPattern::Bggr => [2, 1, 1, 0],
+            BayerPattern::Grbg => [1, 0, 2, 1],
+            BayerPattern::Gbrg => [1, 2, 0, 1],
+        }
+    }
+    /// COLORID of the SER file format.
+    pub fn ser_color_id(self) -> u32 {
+        match self { BayerPattern::Rggb => 8, BayerPattern::Grbg => 9, BayerPattern::Gbrg => 10, BayerPattern::Bggr => 11 }
+    }
+    pub fn name(self) -> &'static str {
+        match self { BayerPattern::Rggb => "RGGB", BayerPattern::Bggr => "BGGR", BayerPattern::Grbg => "GRBG", BayerPattern::Gbrg => "GBRG" }
+    }
+    /// The pattern after dropping `dx` columns and `dy` rows from the left/top (an odd crop swaps the layout).
+    pub fn shifted(self, dx: u32, dy: u32) -> BayerPattern {
+        let b = self.block();
+        let at = |x: u32, y: u32| b[((y & 1) * 2 + (x & 1)) as usize];
+        match [at(dx, dy), at(dx + 1, dy), at(dx, dy + 1), at(dx + 1, dy + 1)] {
+            [0, 1, 1, 2] => BayerPattern::Rggb,
+            [2, 1, 1, 0] => BayerPattern::Bggr,
+            [1, 0, 2, 1] => BayerPattern::Grbg,
+            _ => BayerPattern::Gbrg,
+        }
+    }
+}
+
 /// A single monochrome image. Colour/Bayer sensors are out of scope for now:
 /// solar imaging is overwhelmingly done with mono cameras.
 #[derive(Clone, Debug)]
@@ -26,12 +65,14 @@ pub struct Frame {
     pub format: PixelFormat,
     pub data: Vec<u8>,
     pub captured_at: SystemTime,
+    /// Set for raw frames of a one-shot-colour sensor: `data` is then the undemosaiced mosaic.
+    pub bayer: Option<BayerPattern>,
 }
 
 impl Frame {
     pub fn new(width: u32, height: u32, format: PixelFormat, data: Vec<u8>) -> Frame {
         assert_eq!(data.len(), width as usize * height as usize * format.bytes_per_pixel());
-        Frame { width, height, format, data, captured_at: SystemTime::now() }
+        Frame { width, height, format, data, captured_at: SystemTime::now(), bayer: None }
     }
 
     #[inline]
@@ -111,5 +152,15 @@ mod tests {
         assert_eq!(f.pixel(0, 0), 65535);
         assert_eq!(f.pixel(1, 0), 0);
         assert_eq!(f.to_mono8(), vec![0xff, 0x00]);
+    }
+
+    #[test]
+    fn bayer_layouts_and_crop_shifts() {
+        assert_eq!(BayerPattern::Rggb.block(), [0, 1, 1, 2]);
+        assert_eq!(BayerPattern::Rggb.shifted(1, 0), BayerPattern::Grbg);
+        assert_eq!(BayerPattern::Rggb.shifted(0, 1), BayerPattern::Gbrg);
+        assert_eq!(BayerPattern::Rggb.shifted(1, 1), BayerPattern::Bggr);
+        assert_eq!(BayerPattern::Rggb.shifted(2, 2), BayerPattern::Rggb);
+        assert_eq!(BayerPattern::Bggr.ser_color_id(), 11);
     }
 }

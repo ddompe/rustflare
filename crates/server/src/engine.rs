@@ -479,7 +479,13 @@ impl Engine {
                 continue;
             }
             match self.camera.as_mut().unwrap().capture(Duration::from_secs(10)) {
-                Ok(frame) => self.on_frame(frame),
+                Ok(mut frame) => {
+                    frame.bayer = self.camera.as_ref().and_then(|c| c.bayer());
+                    if let Some(c) = self.status.camera.as_mut() {
+                        c.bayer = frame.bayer.map(|b| b.name());
+                    }
+                    self.on_frame(frame)
+                }
                 Err(e) => self.camera_failed(e),
             }
         }
@@ -1469,7 +1475,8 @@ impl Engine {
             }
         }
         self.camera_pixel_um = cam.pixel_size_um();
-        self.status.camera = Some(CameraStatus { driver: info.driver, id: info.id, name: info.name, controls, ..Default::default() });
+        let bayer = self.camera.as_ref().and_then(|c| c.bayer()).map(|b| b.name());
+        self.status.camera = Some(CameraStatus { driver: info.driver, id: info.id, name: info.name, controls, bayer, ..Default::default() });
         self.camera = Some(cam);
         self.refresh_roi();
         Ok(())
@@ -2082,7 +2089,7 @@ impl Engine {
                         f.exposure_used = exp;
                         let path = f.stem.with_extension("ser");
                         let cam = self.status.camera.as_ref().map(|c| c.name.clone()).unwrap_or_default();
-                        let r = std::fs::create_dir_all(path.parent().unwrap()).map_err(s).and_then(|_| SerWriter::create(&path, frame.width, frame.height, frame.format, &cam, "Rustflare flats").map_err(s));
+                        let r = std::fs::create_dir_all(path.parent().unwrap()).map_err(s).and_then(|_| SerWriter::create_color(&path, frame.width, frame.height, frame.format, frame.bayer, &cam, "Rustflare flats").map_err(s));
                         match r {
                             Ok(writer) => {
                                 f.phase = FlatPhase::Collect { writer, acc: FlatAccumulator::new(frame.width, frame.height, frame.format) };

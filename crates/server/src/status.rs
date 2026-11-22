@@ -13,6 +13,8 @@ pub struct CameraStatus {
     pub height: u32,
     pub bits: u32,
     pub fps: f64,
+    /// Colour filter layout of a one-shot-colour camera ("RGGB" ...); frames are raw mosaics. None for mono.
+    pub bayer: Option<&'static str>,
     /// Mean level, 0..1 of full scale.
     pub mean: f64,
     /// Fraction of (subsampled) pixels at full scale: clipping indicator.

@@ -66,6 +66,11 @@ pub fn encode(frame: &Frame, meta: &FitsMeta) -> Vec<u8> {
         cards.push(card("BSCALE", "1", ""));
     }
     cards.push(card("DATE-OBS", &format!("'{}'", iso8601(frame.captured_at)), "UTC, start of frame readout (approx.)"));
+    if let Some(b) = frame.bayer {
+        cards.push(text_card("BAYERPAT", b.name()));
+        cards.push(card("XBAYROFF", "0", ""));
+        cards.push(card("YBAYROFF", "0", ""));
+    }
     cards.push(text_card("SWCREATE", "Rustflare"));
     if let Some(i) = &meta.instrument {
         cards.push(text_card("INSTRUME", i));
@@ -150,5 +155,13 @@ mod tests {
         let b = encode(&f, &FitsMeta::default());
         assert!(std::str::from_utf8(&b[..2880]).unwrap().contains("BITPIX  =                    8"));
         assert_eq!(&b[2880..2882], &[7, 9]);
+    }
+
+    #[test]
+    fn bayer_pattern_is_in_the_header() {
+        let mut f = Frame::new(2, 2, PixelFormat::Mono16, vec![0; 8]);
+        f.bayer = Some(rustflare_core::BayerPattern::Rggb);
+        let b = encode(&f, &FitsMeta::default());
+        assert!(std::str::from_utf8(&b[..2880]).unwrap().contains("BAYERPAT= 'RGGB"));
     }
 }

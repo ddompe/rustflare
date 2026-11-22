@@ -81,6 +81,21 @@ impl Camera for PoaCam {
         }
     }
 
+    fn bayer(&self) -> Option<rustflare_core::BayerPattern> {
+        use playerone_sdk::BayerPattern as B;
+        let p = self.cam.properties();
+        if !p.is_color_camera {
+            return None;
+        }
+        match p.bayer_pattern {
+            B::RG => Some(rustflare_core::BayerPattern::Rggb),
+            B::BG => Some(rustflare_core::BayerPattern::Bggr),
+            B::GR => Some(rustflare_core::BayerPattern::Grbg),
+            B::GB => Some(rustflare_core::BayerPattern::Gbrg),
+            B::MONO => None,
+        }
+    }
+
     fn controls(&mut self) -> Result<Vec<ControlDesc>> {
         let b = self.cam.config_bounds();
         let (exp, _) = self.cam.exposure().map_err(err)?;

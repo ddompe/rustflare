@@ -81,6 +81,8 @@ pub(crate) struct Prop {
     pub max_w: i32,
     pub max_h: i32,
     pub is_color: bool,
+    /// ASI_BAYER_PATTERN: 0 RG, 1 BG, 2 GR, 3 GB.
+    pub bayer: i32,
     pub pixel_size_um: f64,
 }
 
@@ -238,6 +240,7 @@ impl Sdk for RealSdk {
             max_w: i.max_width as i32,
             max_h: i.max_height as i32,
             is_color: i.is_color != 0,
+            bayer: i.bayer,
             pixel_size_um: i.pixel_size,
         })
     }
@@ -352,9 +355,6 @@ fn open_with(s: Arc<dyn Sdk>, id: &str) -> Result<AsiCam> {
         .filter_map(|i| s.property(i).ok())
         .find(|p| p.id == want)
         .ok_or_else(|| Error::NotFound(format!("ASI camera {id}")))?;
-    if prop.is_color {
-        return Err(Error::Unsupported("colour ASI cameras are not supported yet (mono only)".into()));
-    }
     s.open(want).map_err(|c| err("open (is another program using the camera?)", c))?;
     let setup = (|| {
         s.init(want).map_err(|c| err("init", c))?;
@@ -384,6 +384,14 @@ struct AsiCam {
 }
 
 impl AsiCam {
+    fn bayer_pattern(&self) -> Option<rustflare_core::BayerPattern> {
+        use rustflare_core::BayerPattern as B;
+        if !self.prop.is_color {
+            return None;
+        }
+        Some(match self.prop.bayer { 1 => B::Bggr, 2 => B::Grbg, 3 => B::Gbrg, _ => B::Rggb })
+    }
+
     fn stop_stream(&mut self) {
         if self.streaming {
             self.sdk.stop_video(self.prop.id);
@@ -403,6 +411,8 @@ impl Drop for AsiCam {
 }
 
 impl Camera for AsiCam {
+    fn bayer(&self) -> Option<rustflare_core::BayerPattern> { self.bayer_pattern() }
+
     fn info(&self) -> CameraInfo { info_of(&self.prop) }
 
     fn controls(&mut self) -> Result<Vec<ControlDesc>> {
@@ -461,7 +471,11 @@ impl Camera for AsiCam {
         }
         let mut buf = vec![0u8; w * h * bpp];
         match self.sdk.video_data(self.prop.id, &mut buf, timeout.as_millis().min(i32::MAX as u128) as i32) {
-            Ok(()) => Ok(Frame::new(w as u32, h as u32, pf, buf)),
+            Ok(()) => {
+                let mut f = Frame::new(w as u32, h as u32, pf, buf);
+                f.bayer = self.bayer_pattern();
+                Ok(f)
+            }
             Err(c) => {
                 if c != ASI_ERROR_TIMEOUT {
                     self.stop_stream(); // re-arm on the next call
@@ -506,7 +520,7 @@ mod tests {
         fn num_cameras(&self) -> i32 { 1 }
         fn property(&self, i: i32) -> std::result::Result<Prop, i32> {
             if i != 0 { return Err(1); }
-            Ok(Prop { name: "ZWO ASI174MM Mini".into(), id: 0, max_w: 4, max_h: 2, is_color: self.color, pixel_size_um: 5.86 })
+            Ok(Prop { name: "ZWO ASI174MM Mini".into(), id: 0, max_w: 4, max_h: 2, is_color: self.color, bayer: 0, pixel_size_um: 5.86 })
         }
         fn open(&self, _: i32) -> std::result::Result<(), i32> {
             if self.state.lock().unwrap().fail_open { Err(5) } else { Ok(()) }
@@ -623,7 +637,9 @@ mod tests {
         drop(cam(&f));
         assert!(f.state.lock().unwrap().closed);
         let colour = Arc::new(Fake { color: true, ..Default::default() });
-        assert!(matches!(open_with(colour, "0"), Err(Error::Unsupported(_))));
+        let mut c = open_with(colour, "0").unwrap();
+        assert_eq!(c.bayer(), Some(rustflare_core::BayerPattern::Rggb));
+        assert_eq!(c.capture(Duration::from_secs(1)).unwrap().bayer, Some(rustflare_core::BayerPattern::Rggb));
     }
 
     #[test]

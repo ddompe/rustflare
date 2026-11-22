@@ -263,7 +263,7 @@ impl Active {
                         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
                     }
                     let name = if self.parts > 1 { format!("{} (part {})", self.spec.instrument, self.parts) } else { self.spec.instrument.clone() };
-                    self.ser = Some(SerWriter::create(&p, f.width, f.height, f.format, &name, "Rustflare").map_err(|e| e.to_string())?);
+                    self.ser = Some(SerWriter::create_color(&p, f.width, f.height, f.format, f.bayer, &name, "Rustflare").map_err(|e| e.to_string())?);
                 }
                 self.ser.as_mut().unwrap().write_frame(f).map_err(|e| e.to_string())?;
             }
