@@ -1,0 +1,33 @@
+{
+  "camera": "Simulated solar camera",
+  "controls": {
+    "exposure_us": 2000.0,
+    "gain": 100.0,
+    "high_bit_depth": 1.0,
+    "offset": 10.0,
+    "sim_defocus": 0.0,
+    "sim_scene": 0.0,
+    "sim_zoom": 0.9
+  },
+  "details": {
+    "burst": 3,
+    "dropped_frames": 0,
+    "duration_s": 0.435772292,
+    "format": "ser",
+    "frames": 10,
+    "name": "rv",
+    "of": 100,
+    "stopped_early": null
+  },
+  "kind": "sequence",
+  "mount": "Simulated mount",
+  "mount_tracking": true,
+  "tracking": {
+    "lost": false,
+    "mode": "limb",
+    "radius": 268.2637205670511,
+    "x": 615.0951031521762,
+    "y": 472.49484368130186
+  },
+  "written_utc": "2026-11-22T18:16:05.600081+00:00"
+}

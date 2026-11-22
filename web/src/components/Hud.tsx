@@ -39,7 +39,8 @@ const defaults = (on: boolean): Layout => ({
   // so the two can never overlap whatever height the picture has
   mask: { on: true, fx: on ? 0.5 : 1, fy: on ? 0.5 : 0.6, min: false },
   focus: { on: true, fx: 0, fy: on ? 0.22 : 0.3, min: !on }, // phones: a one-line score, tap for the graph
-  flip: { on: true, fx: 0.5, fy: 0.1, min: false },
+  // phones: the status bar says it (and the widget shows in Hide controls mode); wide screens: low in the middle
+  flip: { on, fx: 0.5, fy: on ? 0.92 : 0.1, min: false },
 })
 
 const small = () => typeof matchMedia === 'function' && matchMedia('(max-width: 699px), (max-height: 520px)').matches
@@ -241,7 +242,8 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
     )
   }
   const af = status.auto_flip
-  if (w('flip').on && af && af.enabled && af.message) {
+  const hidden = typeof document !== 'undefined' && !!document.querySelector('.app[data-full]') // Hide controls: no status bar, so show it
+  if ((w('flip').on || hidden) && af && af.enabled && af.message) {
     out.push(
       <Widget key="flip" id="flip" label="Meridian flip" w={w('flip')} api={api}
         mini={<span>Flip <b className="cv">{af.stage === 'flipping' ? 'now' : af.stage}</b></span>}>

@@ -50,7 +50,7 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
           <button type="button" onClick={() => api('POST', '/capture/single', {}).catch(() => {})}>Snap</button>
         </div>
       )}
-      {!recording && c?.paused && (
+      {!recording && c?.paused && !hideRec && (
         <div className="recbar" role="status">
           <div className="rec-text"><b>Recording paused</b> <span className="muted rec-sub">{c.paused_reason ?? ''}</span></div>
           {c.paused_reason === 'paused by you' && <button type="button" className="quick-rec" onClick={() => api('POST', '/capture/resume').catch(() => {})}>Resume</button>}

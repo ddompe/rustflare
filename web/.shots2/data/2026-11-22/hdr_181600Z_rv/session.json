@@ -1,0 +1,45 @@
+{
+  "camera": "Simulated solar camera",
+  "controls": {
+    "exposure_us": 2000.0,
+    "gain": 100.0,
+    "high_bit_depth": 1.0,
+    "offset": 10.0,
+    "sim_defocus": 0.0,
+    "sim_scene": 0.0,
+    "sim_zoom": 0.9
+  },
+  "details": {
+    "cycles": 50,
+    "kind": "hdr",
+    "lanes": [
+      {
+        "exposure_us": 2000.0,
+        "frames": 10,
+        "gain": null,
+        "mask_disc": false,
+        "name": "disc",
+        "seconds": null
+      },
+      {
+        "exposure_us": 20000.0,
+        "frames": 5,
+        "gain": null,
+        "mask_disc": false,
+        "name": "prom",
+        "seconds": null
+      }
+    ]
+  },
+  "kind": "lane-session",
+  "mount": "Simulated mount",
+  "mount_tracking": true,
+  "tracking": {
+    "lost": false,
+    "mode": "limb",
+    "radius": 268.2637205670511,
+    "x": 610.7556231322659,
+    "y": 475.10138733090844
+  },
+  "written_utc": "2026-11-22T18:16:00.115496+00:00"
+}

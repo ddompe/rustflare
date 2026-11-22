@@ -1098,8 +1098,11 @@ impl Engine {
                 format!("Meridian flip, {secs} s: {what}.{}", if resume { " The recording is paused and resumes afterwards." } else { "" })
             }
             ("done", _) if resume && self.resume_at.is_some() => "Meridian flip done: resuming the recording in a moment.".to_string(),
-            ("recorded", Some(m)) => format!("Meridian flip: position recorded. {} flip {}.", if resume || matches!(self.job, Job::Capture(_)) { "The recording pauses and resumes by itself;" } else { "Automatic;" }, if m > 0.0 { format!("in {:.0} min", m + self.auto_flip.flip_min) } else { format!("{:.0} s after the meridian", self.auto_flip.flip_min * 60.0 + m * 60.0).replace("-", "") }),
-            ("waiting", Some(m)) if m <= 15.0 && m > 0.0 => format!("Meridian flip in {m:.0} min (automatic: the position is recorded {:.0} min before).", self.auto_flip.record_min),
+            ("recorded", Some(m)) => {
+                let when = if m + self.auto_flip.flip_min > 0.5 { format!("in {:.0} min", m + self.auto_flip.flip_min) } else { "any moment".to_string() };
+                format!("Meridian flip {when}: position recorded{}.", if resume || matches!(self.job, Job::Capture(_)) { "; the recording pauses and resumes by itself" } else { "" })
+            }
+            ("waiting", Some(m)) if m <= 15.0 && m > 0.0 => format!("Meridian flip in {m:.0} min (automatic; the position is recorded {:.0} min before).", self.auto_flip.record_min),
             _ => String::new(),
         };
         self.status.auto_flip = AutoFlipStatus {

@@ -1,0 +1,64 @@
+{
+  "capture": "idle",
+  "coronagraph": {
+    "enabled": false,
+    "scale": 1.03
+  },
+  "engine": {
+    "auto_flip": {
+      "done": false,
+      "enabled": true,
+      "recorded": true
+    },
+    "calibration_generation": 0,
+    "dead_reckoning": false,
+    "flip_phase": null,
+    "fps": 25.22894944033193,
+    "guide_hold": null,
+    "job": "idle",
+    "lanes": null,
+    "learned_drift_px_s": null,
+    "lost": false,
+    "lost_saved": 0,
+    "mount_tracking": true,
+    "save_lost_frames": true,
+    "seconds_since_exposure_change": 17.974354333,
+    "sun_for_mask": [
+      607.9686417347936,
+      476.8500199104827,
+      268.2637205670511
+    ],
+    "sun_held": false,
+    "tracker_position": {
+      "radius": 268.2637205670511,
+      "x": 609.0757439467072,
+      "y": 476.1548675927439
+    },
+    "unguided_drift_px_s": null
+  },
+  "exposure_us": 2000.0,
+  "frame": {
+    "h": 960,
+    "mean": 0.30989825133198545,
+    "saturated": 0.0,
+    "w": 1280
+  },
+  "gain": 100.0,
+  "guiding": "off",
+  "lane": null,
+  "seconds_since_exposure_change": 17.974349667,
+  "sun": {
+    "partial": true,
+    "r": 268.2637205670511,
+    "x": 607.9686417347936,
+    "y": 476.8500199104827
+  },
+  "time_utc": "2026-11-22T18:15:49.496167+00:00",
+  "tracking": {
+    "mode": "limb",
+    "radius": 268.2637205670511,
+    "x": 607.9686417347936,
+    "y": 476.8500199104827
+  },
+  "why": "no usable limb arc found (is part of the solar edge in frame?)"
+}

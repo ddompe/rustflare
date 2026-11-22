@@ -25,8 +25,10 @@ export function Progress({ status, onStop }: { status: Status; onStop: () => voi
         </>
       )}
       <div className="hint-text">{c.done}{c.total != null ? ` / ${c.total}` : ''} frames {c.file && `· ${c.file}`}</div>
-      {['sequence', 'bursts'].includes(c.state) && <button type="button" className="wide big" onClick={() => { api('POST', '/capture/pause').catch(() => {}) }}>Pause recording</button>}
-      {active && <button type="button" className="danger wide big" onClick={onStop}>Stop recording</button>}
+      <div className="btnrow">
+        {['sequence', 'bursts'].includes(c.state) && <button type="button" className="grow big" onClick={() => { api('POST', '/capture/pause').catch(() => {}) }}>Pause</button>}
+        {active && <button type="button" className="danger grow big" onClick={onStop}>Stop recording</button>}
+      </div>
     </div>
   )
 }

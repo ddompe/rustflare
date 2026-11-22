@@ -131,12 +131,13 @@ function StatusBar({ status, connected }: { status: Status | null; connected: bo
   let tone: 'bad' | 'warn' | '' = ''
   let text = ''
   if (!connected && !status) { tone = 'warn'; text = 'Connecting to the RustFlare server…' }
-  else if (status?.error) { tone = 'bad'; text = status.error }
-  else if (status?.auto_flip?.message && status.auto_flip.stage !== 'off') { tone = 'warn'; text = status.auto_flip.message }
+  else if (status?.error && !(lost && /^tracking lost/i.test(status.error))) { tone = 'bad'; text = status.error }
+  else if (status?.auto_flip?.message && (status.auto_flip.stage === 'flipping' || status.auto_flip.stage === 'done')) { tone = 'warn'; text = status.auto_flip.message } // an active flip explains everything else
   else if (lost && status?.guiding?.dead_reckoning) { tone = 'warn'; text = 'Sun not visible: guiding goes on from the measured drift to keep the framing.' }
   else if (lost) { tone = 'bad'; text = held ? 'Target lost: guiding is paused and resumes by itself when the limb is back in view.' : 'Target lost: slew it back into view (Aim) or restart tracking.' }
   else if (held) { tone = 'warn'; text = 'Guiding is paused until the target is found again.' }
   else if (status?.sun_held) { tone = 'warn'; text = 'Sun hidden or unclear (cloud?): holding its last position.' }
+  else if (status?.auto_flip?.message && status.auto_flip.stage !== 'off') { tone = 'warn'; text = status.auto_flip.message }
   return (
     <div className={`sbar ${tone}`} role="status" aria-live="polite">
       <button type="button" className="sbar-btn" disabled={!text} aria-expanded={open} onClick={() => setOpen(!open)}>

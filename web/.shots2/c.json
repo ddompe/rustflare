@@ -1,0 +1,20 @@
+{
+  "auto_flip": {
+    "enabled": true,
+    "flip_min": 1.0,
+    "record_min": 5.0
+  },
+  "coronagraph": {
+    "enabled": false,
+    "scale": 1.03
+  },
+  "site": {
+    "latitude": 40.0,
+    "longitude": -98.61215799856828
+  },
+  "ui": {
+    "camera.selected": "simulator|sim0",
+    "mount.device": "/dev/ttyACM0",
+    "ui.tab": "camera"
+  }
+}
