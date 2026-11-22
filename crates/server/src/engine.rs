@@ -1365,6 +1365,8 @@ impl Engine {
 
     fn on_frame(&mut self, frame: Frame) {
         let now = Instant::now();
+        let t_frame = now;
+        let ema = |old: f64, new: f64| if old == 0.0 { new } else { 0.95 * old + 0.05 * new };
         if let Some(prev) = self.last_frame_at.replace(now) {
             let inst = 1.0 / now.duration_since(prev).as_secs_f64().max(1e-3);
             self.fps_ema = if self.fps_ema == 0.0 { inst } else { 0.9 * self.fps_ema + 0.1 * inst };
@@ -1374,6 +1376,7 @@ impl Engine {
         let mut mean = self.last_mean;
         if now.duration_since(self.last_analysis) >= Duration::from_millis(100) {
             self.last_analysis = now;
+            let t_an = Instant::now();
             mean = frame.mean_fraction();
             self.last_mean = mean;
             let refresh_temp = self.last_temp.elapsed() > Duration::from_secs(3);
@@ -1392,13 +1395,18 @@ impl Engine {
                     c.temperature_c = temp;
                 }
             }
+            let t_loc = Instant::now();
             let sun = locate_sun(&frame, self.radius_hint());
+            self.status.perf.locate_ms = ema(self.status.perf.locate_ms, t_loc.elapsed().as_secs_f64() * 1000.0);
             self.learn_radius(sun.as_ref());
             self.corona.lock().unwrap().sun = sun.as_ref().map(|s| (s.pos.x, s.pos.y, s.radius));
             self.status.sun = sun;
             self.step_tracking(&frame, now);
             self.log_session(&frame, now);
+            let t_cl = Instant::now();
             self.last_frame = Some(frame.clone());
+            self.status.perf.clone_ms = ema(self.status.perf.clone_ms, t_cl.elapsed().as_secs_f64() * 1000.0);
+            self.status.perf.analysis_ms = ema(self.status.perf.analysis_ms, t_an.elapsed().as_secs_f64() * 1000.0);
         }
         if let Some(c) = self.status.camera.as_mut() {
             c.fps = self.fps_ema;
@@ -1408,10 +1416,15 @@ impl Engine {
             let _ = self.preview_tx.try_send(frame.clone());
         }
         // The frame is moved (not copied) into the recording path.
+        let t_job = Instant::now();
         self.step_job(frame, mean);
+        self.status.perf.job_ms = ema(self.status.perf.job_ms, t_job.elapsed().as_secs_f64() * 1000.0);
         if self.last_publish.elapsed() >= Duration::from_millis(150) {
+            let t_pub = Instant::now();
             self.publish();
+            self.status.perf.publish_ms = ema(self.status.perf.publish_ms, t_pub.elapsed().as_secs_f64() * 1000.0);
         }
+        self.status.perf.frame_ms = ema(self.status.perf.frame_ms, t_frame.elapsed().as_secs_f64() * 1000.0);
     }
 
     fn step_tracking(&mut self, frame: &Frame, now: Instant) {

@@ -170,6 +170,21 @@ pub struct SessionLogStatus {
     pub file: Option<String>,
 }
 
+/// Where the engine thread spends its time (smoothed milliseconds per occurrence), for performance work.
+#[derive(Clone, Serialize, Default)]
+pub struct PerfStatus {
+    /// Whole `on_frame` (every camera frame).
+    pub frame_ms: f64,
+    /// The ~10 Hz analysis block: statistics, histogram, Sun location, tracking.
+    pub analysis_ms: f64,
+    pub locate_ms: f64,
+    /// Cloning the frame for the preview thread and for `last_frame`.
+    pub clone_ms: f64,
+    /// Recording path (`step_job`).
+    pub job_ms: f64,
+    pub publish_ms: f64,
+}
+
 #[derive(Clone, Serialize)]
 pub struct RoiStatus {
     pub x: u32,
@@ -201,6 +216,7 @@ pub struct CoronagraphStatus {
 pub struct Status {
     pub coronagraph: CoronagraphStatus,
     pub darks: DarksStatus,
+    pub perf: PerfStatus,
     /// Region of interest of the open camera (None: no camera or not supported).
     pub roi: Option<RoiStatus>,
     pub session_log: SessionLogStatus,
@@ -229,6 +245,7 @@ impl Default for Status {
         Status {
             session_log: SessionLogStatus { enabled: false, lines: 0, frames: 0, bytes: 0, file: None },
             roi: None,
+            perf: PerfStatus::default(),
             darks: DarksStatus { available: false, applied: false, name: None, exposure_us: None, gain: None, matches_camera: false },
             coronagraph: CoronagraphStatus { enabled: false, scale: 1.03 },
             guide_params: GuideParamsStatus { window_s: 10.0, deadband_px: 3.0, gain: 0.7, speed: 0.2, fast_speed: 0.8, fast_above_px: 20.0 },

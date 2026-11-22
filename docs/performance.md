@@ -20,7 +20,7 @@ Total about 60 % of one core out of four: plenty of headroom while recording (th
 
 - **Buffer reuse**: the server sets glibc's `M_MMAP_THRESHOLD` to 128 MB, so multi-megabyte frame buffers stay on the heap and are reused instead of being mmapped, page-faulted and unmapped for every frame. A Pi measurement before and after is on the hardware checklist (close the phone tab first).
 
-## Not done yet (issue #67)
+## Earlier notes (issue #67)
 
 - A Pi 5 specific build (`-C target-cpu=cortex-a76`): safe only if Pi 4 and older are not supported; keep the generic build as the default and offer a Pi 5 flavour if profiling on the Pi shows a win.
 - Reusing the JPEG and gray buffers, and moving the tracker's per-frame passes to strided sampling.
@@ -35,3 +35,22 @@ Total about 60 % of one core out of four: plenty of headroom while recording (th
 | 25 %, 480x368 | 153 |
 
 At 50 % the frame rate is limited by the exposure (6.46 ms at the current setting, about 155 fps), not by USB: the full frame is limited by the USB 3 readout (~326 MB/s). A shorter exposure would raise the small-frame rate further. ROI is centred (Camera > Frame size); Player One and the simulator support it, ZWO ASI is not done yet (the driver needs `ASISetStartPos`).
+
+## Second pass (Pi 5, 2026-11-21 evening, full frame 1944x1472 at 57 fps, nobody connected)
+
+Per thread (`top -H`), share of one core:
+
+| Thread | No viewer | One viewer | Note |
+|---|---|---|---|
+| `engine` | 17 % | 20 % | frame loop: camera read plus `on_frame` |
+| `engine` (second) | 15 % | 15 % | not ours: a thread created by the Player One SDK (it inherits the name); USB bulk transfers (326 MB/s through libusb) |
+| `preview` | 0 % | 13 % | JPEG encode at <= 15 fps, only while someone watches |
+| Total | **33 %** | **46 %** | of one of four cores; was ~55 % before the viewer-only preview |
+
+`status.perf` (new) reports where the engine's own time goes, in smoothed milliseconds: `frame_ms` 0.9 per frame on average (about 5 % of a core at 57 fps), `analysis_ms` 5.1 per analysis (10 per second: statistics, histogram, Sun location, tracking), `locate_ms` 1.6, `clone_ms` 1.4 (the copy of the frame kept for centring/flats), `job_ms` ~0 when not recording, `publish_ms` 0.08.
+
+Conclusions:
+
+- Our own per-frame processing is small (about 5 % of a core). The rest of the engine thread (about 12 %) is the camera read: allocating and filling the 5.7 MB buffer per frame. The largest single item is the SDK's USB thread, which we cannot change.
+- The remaining software savings are small (the 1.4 ms frame copy at 10 Hz is about 1.4 % of a core; the Sun location about 1.6 %), so `Arc<Frame>` sharing and a Pi 5 `cortex-a76` build were measured on paper only and **not done**: the expected gain is a few percent, the risk (touching every `Frame` user, a CPU-specific binary that breaks Pi 4) is not worth it while the headroom is this large (about 3.5 of 4 cores idle while recording at full rate).
+- If more headroom is ever needed, the options in order of benefit: a lower default preview rate on phones (the preview costs 13 % at 15 fps), a pooled frame buffer shared with the camera driver, then the CPU-specific build.
