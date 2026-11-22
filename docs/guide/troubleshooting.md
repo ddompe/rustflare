@@ -34,6 +34,14 @@ On purpose: RustFlare never switches the mount's tracking on by itself. Use Go t
 - *Target lost*: the tracker keeps retrying; guiding pauses until it recovers.
 - The Sun's measured size disagrees with Optics: check the focal length and Barlow factor, then use *Use measured*.
 
+### The Sun jumps, or tracking is lost in shadows and cloud
+
+Brief losses (under 2 seconds) are ignored. Longer ones show in the status bar; guiding goes on from the measured drift if it can, and resumes by itself. If the Sun really moved a long way and came back, read the mount log: see [Debugging and logs](../reference/debugging.md#reading-them).
+
+### The mount stopped tracking past the meridian
+
+The AM3 stops tracking at its own limit past the meridian (about 19 minutes on 2026-11-22 with the flip off). Flip before then: [Meridian flip](aim.md#meridian-flip). A *Go to Sun* sent afterwards makes the mount turn over, and the Sun then has to be centred by hand.
+
 ## Recording and storage
 
 - *Storage not available*: the drive is not mounted. Reconnect it or choose another in More > Storage.

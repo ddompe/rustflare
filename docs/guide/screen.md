@@ -18,6 +18,11 @@ Overlays sit on the picture, are semi-transparent and can be dragged anywhere. T
 - **Recording** and **RAM buffer**: appear while recording.
 - **Guiding**: the average error and a one-minute graph while guiding.
 - **Histogram**.
+- **Mask size**: with the Prominence view on, a slider for the size of the black disc (90 to 120 % of the Sun's radius). It starts over the middle of the picture, which the mask blacks out anyway; drag it elsewhere if you like. The same size is used for a prominence lane that records with the coronagraph.
+- **Focus score**: with Focus assist on, the score, the best so far and a short history. On a phone it starts as one line; tap it for the graph.
+- **Meridian flip**: appears when the automatic flip is on and the Sun is within 15 minutes of the meridian, and while it flips. It says what is going on and whether a recording is paused.
+
+The **eye** button in the picture's tool column hides every drawn overlay (crosshair, rings, Sun marks) so you see the bare image. In display settings the Sun edge circle and the centre dot with its arrow are separate switches.
 
 The slider button opens display settings: auto-stretch, brightness, contrast, gamma, colour tint and bullseye. These change only what you see, never what is recorded.
 
@@ -31,13 +36,13 @@ The round **Prominence view** button in the picture's tool column blacks out the
 
 **Hide controls** (top right) hides the header, the panel and the tabs so only the live view and its tools remain. **Show controls** brings them back. Rotate the phone to landscape for the largest picture, and pinch to zoom.
 
-## Problems
+## The status bar
 
-A red banner shows the last problem (camera error, lost target, storage unavailable, mount error, lost mount link). See [Troubleshooting](troubleshooting.md).
+One line at the bottom of the screen, always there, so a message appearing never moves the controls. It shows the last problem (camera error, lost target, storage unavailable, mount error, lost mount link), a lost target ("guiding is paused and resumes by itself", or "guiding goes on from the measured drift" while the Sun is hidden), or what the meridian flip is doing. Tap a long message to read all of it. When there is nothing to say it reads *Ready*. See [Troubleshooting](troubleshooting.md).
 
-## Header: STOP, theme and Hide controls
+## Header: Files, theme and Hide controls
 
-With a mount connected, a red **STOP** in the header stops the mount from any tab. The sun or moon button switches between the night theme (dark, easy on dark-adapted eyes) and a **daylight theme** (light, high contrast, for bright sun on a phone screen); the image stays black in both. **Hide controls** shows the image only.
+**Files** opens the [file manager](record.md#captures-file-manager) from any tab. The sun or moon button switches between the night theme (dark, easy on dark-adapted eyes) and a **daylight theme** (light, high contrast, for bright sun on a phone screen); the image stays black in both. **Hide controls** shows the image only.
 
 ## Quick capture
 

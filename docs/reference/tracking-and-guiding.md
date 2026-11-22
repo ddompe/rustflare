@@ -26,18 +26,37 @@ The factor printed on a Barlow or reducer is only nominal. It holds for one spac
 
 This needs the telescope's native focal length and the camera's pixel size (reported by the camera) to be entered correctly, and some limb in view. API: `status.optics.measured_radius_px`, `suggested_effective_focal_mm`, `suggested_multiplier`.
 
+## One model of where the Sun is
+
+Everything that needs the Sun's position uses one model: the Sun outline, the tracking circle, the coronagraph mask and the guider. It is a smoothed centre and radius with a drift velocity, corrected only by measurements that agree with the prediction:
+
+- a measurement close to the prediction counts in full, one further away counts less, one far away is set aside (shadows, cloud, a flapping fit),
+- if the set-aside measurements keep agreeing with each other for a while the Sun really moved (a slew, a re-aim) and the model re-locks there,
+- the drift is the least-squares slope of the last 90 s of accepted measurements, and a long-term drift is learned in good conditions (it turns over with a meridian flip),
+- with no usable measurement at all it keeps predicting, so the mask survives a cloud, a tree or an eclipse.
+
+The detector under it is brightness-independent: dim frames are brightened after removing the sensor's black level, the limb is the edge between the black sky and anything brighter (shadows included), and the limb points are filtered by RANSAC so a shadow edge cannot pull the circle. Light that drops a hundredfold in seconds (palm-tree shadows, measured on 2026-11-22) still gives the same circle.
+
 ## Calibration
 
-**Yes: the mount's axes have to be mapped to the image once.** Which way "RA+" moves the image depends on how the camera is rotated on the scope, so RustFlare measures it instead of assuming. With solar tracking on, RustFlare guides the primary axis at 0.5× sidereal for 4 s, waits 1 s, and measures how the tracked position moved; then the same for the secondary axis. The two unit vectors give the image→axes matrix. It fails with a message if the image moves less than 5 px, or if the axes come out nearly parallel. The result is shown in the Tracking panel (the image direction of RA+ and Dec+) so you can sanity-check it.
+**Yes: the mount's axes have to be mapped to the image once.** Which way "RA+" moves the image depends on how the camera is rotated on the scope, so RustFlare measures it instead of assuming. With solar tracking on, it looks at the Sun for 1.5 s, guides the primary axis at 0.5× sidereal for 4 s, waits 1.5 s, and measures how the position moved; then the same for the secondary axis. Start and end positions are **medians** of the last second or so, so one bad frame cannot spoil it. The two unit vectors give the image→axes matrix and the two rates (image pixels per second at 1× sidereal). It fails with a message if the image moves less than 5 px, or if the axes come out nearly parallel. The result is shown in the Tracking panel.
 
-**When to recalibrate.** The mapping is fixed while the camera orientation and the mount's configuration stay the same. Redo it after rotating the camera or diagonal, after a **meridian flip** (the directions reverse), and, if the AM3 is used in **alt-az mode**, periodically, because field rotation changes the mapping as the Sun moves. Disconnecting the mount discards it. The manual slew pad needs no calibration (it drives the axes directly).
+**The mount ends a guide command by itself after 3 seconds** (the AM3 takes `:Mge3000#`-style timed pulses). The calibrator therefore re-issues its move every 2.5 s; before 2026-11-22 it held one command for 4 s and under-read the rates by a quarter.
 
-**ZWO AM3 notes.** The AM3 has a single guide rate (0.1–0.9× sidereal), so both axes guide at the same speed; calibration uses 0.5×. At the guide rate the image moves 0.5 × 15″/s ≈ 7.5″/s, so a 4 s calibration pulse moves it ≈ 30″: at 1″/px that is 30 px, comfortably above the 5 px minimum; at coarse scales (> 5″/px) it may be too small.
+**When to recalibrate.** Redo it after rotating the camera or diagonal, after a **meridian flip** (the directions turn over: the real mount's image rotated by about 209 degrees), and, in alt-az mode, periodically. Disconnecting the mount discards it.
+
+**ZWO AM3 notes.** The AM3 has a single guide rate (0.1–0.9× sidereal), so both axes guide at the same speed; calibration uses 0.5×. Measured on the real mount: about 15–19 px/s per 1× on the primary axis and 8–14 on the secondary at 0.78″/px.
 
 ## Guiding
 
-Every measurement: if the target is more than 5 px away on either axis, send a guide command along the (matrix-transformed, normalised) error direction at 0.5× sidereal and re-check after 1 s; once within margin, stop and re-check every 2 s. The strength of the correction can be tuned under *Guiding settings* in the Track tab.
+The guider corrects the mount's drift, not the seeing: it averages the position over a window (10 s), ignores offsets inside a dead band (3 px) and sends gentle pulses (0.2× sidereal; 0.8× while the offset is over 20 px), one axis at a time, then waits for a fresh average. Pulses are chained commands of at most 2.5 s each, because the mount stops a longer one by itself.
+
+- **It only sees trusted positions.** Measurements the Sun model rejects never reach it.
+- **Drift feed-forward.** While guiding works, the guider learns the mount's *unguided* drift (position minus the motion its own pulses caused, over the last few minutes). Corrections then aim where the Sun will be half-way to the next judgement, so a steady drift does not leave a steady offset.
+- **Dead reckoning.** If the Sun cannot be seen (cloud, trees, an eclipse) and the drift is known, the guider keeps running on the last good position moved on by that drift and by its own pulses. It gives up and pauses after 15 minutes or 300 px of corrections.
+- **Lane recordings.** Only the shortest non-masked lane (the disc lane) is measured, in short bursts with long gaps. The guider averages each burst and judges once when it ends; the pulse then runs during the long-exposure lane. A large offset (over 40 px) must be seen in two bursts before it is acted on, because the scope has been seen sliding hundreds of pixels and coming back on its own. The long-exposure frames move the Sun model between bursts by their frame-to-frame displacement, so the outline and the mask stay on the image.
+- **Tuning** is under *Guiding settings* in the Track tab.
 
 ## Status
 
-The logic is tested against simulators, including a closed-loop test with drift. Guiding on a real sky (seeing, field rotation, backlash) has not yet been verified.
+Tested against simulators, including closed loops with drift, a shadowed disc, a Sun hidden for minutes and lane recordings. On a real sky (2026-11-22, white-light and H-alpha) the old version let tracker outliers into the guider (median error 37 px, spikes to 1470 px in shadows); this version has been through one session. After the polar alignment was corrected the measured unguided drift fell from about 1.5 px/s to 0.14 px/s. Field rotation and backlash have not been studied.

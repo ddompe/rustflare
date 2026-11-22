@@ -26,11 +26,22 @@ The N/S/E/W pad moves the mount while held; release to stop. Arrow keys work too
 
 Aim tab > Meridian flip. The panel shows how long until the Sun crosses the meridian (it needs the site set).
 
-- **Record position** saves where the mount points, where the Sun sits in the picture and the time.
-- **Flip and re-centre** records, slews the mount back to that pointing (the mount turns over if it decides to), switches solar tracking on again, then brings the Sun back to its recorded place in the picture. It allows for the image turning 180 degrees by checking where the Sun really appears.
-- **Restore after a manual flip** does the same after you flipped with another app.
+**Flip automatically** does it for you. About 5 minutes before the meridian it records where the mount points and where the Sun sits in the picture; about 1 minute after the meridian (or as soon as the mount stops tracking by itself) it:
 
-A [guider calibration](track.md#calibrate) is required for the re-centring. How far the mount can track past the meridian is the mount's own setting; change it in the ZWO app.
+1. **pauses a running recording** (it resumes by itself after a clean flip),
+2. sends the mount to the recorded pointing, which turns it over,
+3. switches solar tracking on and brings the Sun back to its recorded place, allowing for the image turning 180 degrees,
+4. recalibrates the guider if it was guiding, and goes back to guiding.
+
+The status bar and the **Meridian flip** overlay say which step it is on. Both timings can be changed under the switch. If anything goes wrong the recording is *not* resumed and the status bar says why.
+
+Without the automatic mode:
+
+- **Record position** saves the pointing, the Sun's place and the time.
+- **Flip and re-centre** does the same steps as above on demand.
+- **Restore after a manual flip** does the re-centring after you flipped with another app.
+
+A [guider calibration](track.md#calibrate) is needed for the re-centring. How far the mount keeps tracking past the meridian is the mount's own setting (ZWO app). If it stops, it stops tracking at its limit and the Sun drifts away, so flip before that. A plain *Go to Sun* sent after the meridian also makes the mount turn over; expect to centre the Sun by hand afterwards, because the mount's pointing is less accurate on the other side. The image then turns by about 180 degrees: recalibrate.
 
 !!! note "Status"
-    Meridian flip assist is built and tested on the simulator; it has not yet been run on a real mount.
+    Built and tested on the simulator. The first real flip is still to be done (see the [hardware checklist](../project/hardware-checklist.md)). On 2026-11-22 the mount turned over on a Go to Sun after it had stopped at its limit, and the calibration afterwards showed the image rotated by about 209 degrees.

@@ -13,7 +13,15 @@ Everything below was built and tested on the simulators; each item needs the rea
 
 ## Found on the Sun on 2026-11-22 and fixed (to re-verify)
 
-Light dropping a hundredfold in seconds from palm-tree shadows made the old detector pick shadow edges as the limb, the mask jump, the tracker flap and guiding wander (median error 37 px, spikes to 1470 px). Fixed with brightness-invariant detection, one Sun model shared by outline, tracking, mask and guider, learned drift with dead reckoning, and median-based calibration. See the issue "Verify the Sun model ...". Debug tools: `GET /api/debug/{state,events,logs}`, `POST /api/debug/snapshot`, lost-tracking frames in `logs/<date>/lost/`.
+Light dropping a hundredfold in seconds from palm-tree shadows made the old detector pick shadow edges as the limb, the mask jump, the tracker flap and guiding wander (median error 37 px, spikes to 1470 px). Fixed with brightness-invariant detection, one Sun model shared by outline, tracking, mask and guider, learned drift with dead reckoning, and median-based calibration. See #79. Debug tools: [Debugging and logs](../reference/debugging.md).
+
+Also found on 2026-11-22, all fixed:
+
+- the AM3 ends a guide command after 3 s, so calibration under-read the guide rate by a quarter and long lane-mode pulses were mostly ignored (#59);
+- `:GAST#` answers `date#RA&Dec#flags#` and the driver stopped at the first `#`, so no flip feature could ever record the pointing (#80);
+- the first meridian flip attempt was disabled by the owner; the mount stopped tracking by itself 19 minutes past the meridian, and a Go to Sun afterwards turned it over (image rotated by about 209 degrees).
+
+Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roughly every 18 minutes, before the polar alignment was redone (drift fell from 1.5 to 0.14 px/s after). If it comes back, read `mount.jsonl` for what preceded it; see #81.
 
 ## M1: field use
 
@@ -40,6 +48,9 @@ Light dropping a hundredfold in seconds from palm-tree shadows made the old dete
 | new | iPhone and HTTPS landing page | Open http://<pi-name>.local:8080 on the phone: the page says whether HTTPS works and lists the three steps; make sure *Certificate Trust Settings* is switched on for RustFlare local CA |
 
 | new | Meridian flip assist | Near the meridian with the Sun tracked and calibrated: Record position, Flip and re-centre (watch the mount); check the image turns 180 degrees, the Sun returns to its recorded spot, and `:GAST#` pointing is read correctly. Also try the manual path: flip with the ZWO app then Restore |
+| new | Pause and resume | Record lanes for a minute, press Pause recording (Record tab or the bar under the picture), then Resume recording: new `-resumed` files continue with the cycles that were left; Discard forgets it |
+| new | Mount command log | After a session `GET /api/debug/mount` (or `logs/<date>/mount.jsonl`) lists every command with its reply; check the 59 ms Bluetooth round trips and that nothing is sent that you did not ask for |
+| new | Pointing readout (`:GAST#`) | Idle camera, Sun in view: Aim > Meridian flip > Record position works and shows RA and Dec close to the Sun's (15.88 h, -20 degrees in late November) |
 | new | Automatic meridian flip (unattended, guiding on) | Turn on *Flip automatically* (Aim, Meridian flip) a few minutes before the Sun crosses the meridian. Expect: position recorded, flip just after the crossing (or when the mount stops tracking), Sun re-centred, recalibration if guiding, solar tracking back on |
 
 | new | HDR bracketing lanes | Record 3 lanes for a minute on the Sun: check one folder per lane, the exposure in each file's notes, that the first kept frame of each burst really has the new exposure (no leftover brightness), and that the exposure is restored |

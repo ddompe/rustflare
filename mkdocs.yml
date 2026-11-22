@@ -21,6 +21,7 @@ nav:
       - Tracking and guiding: reference/tracking-and-guiding.md
       - Configuration: reference/configuration.md
       - HTTP API: reference/api.md
+      - Debugging and logs: reference/debugging.md
       - Performance: reference/performance.md
   - Developer and project:
       - Architecture: project/architecture.md
