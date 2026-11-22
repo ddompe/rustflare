@@ -260,6 +260,16 @@ fn civil(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
 }
 
 fn send<T: Read + Write>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec<u8>> {
+    let started = std::time::Instant::now();
+    let r = send_raw(dev, cmd, reply);
+    match &r {
+        Ok(b) => crate::trace::record(cmd, Ok(&String::from_utf8_lossy(b)), started),
+        Err(e) => crate::trace::record(cmd, Err(&e.to_string()), started),
+    }
+    r
+}
+
+fn send_raw<T: Read + Write>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec<u8>> {
     dev.write_all(cmd.as_bytes()).map_err(|e| Error::Mount(format!("write {cmd}: {e}")))?;
     let expected_len = match &reply {
         Reply::None => return Ok(vec![]),

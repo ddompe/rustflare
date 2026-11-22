@@ -82,6 +82,9 @@ pub struct CaptureStatus {
     pub buffer_mb: u64,
     pub ram_available_mb: Option<u64>,
     pub disk_mb_s: f64,
+    /// A recording is paused (by you or for a meridian flip) and can be resumed, and why.
+    pub paused: bool,
+    pub paused_reason: Option<String>,
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -159,6 +162,10 @@ pub struct AutoFlipStatus {
     pub flip_min: f64,
     /// off, waiting (for the meridian), recorded (position saved), flipping, done (for this crossing)
     pub stage: &'static str,
+    /// What is going on, in words, for the status bar and the overlay (empty when there is nothing worth saying).
+    pub message: String,
+    /// A recording was paused for the flip and starts again afterwards.
+    pub resume_pending: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -316,7 +323,7 @@ impl Default for Status {
             clock: ClockStatus::default(),
             goto: None,
             flip: None,
-            auto_flip: AutoFlipStatus { enabled: false, record_min: 5.0, flip_min: 1.0, stage: "off" },
+            auto_flip: AutoFlipStatus { enabled: false, record_min: 5.0, flip_min: 1.0, stage: "off", message: String::new(), resume_pending: false },
             last_flip: None,
             startup: StartupStatus::default(),
             optics: OpticsStatus::default(),
@@ -325,7 +332,7 @@ impl Default for Status {
             mount: None,
             tracking: None,
             guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None, held: false, dead_reckoning: false },
-            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0 },
+            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0, paused: false, paused_reason: None },
             error: None,
             seq: 0,
         }

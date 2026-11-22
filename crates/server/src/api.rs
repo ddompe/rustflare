@@ -61,6 +61,8 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/capture/flats", post(capture_flats))
         .route("/api/capture/prominence", post(capture_prominence))
         .route("/api/capture/stop", post(|s| run(s, Command::CaptureStop)))
+        .route("/api/capture/pause", post(|s| run(s, Command::CapturePause)))
+        .route("/api/capture/resume", post(|s| run(s, Command::CaptureResume)))
         .route("/api/files", get(files))
         .route("/stream.mjpg", get(mjpeg))
         .route("/snapshot.jpg", get(snapshot))
@@ -80,6 +82,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/debug/snapshot", post(|s| run(s, Command::DebugSnapshot)))
         .route("/api/debug/logs", get(debug_logs))
         .route("/api/debug/events", get(debug_events))
+        .route("/api/debug/mount", get(debug_mount))
         .route("/api/capture/darks", post(capture_darks))
         .route("/api/darks/applied", put(darks_applied))
         .route("/api/datasheet/:kind", get(datasheet))
@@ -446,6 +449,27 @@ async fn debug_logs(State(st): State<AppState>) -> Json<Value> {
     out.sort_by(|a, b| b.0.cmp(&a.0));
     out.truncate(500);
     Json(json!(out.into_iter().map(|(t, p, n)| json!({ "path": p, "bytes": n, "modified_unix": t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) })).collect::<Vec<_>>()))
+}
+
+/// The last `n` (default 300) lines of the newest mount command log (`logs/<date>/mount.jsonl`): every command and reply.
+/// `?skip_polls=1` leaves out the status polls (`:GU#`, `:GAST#`, `:Gps#`) that make up most of it.
+async fn debug_mount(State(st): State<AppState>, axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>) -> Json<Value> {
+    let n: usize = q.get("n").and_then(|v| v.parse().ok()).unwrap_or(300).min(5000);
+    let skip = q.get("skip_polls").is_some_and(|v| v != "0");
+    let mut days: Vec<_> = std::fs::read_dir(st.storage.dir().join("logs")).map(|r| r.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    days.sort();
+    let mut lines: Vec<Value> = Vec::new();
+    for d in days.iter().rev() {
+        if let Ok(t) = std::fs::read_to_string(d.join("mount.jsonl")) {
+            let mut v: Vec<Value> = t.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok())
+                .filter(|e| !skip || !matches!(e["cmd"].as_str(), Some(":GU#" | ":GAST#" | ":Gps#" | ":GVP#"))).collect();
+            v.extend(lines);
+            lines = v;
+            if lines.len() >= n { break; }
+        }
+    }
+    let cut = lines.len().saturating_sub(n);
+    Json(json!(lines.split_off(cut)))
 }
 
 /// The last `n` (default 200) lines of the newest events log: tracking, guiding, exposure, lane and flip events.

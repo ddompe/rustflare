@@ -22,7 +22,7 @@ export function chipsFor(status: Status | null): ChipSpec[] {
 }
 
 export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick }: { status: Status | null; goto: (t: TabId) => void; onStop: () => void; hideRec?: boolean; hide?: string[]; noQuick?: boolean }) {
-  const quick = !!status?.camera && status.capture.state === 'idle' && !hideRec && !noQuick
+  const quick = !!status?.camera && status.capture.state === 'idle' && !status.capture.paused && !hideRec && !noQuick
   const startQuick = () => { const r = savedRecipe(); const q = recordRequest(r, status!.camera!); api('POST', q.path, q.body).catch(() => {}) }
   const chips = chipsFor(status).filter((x) => !hide.includes(x.key))
   const c = status?.capture
@@ -50,6 +50,13 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
           <button type="button" onClick={() => api('POST', '/capture/single', {}).catch(() => {})}>Snap</button>
         </div>
       )}
+      {!recording && c?.paused && (
+        <div className="recbar" role="status">
+          <div className="rec-text"><b>Recording paused</b> <span className="muted rec-sub">{c.paused_reason ?? ''}</span></div>
+          {c.paused_reason === 'paused by you' && <button type="button" className="quick-rec" onClick={() => api('POST', '/capture/resume').catch(() => {})}>Resume</button>}
+          <button type="button" className="danger" onClick={onStop}>Discard</button>
+        </div>
+      )}
       {recording && c && (
         <div className="recbar">
           <div className="rec-text">
@@ -61,6 +68,7 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
             </span>
             {c.total != null && c.state !== 'flushing' && <progress max={c.total} value={c.done} aria-label="Frames captured" />}
           </div>
+          {['sequence', 'bursts'].includes(c.state) && <button type="button" onClick={() => api('POST', '/capture/pause').catch(() => {})}>Pause</button>}
           {['single', 'sequence', 'bursts', 'flats'].includes(c.state) && <button type="button" className="danger" onClick={onStop}>Stop</button>}
         </div>
       )}

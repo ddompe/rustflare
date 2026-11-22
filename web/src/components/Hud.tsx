@@ -12,7 +12,7 @@ import { useSetting } from '../settings'
  * size or the screen shape: left = fx * (W - w), top = fy * (H - h). Widgets only react to their own pointer events and
  * stop them there, so dragging one never pans the image and a drag on the picture never moves one.
  */
-export type HudId = 'rec' | 'buffer' | 'guide' | 'hist' | 'strip' | 'mask' | 'focus'
+export type HudId = 'rec' | 'buffer' | 'guide' | 'hist' | 'strip' | 'mask' | 'focus' | 'flip'
 interface W { on: boolean; fx: number; fy: number; min: boolean }
 type Layout = Record<HudId, W>
 
@@ -24,6 +24,7 @@ export const HUD_ITEMS: { id: HudId; label: string; short: string; when: string 
   { id: 'strip', label: 'Status: fps, disk, exposure, mount, flats', short: 'Status', when: '' },
   { id: 'mask', label: 'Prominence mask size', short: 'Mask size', when: 'shows with the prominence view' },
   { id: 'focus', label: 'Focus score', short: 'Focus score', when: 'shows with focus assist' },
+  { id: 'flip', label: 'Meridian flip', short: 'Meridian flip', when: 'shows when a flip is near or running' },
 ]
 
 /** Corners and edges, so nothing sits over the middle of the picture by default. Phones start with none. */
@@ -38,6 +39,7 @@ const defaults = (on: boolean): Layout => ({
   // so the two can never overlap whatever height the picture has
   mask: { on: true, fx: on ? 0.5 : 1, fy: on ? 0.5 : 0.6, min: false },
   focus: { on: true, fx: 0, fy: on ? 0.22 : 0.3, min: !on }, // phones: a one-line score, tap for the graph
+  flip: { on: true, fx: 0.5, fy: 0.1, min: false },
 })
 
 const small = () => typeof matchMedia === 'function' && matchMedia('(max-width: 699px), (max-height: 520px)').matches
@@ -235,6 +237,16 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
           <dt>Flat</dt><dd className={flats ? 'ok' : 'muted'}>{flats ? 'applied' : 'none'}</dd>
           <dt>Dark</dt><dd className={status.darks?.applied ? 'ok' : 'muted'}>{status.darks?.applied ? (status.darks.matches_camera ? 'applied' : 'mismatch') : 'none'}</dd>
         </dl>
+      </Widget>,
+    )
+  }
+  const af = status.auto_flip
+  if (w('flip').on && af && af.enabled && af.message) {
+    out.push(
+      <Widget key="flip" id="flip" label="Meridian flip" w={w('flip')} api={api}
+        mini={<span>Flip <b className="cv">{af.stage === 'flipping' ? 'now' : af.stage}</b></span>}>
+        <div><b>Meridian flip</b></div>
+        <div className="flip-msg">{af.message}</div>
       </Widget>,
     )
   }

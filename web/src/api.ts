@@ -17,7 +17,7 @@ export interface Status {
   goto?: { target: string; phase: string } | null
   flip?: { phase: string; elapsed_s: number; detail: string } | null
   sun_held?: boolean
-  auto_flip?: { enabled: boolean; record_min: number; flip_min: number; stage: 'off' | 'waiting' | 'recorded' | 'flipping' | 'done' }
+  auto_flip?: { enabled: boolean; record_min: number; flip_min: number; stage: 'off' | 'waiting' | 'recorded' | 'flipping' | 'done'; message: string; resume_pending: boolean }
   last_flip?: unknown
   guide_params?: { window_s: number; deadband_px: number; gain: number; speed: number; fast_speed: number; fast_above_px: number }
   coronagraph?: { enabled: boolean; scale: number }
@@ -39,7 +39,7 @@ export interface Status {
     state: 'idle' | 'single' | 'sequence' | 'bursts' | 'flats' | 'flushing'
     phase: string; done: number; total: number | null; file: string | null; last_file: string | null
     burst: number | null; bursts_total: number | null; next_in_s: number | null
-    dropped?: number; buffer_queued: number; buffer_capacity: number; buffer_mb: number; ram_available_mb: number | null; disk_mb_s: number
+    dropped?: number; paused?: boolean; paused_reason?: string | null; buffer_queued: number; buffer_capacity: number; buffer_mb: number; ram_available_mb: number | null; disk_mb_s: number
   }
   error: string | null
   seq: number

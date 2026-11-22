@@ -40,6 +40,13 @@ pub struct Site {
     pub longitude: f64,
 }
 
+/// What was recording, to start it again after an automatic meridian flip paused it.
+#[derive(Clone)]
+enum ResumeSpec {
+    Bursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String> },
+    Lanes { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> },
+}
+
 /// Unattended meridian flip, saved in the settings file under `auto_flip`.
 /// `record_min`: minutes before the meridian at which the pointing and the Sun's place in the picture are recorded.
 /// `flip_min`: minutes after the meridian at which the flip starts (sooner if the mount has stopped tracking by itself).
@@ -168,6 +175,9 @@ pub enum Command {
     SetStartup { enabled: bool },
     CaptureFlats { name: Option<String>, frames: u32, level: Option<f64> },
     CaptureStop,
+    /// Stops writing but remembers what was recording (with the cycles or bursts that are left): `CaptureResume` carries on.
+    CapturePause,
+    CaptureResume,
     SetOptics { focal_length_mm: Option<f64>, focal_multiplier: f64, pixel_size_um: Option<f64>, binning: u32 },
 }
 
@@ -357,9 +367,17 @@ pub struct Engine {
     auto_flip: AutoFlip,
     /// Pointing and Sun position recorded shortly before the meridian by the automatic flip.
     auto_pre: Option<Value>,
+    /// The last capture that was started, and (while an automatic flip has paused one) the one to start again afterwards.
+    last_capture: Option<ResumeSpec>,
+    resume_after_flip: Option<ResumeSpec>,
+    resume_at: Option<Instant>,
+    /// A recording paused by the user: what is left of it, and when it was paused.
+    paused: Option<ResumeSpec>,
+    trace_dir: Option<std::path::PathBuf>,
     /// The automatic flip has been started (or given up) for this crossing of the meridian.
     auto_done: bool,
     last_auto_check: Instant,
+    last_auto_warn: Option<Instant>,
     ntp_sync: Option<bool>,
     last_ntp_check: Instant,
     /// A Bluetooth connection attempt running on its own thread (auto-reconnect must not stall the engine).
@@ -472,8 +490,14 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         last_lost_saved: None,
         last_exposure_change: Instant::now(),
         auto_pre: None,
+        last_capture: None,
+        resume_after_flip: None,
+        resume_at: None,
+        paused: None,
+        trace_dir: None,
         auto_done: false,
         last_auto_check: Instant::now(),
+        last_auto_warn: None,
         last_flip: crate::config::read(storage.config_file()).get("last_flip").cloned(),
         guide_params,
         ntp_sync: None,
@@ -592,6 +616,8 @@ impl Engine {
             self.step_goto();
             self.step_flip();
             self.step_auto_flip();
+            self.step_resume();
+            self.sync_mount_trace();
             self.flush_controls();
             if self.draining.is_some() && self.last_publish.elapsed() >= Duration::from_millis(200) {
                 self.publish();
@@ -768,6 +794,60 @@ impl Engine {
                 "sun_ra_hours": rustflare_tracking::solar::sun_equatorial(now_unix).0, "sun_dec_deg": rustflare_tracking::solar::sun_equatorial(now_unix).1 }))
     }
 
+    /// What is left of the running capture, as a spec that can be started again (cycles or bursts already done are taken off).
+    fn remaining_spec(&self) -> Option<ResumeSpec> {
+        let Job::Capture(j) = &self.job else { return None };
+        let done = j.burst_no.saturating_sub(1);
+        match self.last_capture.clone()? {
+            ResumeSpec::Bursts { name, frames, seconds, interval_s, bursts, format, on_full } => {
+                let bursts = bursts.map(|b| b.saturating_sub(done).max(1));
+                Some(ResumeSpec::Bursts { name, frames, seconds, interval_s, bursts, format, on_full })
+            }
+            ResumeSpec::Lanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full } => {
+                let n = lanes.len().max(1) as u32;
+                let cycles = cycles.map(|c| c.saturating_sub(done / n).max(1));
+                Some(ResumeSpec::Lanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full })
+            }
+        }
+    }
+
+    fn spec_command(spec: ResumeSpec, suffix: &str) -> Command {
+        let more = |n: Option<String>| {
+            let base = n.unwrap_or_else(|| "seq".into());
+            let base = base.trim_end_matches("-after-flip").trim_end_matches("-resumed").to_string();
+            Some(format!("{base}{suffix}"))
+        };
+        match spec {
+            ResumeSpec::Bursts { name, frames, seconds, interval_s, bursts, format, on_full } => Command::CaptureBursts { name: more(name), frames, seconds, interval_s, bursts, format, on_full },
+            ResumeSpec::Lanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full } => Command::CaptureLanes { name: more(name), kind, cycle_interval_s, lanes, cycles, format, on_full },
+        }
+    }
+
+    /// Keeps the mount command log pointed at today's storage folder (it can change at run time).
+    fn sync_mount_trace(&mut self) {
+        let dir = self.storage.dir().join("logs");
+        if self.trace_dir.as_ref() != Some(&dir) {
+            rustflare_mount::trace::set_dir(Some(dir.clone()));
+            self.trace_dir = Some(dir);
+        }
+    }
+
+    /// Starts the paused recording again once the automatic flip is done.
+    fn step_resume(&mut self) {
+        let Some(at) = self.resume_at else { return };
+        if Instant::now() < at || self.flip.is_some() || self.require_idle().is_err() {
+            return;
+        }
+        self.resume_at = None;
+        let Some(spec) = self.resume_after_flip.take() else { return };
+        let cmd = Self::spec_command(spec, "-after-flip");
+        match self.handle(cmd) {
+            Ok(_) => self.event("capture_resumed", json!({ "after": "meridian flip" })),
+            Err(e) => self.status.error = Some(format!("could not resume the recording after the flip: {e}")),
+        }
+        self.publish();
+    }
+
     /// Unattended flip: shortly before the meridian record the pointing and the Sun's place, after it (or as soon as the
     /// mount stops tracking by itself) stop the capture, send the mount to the recorded position and re-centre.
     fn step_auto_flip(&mut self) {
@@ -786,9 +866,21 @@ impl Engine {
         }
         let now_unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
         if self.auto_pre.is_none() && mins <= self.auto_flip.record_min && self.mount_tracking && self.status.sun.is_some() {
-            if let Ok(pre) = self.snapshot_pre(now_unix) {
-                log::info!("auto flip: recorded the position {mins:.1} min before the meridian");
-                self.auto_pre = Some(pre);
+            match self.snapshot_pre(now_unix) {
+                Ok(pre) => {
+                    log::info!("auto flip: recorded the position {mins:.1} min before the meridian");
+                    self.event("auto_flip_recorded", json!({ "minutes_to_meridian": mins, "pre": pre }));
+                    self.auto_pre = Some(pre);
+                }
+                Err(e) => {
+                    // say so (once in a while): this failing silently is what left the first real flip without a recorded position
+                    if self.last_auto_warn.map_or(true, |t| t.elapsed() > Duration::from_secs(30)) {
+                        self.last_auto_warn = Some(Instant::now());
+                        log::warn!("auto flip: cannot record the position: {e}");
+                        self.event("auto_flip_record_failed", json!({ "why": e, "minutes_to_meridian": mins }));
+                        self.status.error = Some(format!("automatic meridian flip cannot record the position: {e}"));
+                    }
+                }
             }
         }
         let stopped_by_mount = mins <= 0.0 && !self.mount_tracking && self.auto_pre.is_some();
@@ -796,7 +888,11 @@ impl Engine {
             return;
         }
         if !matches!(self.job, Job::Idle) {
-            self.abort_job("stopped for the automatic meridian flip");
+            // pause the recording: it starts again by itself once the flip is done
+            if matches!(self.job, Job::Capture(_)) && self.resume_after_flip.is_none() {
+                self.resume_after_flip = self.remaining_spec();
+            }
+            self.abort_job("paused for the automatic meridian flip");
         }
         if self.require_idle().is_err() {
             return; // still writing the buffered frames: try again next second
@@ -814,6 +910,8 @@ impl Engine {
     }
 
     fn cancel_flip(&mut self, why: &str) {
+        self.resume_after_flip = None;
+        self.resume_at = None;
         if self.flip.take().is_some() {
             self.status.flip = None;
             if let Some(l) = self.last_flip.as_mut() {
@@ -832,6 +930,14 @@ impl Engine {
             self.last_flip = Some(rec);
         }
         self.status.flip = None;
+        if self.resume_after_flip.is_some() {
+            if self.last_flip.as_ref().and_then(|l| l.get("result")).and_then(|r| r.as_str()).is_some_and(|r| r.starts_with("done")) {
+                self.resume_at = Some(Instant::now() + Duration::from_secs(5)); // let the mount and guiding settle first
+            } else {
+                self.resume_after_flip = None;
+                self.status.error = Some("the meridian flip did not finish cleanly: the recording was NOT resumed, check the Sun and restart it".into());
+            }
+        }
     }
 
     /// Follows a flip assist: slew, solar tracking back on, then centre the Sun at its pre-flip place.
@@ -972,10 +1078,33 @@ impl Engine {
         self.status.guiding.held = self.guide_hold.is_some();
         self.status.guiding.dead_reckoning = self.dead.is_some();
         self.status.session_log = SessionLogStatus { lost_frames: self.save_lost, lost_saved: self.lost_saved, enabled: self.slog.enabled(), lines: self.slog.lines, frames: self.slog.frames, bytes: self.slog.bytes, file: self.slog.file_name() };
+        self.status.capture.paused = self.paused.is_some() || self.resume_after_flip.is_some();
+        self.status.capture.paused_reason = if self.paused.is_some() { Some("paused by you".into()) } else if self.resume_after_flip.is_some() { Some("paused for the meridian flip".into()) } else { None };
         self.status.last_flip = self.last_flip.clone();
+        let flip_stage = if !self.auto_flip.enabled { "off" } else if self.flip.is_some() { "flipping" } else if self.auto_done { "done" } else if self.auto_pre.is_some() { "recorded" } else { "waiting" };
+        let mins = self.status.sky_sun.as_ref().map(|k| k.minutes_to_meridian);
+        let resume = self.resume_after_flip.is_some();
+        let message = match (flip_stage, mins) {
+            ("flipping", _) => {
+                let (phase, secs) = self.flip.as_ref().map(|f| (f.phase, f.started.elapsed().as_secs())).unwrap_or(("", 0));
+                let what = match phase {
+                    "slewing" => "the mount is turning over",
+                    "settling" => "settling, looking for the Sun",
+                    "centring" => "centring the Sun where it was",
+                    "recalibrating" => "recalibrating the guider",
+                    "re-centring" => "bringing the Sun back to its place",
+                    _ => "working",
+                };
+                format!("Meridian flip, {secs} s: {what}.{}", if resume { " The recording is paused and resumes afterwards." } else { "" })
+            }
+            ("done", _) if resume && self.resume_at.is_some() => "Meridian flip done: resuming the recording in a moment.".to_string(),
+            ("recorded", Some(m)) => format!("Meridian flip: position recorded. {} flip {}.", if resume || matches!(self.job, Job::Capture(_)) { "The recording pauses and resumes by itself;" } else { "Automatic;" }, if m > 0.0 { format!("in {:.0} min", m + self.auto_flip.flip_min) } else { format!("{:.0} s after the meridian", self.auto_flip.flip_min * 60.0 + m * 60.0).replace("-", "") }),
+            ("waiting", Some(m)) if m <= 15.0 && m > 0.0 => format!("Meridian flip in {m:.0} min (automatic: the position is recorded {:.0} min before).", self.auto_flip.record_min),
+            _ => String::new(),
+        };
         self.status.auto_flip = AutoFlipStatus {
             enabled: self.auto_flip.enabled, record_min: self.auto_flip.record_min, flip_min: self.auto_flip.flip_min,
-            stage: if !self.auto_flip.enabled { "off" } else if self.flip.is_some() { "flipping" } else if self.auto_done { "done" } else if self.auto_pre.is_some() { "recorded" } else { "waiting" },
+            stage: flip_stage, message, resume_pending: resume,
         };
         self.status.clock = ClockStatus { ntp_synchronized: self.ntp_sync };
         self.status.site = self.site.map(|s| SiteStatus { latitude: s.latitude, longitude: s.longitude });
@@ -1424,6 +1553,7 @@ impl Engine {
                 Ok(json!({}))
             }
             Command::CaptureBursts { name, frames, seconds, interval_s, bursts, format, on_full } => {
+                let rs = ResumeSpec::Bursts { name: name.clone(), frames, seconds, interval_s, bursts, format: format.clone(), on_full: on_full.clone() };
                 self.require_capture_ready()?;
                 if frames.is_none() && seconds.is_none() {
                     return Err("give a frame count and/or a duration per burst".into());
@@ -1460,6 +1590,7 @@ impl Engine {
                 self.buffer_cap = cap;
                 let kind = if interval.is_some() { "burst" } else { "seq" };
                 self.event("capture_start", json!({ "kind": "sequence" }));
+                self.last_capture = Some(rs);
                 self.job = Job::Capture(Box::new(CaptureJob {
                     lanes: None,
                     name: name.unwrap_or_default(),
@@ -1482,6 +1613,7 @@ impl Engine {
                 Ok(json!({ "buffer_frames": cap, "fits_in_buffer": frames.map_or(true, |f| f as usize <= cap) }))
             }
             Command::CaptureLanes { name, kind, cycle_interval_s, lanes, cycles, format, on_full } => {
+                let rs = ResumeSpec::Lanes { name: name.clone(), kind: kind.clone(), cycle_interval_s, lanes: lanes.clone(), cycles, format: format.clone(), on_full: on_full.clone() };
                 if cycle_interval_s.is_some_and(|i| i < 1.0) {
                     return Err("the time between cycles must be at least 1 s".into());
                 }
@@ -1533,6 +1665,7 @@ impl Engine {
                 let total = cycles.map(|c| c * lanes.len() as u32);
                 let n_lanes = lanes.len();
                 self.event("capture_start", json!({ "kind": "lanes" }));
+                self.last_capture = Some(rs);
                 self.job = Job::Capture(Box::new(CaptureJob {
                     lanes: Some(Lanes { specs: lanes, dir, original, cycle_interval: cycle_interval_s.map(Duration::from_secs_f64), cycle_started: Instant::now(), current: 0, skip: 0 }),
                     name: name.unwrap_or_default(),
@@ -1603,10 +1736,32 @@ impl Engine {
                 crate::config::set(self.storage.config_file(), "optics", serde_json::to_value(&self.optics).unwrap_or_default())?;
                 Ok(json!({}))
             }
+            Command::CapturePause => {
+                if !matches!(self.job, Job::Capture(_)) {
+                    return Err("only a running sequence or lane recording can be paused".into());
+                }
+                let spec = self.remaining_spec().ok_or("nothing to resume from this recording")?;
+                self.paused = Some(spec);
+                self.abort_job("paused by user");
+                Ok(json!({}))
+            }
+            Command::CaptureResume => {
+                let spec = self.paused.take().ok_or("nothing is paused")?;
+                let cmd = Self::spec_command(spec.clone(), "-resumed");
+                match self.handle(cmd) {
+                    Ok(v) => { self.event("capture_resumed", json!({ "after": "pause" })); Ok(v) }
+                    Err(e) => { self.paused = Some(spec); Err(e) }
+                }
+            }
             Command::CaptureStop => {
+                self.paused = None;
+                self.resume_after_flip = None;
+                self.resume_at = None;
                 if matches!(self.job, Job::Idle) {
                     return Err("nothing is being captured".into());
                 }
+                self.last_capture = None;
+                self.resume_after_flip = None;
                 self.abort_job("stopped by user");
                 Ok(json!({}))
             }

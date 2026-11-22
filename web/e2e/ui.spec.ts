@@ -225,3 +225,20 @@ test('mask size and focus score are overlay widgets that start apart', async ({ 
   await put(page, '/coronagraph', { enabled: false, scale: 1.03 })
   await put(page, '/focus', { enabled: false })
 })
+
+test('a recording can be paused and resumed, and discarded', async ({ page }) => {
+  await page.goto('/')
+  const status = async () => (await (await page.request.get('/api/status')).json()).capture
+  await expect.poll(async () => (await post(page, '/capture/lanes', { name: 'pz', cycles: 50, cycle_interval_s: 2, format: 'ser', lanes: [{ name: 'a', exposure_us: 1000, frames: 3 }, { name: 'b', exposure_us: 3000, frames: 3 }] })).ok(), { timeout: 10_000 }).toBe(true)
+  await expect.poll(async () => (await status()).state).toBe('bursts')
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await expect.poll(async () => { const c = await status(); return c.state === 'idle' && c.paused }, { timeout: 15_000 }).toBe(true)
+  await expect(page.getByText('Recording paused')).toBeVisible()
+  await page.getByRole('button', { name: 'Resume' }).click()
+  await expect.poll(async () => (await status()).state, { timeout: 15_000 }).toBe('bursts')
+  expect((await status()).paused).toBe(false)
+  await page.getByRole('button', { name: 'Pause' }).click()
+  await expect.poll(async () => (await status()).paused, { timeout: 15_000 }).toBe(true)
+  await page.getByRole('button', { name: 'Discard' }).click()
+  await expect.poll(async () => (await status()).paused, { timeout: 10_000 }).toBe(false)
+})

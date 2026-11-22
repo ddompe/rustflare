@@ -528,3 +528,5 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 .focus-body { display: grid; gap: .1rem; width: 9.5rem; }
 .focus-body b { font-size: 1.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .focus-body span { font-size: .75rem; color: #ddd; }
+
+.hud-w .flip-msg { max-width: 15rem; white-space: normal; line-height: 1.3; }

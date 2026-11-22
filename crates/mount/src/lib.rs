@@ -3,6 +3,7 @@
 
 pub mod ble;
 pub mod simulator;
+pub mod trace;
 pub mod zwo;
 
 use rustflare_core::{sim::SimSky, Error, Mount, Result};
