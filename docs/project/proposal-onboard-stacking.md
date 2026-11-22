@@ -1,6 +1,6 @@
 # Proposal: an on-board lucky-imaging stacker (`rustflare-stack`)
 
-Status: proposal, nothing built. Research done by a delegated agent on 2026-11-22 from the owner's brief ("an AutoStakkert-type stacker on board, at low priority so it never disturbs a recording, a different engine and page, started by the sequencer on a directory and watching for more files"); edited and annotated by the maintainer's assistant.
+Status: **M0 built** (the command-line stacker, see [M0 results](#m0-results-2026-11-22)); the rest is proposal. Research done by a delegated agent on 2026-11-22 from the owner's brief ("an AutoStakkert-type stacker on board, at low priority so it never disturbs a recording, a different engine and page, started by the sequencer on a directory and watching for more files"); edited and annotated by the maintainer's assistant.
 
 !!! warning "Read the figures as estimates"
     The research made only a few web searches. Every per-frame time below is reasoned, not measured, crate names must be checked on crates.io before use, and the Debian version of Siril is a guess. Verify before committing to the plan.
@@ -57,3 +57,28 @@ I/O contention on the stick is the main risk and needs a measurement on the Pi (
 ## Sources
 
 [AutoStakkert](https://www.autostakkert.com/wp/?p=7), [PlanetarySystemStacker](https://github.com/webosfredo/PlanetarySystemStacker), [Siril multi-point](https://siril.readthedocs.io/en/latest/preprocessing/multipoint.html), [notify](https://docs.rs/crate/notify/latest/source/src/inotify.rs), [inotify](https://docs.rs/inotify).
+
+## Review of the plan (2026-11-22) and what changed
+
+The first version of this plan was checked against the repository and corrected:
+
+- **"Finished" detection.** The burst sidecar is written when the burst ends, *before* the writer thread has put the frames on disk, so a sidecar is not a "file complete" signal. The engine should write a `<name>.ready` marker once the writer has closed the file; for folders from other sources the SER layout check (header, trailer, size) is the fallback.
+- **Handoff.** The marker replaces the separate spool directory. No HTTP API, extra port or proxy in v1: the stacker writes a status file the page reads.
+- **Per-frame Sun position** is not needed: the stacker aligns frames itself (phase correlation) and can reuse the `rustflare-tracking` crate if it ever needs the limb. One centre and radius per burst in the sidecar would be cheap.
+- **Dark and flat correction** had been left out. The stacker applies the master flat (and a dark when its exposure matches) to every frame.
+- **Streaming and lanes:** long bursts must not be held in RAM (the stacker reads frame by frame, caches the binned frames only when they fit), and each lane is stacked on its own.
+- **Order:** a command-line tool first, tested on real recordings on the Mac, before any service or page.
+
+Decisions by the owner: **prominence lanes first, FITS stills as the product, Mac first and the Pi when it proves worth it.**
+
+## M0 results (2026-11-22)
+
+`crates/stack`, `rustflare-stack stack <file.ser> [--flat master.png] [--dark master.png] [--keep 25] ...`: reads SER (also `_partN`, files cut short), applies flat and dark, aligns every frame by phase correlation on 2x-binned, high-passed images (smooth window, so a coronagraph mask's edge does not pull shifts to zero), ranks the frames, averages the best 25 % and writes a FITS still. Tested on synthetic bursts with known shifts, blur and noise (`crates/stack/tests`) and on a real prominence-lane burst and its disc-lane partner from the 2026-11-22 field day (100 frames of 1944x1472, 572 MB each; the recordings stay out of the repository).
+
+- **Speed (measured, Mac, 4 threads, files in the page cache):** a 100-frame burst takes 1 to 2 s to read, align and rank and 0.1 to 0.3 s to stack. A Pi 5 core is several times slower, so expect roughly 5 to 15 s per burst on two threads (an estimate, to be measured), well inside a 30 s cadence.
+- **Ranking by one frame's Laplacian is mostly noise.** The chromospheric texture is low contrast, so the default score compares each aligned frame's high-pass detail with the burst's own mean. Measured by the detail two independent half-stacks have in common (noise cancels), on both lanes: reference score > Laplacian > file order > worst frames, and keeping fewer frames is better (prominence lane: best 10 % 0.00089, best 25 % 0.00077, all 0.00048, worst 25 % 0.00031).
+- **Alignment is real and helps the disc lane**, whose frames wander by up to about 5 px in a burst (checked independently with numpy): the aligned stack shows visibly crisper fibrils than the unaligned one. **The split-half number does not show it** (it favours the unaligned stack, probably because sensor-fixed pattern correlates between halves when frames are not moved), so use it only to compare ranking methods with alignment on, and judge alignment by eye. A better fixed-pattern-immune metric is an open item.
+- **Prominence lane:** the shifts in that burst were about 0.1 px, so alignment changes little there; the stack is much cleaner than a single frame.
+- **Known gaps:** integer or bilinear shifts only (no Lanczos/drizzle), one global shift per frame (no multi-point alignment yet: the limb and prominences will show seeing distortion), no sigma clipping, colour (mosaic) recordings refused, no dark scaling for a different exposure (the prominence lane's 59 ms exposure has no matching dark), no watcher, no service.
+
+Next: check the stacks on more bursts of the day, then M1 (the `.ready` marker, watcher, queue, resource limits).

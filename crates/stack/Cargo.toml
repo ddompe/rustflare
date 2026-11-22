@@ -1,0 +1,23 @@
+[package]
+name = "rustflare-stack"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lucky-imaging stacker for RustFlare recordings: rank frames, align, stack, write FITS"
+
+[lib]
+name = "rustflare_stack"
+
+[[bin]]
+name = "rustflare-stack"
+path = "src/main.rs"
+
+[dependencies]
+rustfft = "6"
+png = "0.17"
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+rustflare-core.workspace = true
+rustflare-capture.workspace = true
