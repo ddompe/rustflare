@@ -27,6 +27,7 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 ## Planned
 
 - **ZWO ASI camera follow-ups:** the driver exists (ADR 0014; ASI174MM Mini enumerates, opens and streams on the Pi, USB 2 only so far). Still to do: measure on a USB 3 port, ROI/binning (frame rate), colour ASI cameras, cooler/fan controls.
+- **Focus assist ([#78](https://github.com/ddompe/rustflare/issues/78))**: no focuser needed. A person turns the focuser while a short burst is scored per frame and as a lucky-imaging stack, shown as a live score, trend and best-so-far, so focus can be judged on a bright day. The same metric later drives the EAF autofocus.
 - **EAF support and seeing-robust autofocus**: drive a ZWO EAF; compute a focus metric on an *average of several frames* (aligned on the limb) so turbulence does not corrupt the metric.
 - **Colour (OSC) cameras**: Bayer frame formats, debayering for preview and stills, raw Bayer SER recording, tracking on a luminance/green image, colour UI (white balance, per-channel histogram).
 - **Device datasheets and inventory**: images and spec sheets (including the HCG point) for ZWO and Player One planetary/solar cameras and the AM3, shown in the Camera and Mount panels.
