@@ -8,6 +8,7 @@ mod logs;
 mod preview;
 mod security;
 mod sessionlog;
+mod stack_api;
 mod status;
 mod storage;
 mod sunmodel;

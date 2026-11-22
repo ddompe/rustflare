@@ -27,7 +27,7 @@ jobs:
         run: cd web && npm ci && npm run build
       - name: End-to-end smoke test on the simulators
         run: |
-          cargo build --release -p rustflare-server
+          cargo build --release -p rustflare-server -p rustflare-stack
           scripts/smoke.sh ./target/release/rustflare-server ./data-smoke | tee smoke.log
           grep -q "capture=idle/saved" smoke.log
       - name: Browser tests (Playwright, simulators)

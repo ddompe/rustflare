@@ -1,4 +1,6 @@
 import { expect, Page, test } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
+import path from 'node:path'
 
 const post = (page: Page, path: string, body: unknown = {}) => page.request.post(`/api${path}`, { data: body })
 const put = (page: Page, path: string, body: unknown) => page.request.put(`/api${path}`, { data: body })
@@ -332,4 +334,35 @@ test('the mount goes home when a recording finishes, only if asked', async ({ pa
   await expect.poll(async () => (await mount()).at_home, { timeout: 20_000 }).toBe(true)
   await sw.uncheck()
   await post(page, '/mount/tracking', { enabled: true })
+})
+
+test('Stacking: the stacker, its settings and the stacks it made, with thumbnails', async ({ page }) => {
+  // record a short burst on the simulator and stack it the way the stacker service would (the recorder's folder, a stacks/ subfolder)
+  await expect.poll(async () => (await post(page, '/capture/sequence', { name: 'stackme', frames: 12, format: 'ser' })).text(), { timeout: 10_000 }).toContain('buffer_frames')
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
+  await page.waitForTimeout(1500)
+  execFileSync(path.resolve('../target/release/rustflare-stack'), ['session', path.resolve('.e2e-data/data'), '--threads', '2'])
+
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^More/ }).click()
+  const section = page.locator('details.disc', { has: page.locator('.disc-title', { hasText: 'Stacking' }) })
+  await section.locator('summary').click()
+  // not running here (no service): says how to start it
+  await expect(section.getByText(/systemctl enable --now rustflare-stack/)).toBeVisible()
+  // the stack is listed with a thumbnail that really loads
+  const card = section.locator('.stack-card').first()
+  await expect(card).toBeVisible({ timeout: 10_000 })
+  await expect(card.getByText(/ of 12 frames|of \d+ frames/)).toBeVisible()
+  await expect.poll(async () => card.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true)
+  // settings are saved by the server and survive a reload
+  await section.getByText('Settings', { exact: true }).click()
+  await section.getByRole('radio', { name: 'Always' }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/stack')).json()).config.policy).toBe('always')
+  await section.getByRole('radio', { name: 'When idle' }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/stack')).json()).config.policy).toBe('when_idle')
+  expect((await put(page, '/stack/config', { policy: 'sometimes' })).status()).toBe(400)
+  expect((await put(page, '/stack/config', { flat: '../etc/passwd' })).status()).toBe(400)
+  const kept = await put(page, '/stack/config', { keep_percent: 500, threads: 64, policy: 'between_bursts' })
+  expect((await kept.json()).keep_percent).toBe(100) // clamped
+  await put(page, '/stack/config', { keep_percent: 25, threads: 2 })
 })

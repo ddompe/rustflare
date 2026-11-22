@@ -1,6 +1,6 @@
 # Proposal: an on-board lucky-imaging stacker (`rustflare-stack`)
 
-Status: **M0 built** (the command-line stacker, see [M0 results](#m0-results-2026-11-22)); the rest is proposal. Research done by a delegated agent on 2026-11-22 from the owner's brief ("an AutoStakkert-type stacker on board, at low priority so it never disturbs a recording, a different engine and page, started by the sequencer on a directory and watching for more files"); edited and annotated by the maintainer's assistant.
+Status: **M0 to M3 built** (command-line stacker, multi-point alignment, Pi service, web page; see the review sections below). M4 (sharpening, time-lapse, colour, drizzle) and the open checks are listed at the end. Research done by a delegated agent on 2026-11-22 from the owner's brief ("an AutoStakkert-type stacker on board, at low priority so it never disturbs a recording, a different engine and page, started by the sequencer on a directory and watching for more files"); edited and annotated by the maintainer's assistant.
 
 !!! warning "Read the figures as estimates"
     The research made only a few web searches. Every per-frame time below is reasoned, not measured, crate names must be checked on crates.io before use, and the Debian version of Siril is a guess. Verify before committing to the plan.
@@ -172,3 +172,23 @@ Built: the recorder writes a `<recording>.ready` marker once the writer has fina
 - *Not done by design in M2:* a web page and API (M3), colour, a queue priority across sessions, stacking from other folders than the recorder's.
 
 **Plan correction for M3 (web page):** the server reads `stack-status.json` and the stacks' `manifest.json` (no new port, no proxy), lists the stacks (thumbnails made on demand from the FITS, small JPEG via a new endpoint), and writes `stack.json` through a small settings API; the page is a new tab-level section under More (not a sixth tab: stacking is a background service, not part of the observing flow), with: state and progress, a thumbnail grid of finished stacks with the numbers (frames kept, points, signal), the policy and keep-percent settings, and a link to download the FITS.
+
+## M3 done and final review (2026-11-22): the page
+
+Built: `GET /api/stack` (service state from `systemctl is-active`, `stack-status.json`, the settings, the newest 48 stacks from `stacks/manifest.json`, and the raw dark and flat recordings on the drive), `PUT /api/stack/config` (validated and clamped, atomic, flat and dark paths must stay inside the storage folder), `GET /api/stack/thumb/<path>` (a PNG preview made on first request, cached in `stacks/.thumbs/`), and **More > Stacking**: status, a grid of stacks with thumbnails that download the FITS, and a collapsed *Settings* section with the same options as `stack.json` including a flat chooser and a dark checklist. Playwright test (phone and desktop): records on the simulator, runs the stacker the way the service would, checks the thumbnail loads, the settings round trip, bad values are refused and clamped. CI now builds the stacker for the browser tests.
+
+**Assumptions checked or revised**
+
+- *A page cannot start the service.* Right: the server runs unprivileged, so the page reports the service state and shows `sudo systemctl enable --now rustflare-stack`. The *enabled* switch pauses stacking without touching systemd.
+- *A sixth tab.* No: it is a section under More, because stacking is a background service and not part of the observing flow.
+- *Thumbnails as JPEG.* PNG instead (an 8-bit grey PNG is small enough, and the encoder was already in the build); they are display copies only, the FITS stays the product.
+- *The server depends on the stacker library.* Yes (for the FITS reader and the preview); it adds `rustfft` to the server build, a pure-Rust dependency.
+
+**Where this leaves the plan**
+
+Done: M0 to M3. Left, in this order:
+
+1. **Real-world checks (need the owner, the Pi and a sunny day):** the hours-long run alongside a real recording (writes not slowed, no capture stalls, #86), a real flat and dark, and the comparison with AutoStakkert or Siril on the same SER. Until those pass, the stacker should be described as *tested on field-day recordings, not yet in routine use*.
+2. **Quality work:** colour (mosaic) recordings; Lanczos resampling instead of bilinear (a sharper stack at the same cost); frame-selection weights instead of a hard cut (Siril's soft raised-cosine); drift of the reference over a long burst; a way to stack a *series* (all bursts of an hour) into one deeper image.
+3. **M4 products:** a time-lapse of the stacks (needs a video encoder; probably an `ffmpeg` call if installed, otherwise a folder of PNGs), optional display-side sharpening (wavelets or deconvolution, never in the FITS), drizzle for undersampled setups (low value for the LS50 and Apollo-M).
+4. **Housekeeping:** disk quota for `stacks/`, an option to delete stacks older than N days, and the stacker's logs into the debug API.

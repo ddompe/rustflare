@@ -17,6 +17,7 @@ rustflare-camera = { path = "crates/camera" }
 rustflare-mount = { path = "crates/mount" }
 rustflare-tracking = { path = "crates/tracking" }
 rustflare-capture = { path = "crates/capture" }
+rustflare-stack = { path = "crates/stack" }
 
 [profile.release]
 opt-level = 3

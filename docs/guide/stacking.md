@@ -9,6 +9,10 @@ RustFlare can stack your recordings into sharper still images, on the Pi, withou
 
 For each recording (a burst of frames), it applies your dark and flat, aligns every frame, keeps the best ones (25 % by default), averages them, and writes a 32-bit float FITS file. The alignment is **multi-point**: besides one shift per frame it measures a shift for many small patches, because seeing bends the picture differently a few arcseconds apart, and each patch keeps its own best frames. On a field-day disc burst this gave visibly crisper detail than a single shift per frame. A 100-frame burst of 1944x1472 takes about 8 seconds on two cores of a Pi 5.
 
+## The page: More > Stacking
+
+More > Stacking shows what the stacker is doing (stacking a recording, paused and why, nothing to do), a grid of the finished stacks with thumbnails (tap one to download its FITS), and, under *Settings*, the same options as `stack.json`: on/off, when to stack, frames kept, multi-point, the flat, and which darks to use (it lists the raw flat and dark recordings on the drive, with exposure and gain). If the stacker service is not running, the page says so and shows the command to start it: a web page cannot start a system service, so that stays a `systemctl` command.
+
 ## Running it by hand
 
 ```sh

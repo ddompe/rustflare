@@ -102,3 +102,13 @@ Read-only except the snapshot and the switch. See [Debugging and logs](debugging
 
 
 `home_when_done` (boolean, default false) can be added to `/api/capture/sequence`, `/bursts` and `/lanes`: when the recording finishes by itself the mount is sent home (guiding stops first). `status.capture.eta_s` is the estimated seconds until the running recording ends (null when it runs until stopped).
+
+## Stacking
+
+The stacker (`rustflare-stack`, see [Stacking](../guide/stacking.md)) is a separate program; these endpoints read its files and edit its settings.
+
+| Endpoint | |
+|---|---|
+| `GET /api/stack` | `{service, status, config, stacks, total, calibration}`: whether the `rustflare-stack` service is active, its `stack-status.json`, its settings, the newest 48 stacks (source, output, frames kept, thumbnail name, `path` to download under `/files/`) and the raw dark and flat recordings on the drive |
+| `PUT /api/stack/config` | any of `enabled`, `policy` (`when_idle`, `between_bursts`, `always`), `min_gap_s`, `keep_percent` (1 to 100), `multipoint`, `threads` (1 to 4), `float`, `flat`, `darks` (paths relative to the storage folder); returns the settings now in force |
+| `GET /api/stack/thumb/<path>` | a PNG preview (at most 640 px wide, auto-stretched, display only) of a stack under `stacks/`, made on first request |
