@@ -323,8 +323,6 @@ pub struct Engine {
     save_lost: bool,
     /// Last trustworthy Sun measurement (with the frame size): held for the mask and overlays while clouds hide the limb.
     sun_model: crate::sunmodel::SunModel,
-    /// Filters the tracker's positions before the guider sees them (same idea as the Sun model, for the guide centre).
-    guide_gate: crate::sunmodel::SunModel,
     /// What the mount does on its own, learned while guiding works.
     drift_model: DriftModel,
     /// While the Sun cannot be seen: the guider is fed a dead-reckoned position so the framing holds.
@@ -445,7 +443,6 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         auto_flip: crate::config::read(storage.config_file()).get("auto_flip").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         cal_generation: 0,
         sun_model: Default::default(),
-        guide_gate: Default::default(),
         drift_model: DriftModel::default(),
         dead: None,
         last_good: None,
@@ -1326,7 +1323,7 @@ impl Engine {
                 self.stop_guiding_quietly();
                 let p = t.position();
                 self.tracker = Some(t);
-                self.guide_gate.reset();
+                self.sun_model.reset(); // the tracker's circle starts the model afresh
                 self.lost = false;
                 Ok(json!({}))
             }
@@ -2006,20 +2003,13 @@ impl Engine {
             self.status.perf.locate_ms = ema(self.status.perf.locate_ms, t_loc.elapsed().as_secs_f64() * 1000.0);
             if analyse {
                 self.learn_radius(sun.as_ref());
-                // The detector sees one frame at a time. A cloud, a shadow or an eclipse makes it jump or lose the Sun, and the
-                // mask must not follow that: everything uses the model's prediction, corrected only by measurements that agree.
-                let free = self.mount_state.slewing == Some(true) || self.goto.is_some() || self.flip.is_some() || now < self.manual_slew_until;
-                let est = self.sun_model.update(sun, now, (frame.width, frame.height), free);
-                let was_held = self.sun_held;
-                self.sun_held = est.is_some_and(|e| e.predicted && e.since_measured_s > 1.0);
-                if self.sun_held != was_held && self.last_sun_event.elapsed() > Duration::from_secs(5) {
-                    self.last_sun_event = Instant::now();
-                    self.event(if self.sun_held { "sun_predicted" } else { "sun_measured_again" }, json!({ "estimate": est.map(|e| json!({ "x": e.sun.pos.x, "y": e.sun.pos.y, "r": e.sun.radius, "since_measured_s": e.since_measured_s })), "detector": sun.map(|f| json!({ "x": f.pos.x, "y": f.pos.y, "r": f.radius })) }));
+                // ONE model of where the Sun is: the tracker's measurement feeds it while tracking (known radius, robust fit),
+                // the detector otherwise. The Sun outline, the tracking circle, the coronagraph mask and the guider all use it.
+                let tracker_on = self.tracker.as_ref().is_some_and(|t| t.mode() != "anchor");
+                if !tracker_on {
+                    self.feed_sun_model(sun, now, (frame.width, frame.height));
                 }
-                let sun = est.map(|e| e.sun);
-                self.corona.lock().unwrap().sun = sun.as_ref().map(|s| (s.pos.x, s.pos.y, s.radius));
-                self.status.sun = sun;
-                self.step_tracking(&frame, now);
+                self.step_tracking(&frame, now, sun);
             }
             self.log_session(&frame, now);
             let t_cl = Instant::now();
@@ -2046,20 +2036,51 @@ impl Engine {
         self.status.perf.frame_ms = ema(self.status.perf.frame_ms, t_frame.elapsed().as_secs_f64() * 1000.0);
     }
 
-    fn step_tracking(&mut self, frame: &Frame, now: Instant) {
+    /// Feeds the one Sun model with a measurement (or `None`) and publishes its estimate. A cloud, a shadow or an eclipse makes
+    /// a measurement jump or vanish, and nothing downstream may follow that: it gets the model's prediction, corrected only by
+    /// measurements that agree with it.
+    fn feed_sun_model(&mut self, meas: Option<SunLocation>, now: Instant, dims: (u32, u32)) -> Option<crate::sunmodel::Estimate> {
+        // the image moves on purpose while slewing, calibrating or pulsing: follow the measurements then
+        let free = self.mount_state.slewing == Some(true) || self.goto.is_some() || self.flip.is_some() || now < self.manual_slew_until
+            || matches!(self.guide, GuideState::Calibrating(_)) || self.pulsing || now < self.pulse_settle_until;
+        let est = self.sun_model.update(meas, now, dims, free);
+        let was_held = self.sun_held;
+        self.sun_held = est.is_some_and(|e| e.predicted && e.since_measured_s > 1.0);
+        if self.sun_held != was_held && self.last_sun_event.elapsed() > Duration::from_secs(5) {
+            self.last_sun_event = Instant::now();
+            self.event(if self.sun_held { "sun_predicted" } else { "sun_measured_again" }, json!({ "estimate": est.map(|e| json!({ "x": e.sun.pos.x, "y": e.sun.pos.y, "r": e.sun.radius, "since_measured_s": e.since_measured_s })), "measurement": meas.map(|f| json!({ "x": f.pos.x, "y": f.pos.y, "r": f.radius })) }));
+        }
+        let sun = est.map(|e| e.sun);
+        self.corona.lock().unwrap().sun = sun.as_ref().map(|s| (s.pos.x, s.pos.y, s.radius));
+        self.status.sun = sun;
+        est
+    }
+
+    fn step_tracking(&mut self, frame: &Frame, now: Instant, detector: Option<SunLocation>) {
         let Some(t) = self.tracker.as_mut() else { return };
         // frames still in flight after an exposure change (or a lane switch) are over- or under-exposed: not a real loss
         let settling = self.last_exposure_change.elapsed() < Duration::from_secs(3);
-        match t.update(frame) {
-            Err(_) if settling && !self.lost => {}
+        let res = t.update(frame);
+        let mode = t.mode();
+        let anchor = mode == "anchor";
+        let dims = (frame.width, frame.height);
+        match res {
+            Err(_) if settling && !self.lost => {
+                if !anchor { self.feed_sun_model(detector, now, dims); }
+            }
             Ok(p) => {
                 self.fail_since = None;
                 self.fail_saved = false;
-                self.status.tracking = Some(TrackingStatus { mode: t.mode(), x: p.pos.x, y: p.pos.y, radius: p.radius, lost: false });
-                let mode = t.mode();
+                // the tracker's circle IS the model's circle: one estimate, shown once
+                let est = if anchor { None } else {
+                    let meas = if p.held { None } else { Some(SunLocation { pos: p.pos, radius: p.radius.unwrap_or(1000.0), partial: true, radius_from_optics: None, fit_rms: None }) };
+                    self.feed_sun_model(meas, now, dims)
+                };
+                let (sx, sy, sr) = est.map(|e| (e.sun.pos.x, e.sun.pos.y, Some(e.sun.radius))).unwrap_or((p.pos.x, p.pos.y, p.radius));
+                self.status.tracking = Some(TrackingStatus { mode, x: sx, y: sy, radius: sr, lost: false });
                 let was_lost = self.lost;
                 self.lost = false;
-                if was_lost { self.event("tracking_found", json!({ "x": p.pos.x, "y": p.pos.y, "radius": p.radius, "resuming_guiding": self.guide_hold.is_some(), "dead_reckoned_s": self.dead.as_ref().map(|d| d.age(now).as_secs_f64()) })); }
+                if was_lost { self.event("tracking_found", json!({ "x": sx, "y": sy, "radius": sr, "resuming_guiding": self.guide_hold.is_some(), "dead_reckoned_s": self.dead.as_ref().map(|d| d.age(now).as_secs_f64()) })); }
                 if was_lost && matches!(self.guide, GuideState::Off) && self.mount_tracking {
                     if let Some((target, cal)) = self.guide_hold.take() {
                         log::info!("tracking found again: guiding resumed");
@@ -2071,19 +2092,9 @@ impl Engine {
                         self.status.error = None;
                     }
                 }
-                // What the guider sees must be a trustworthy position: shadows, cloud and flapping fits are gated out by a model of
-                // the guide centre. When the position is not trustworthy and the drift is known the guider is fed a dead-reckoned one.
-                let free = self.mount_state.slewing == Some(true) || self.goto.is_some() || self.flip.is_some() || now < self.manual_slew_until
-                    || matches!(self.guide, GuideState::Calibrating(_)) || self.pulsing || now < self.pulse_settle_until;
-                let dims = (frame.width, frame.height);
-                let trusted = if p.held {
-                    None
-                } else if p.radius.is_some() && mode != "anchor" {
-                    let loc = SunLocation { pos: p.pos, radius: p.radius.unwrap_or(1000.0), partial: true, radius_from_optics: None, fit_rms: None };
-                    self.guide_gate.update(Some(loc), now, dims, free).filter(|e| !e.predicted).map(|e| e.sun.pos)
-                } else {
-                    Some(p.pos)
-                };
+                // What the guider sees must be a trustworthy position. When it is not, and the drift is known, the guider is
+                // fed a dead-reckoned one so the framing holds.
+                let trusted = if anchor { Some(p.pos) } else { est.filter(|e| !e.predicted).map(|e| e.sun.pos) };
                 match trusted {
                     Some(gp) => {
                         if self.dead.take().is_some() {
@@ -2100,6 +2111,11 @@ impl Engine {
                 }
             }
             Err(e) => {
+                if !anchor {
+                    if let Some(est) = self.feed_sun_model(detector, now, dims) {
+                        if let Some(ts) = self.status.tracking.as_mut() { ts.x = est.sun.pos.x; ts.y = est.sun.pos.y; ts.radius = Some(est.sun.radius); }
+                    }
+                }
                 let since = *self.fail_since.get_or_insert(now);
                 if !self.fail_saved {
                     self.fail_saved = true;

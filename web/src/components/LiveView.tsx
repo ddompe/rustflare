@@ -97,7 +97,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
             )}
             {t && (
               <g stroke={t.lost ? '#f87171' : '#fbbf24'} strokeWidth={stroke * 1.6}>
-                {t.radius && t.mode !== 'anchor' && <circle cx={t.x} cy={t.y} r={t.radius} strokeDasharray={`${stroke * 6} ${stroke * 5}`} />}
+                {/* the tracked circle is the Sun outline (one model), so only the centre mark is drawn here */}
                 {t.mode === 'anchor' && <rect x={t.x - 32} y={t.y - 32} width={64} height={64} />}
                 <path d={`M${t.x - W / 50} ${t.y}h${W / 25}M${t.x} ${t.y - W / 50}v${W / 25}`} />
               </g>
