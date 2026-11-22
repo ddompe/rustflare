@@ -107,24 +107,36 @@ test('frame size (ROI) changes the picture size and restores', async ({ page }) 
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).camera.width, { timeout: 10_000 }).toBe(1280)
 })
 
-test('HDR bracketing lanes record into one folder per lane', async ({ page }) => {
+test('Record offers sequence, prominence and HDR lanes in one form', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('tab', { name: /^Record/ }).click()
-  await page.getByText('HDR bracketing lanes').click()
+  await page.getByRole('radio', { name: 'HDR lanes' }).check()
   await page.getByRole('button', { name: 'Diamond ring' }).click()
   await expect(page.getByLabel('Lane 3 name')).toHaveValue('e3')
-  await page.locator('details', { hasText: 'HDR bracketing lanes' }).getByLabel('Cycles (empty = until stopped)').fill('1')
+  await page.getByRole('radio', { name: '+ Prominence' }).check()
+  await expect(page.getByText('Coronagraph: black out the disc')).toBeVisible()
+  await page.getByRole('radio', { name: 'Sequence' }).check()
+  await expect(page.getByRole('button', { name: 'Start recording' })).toBeVisible()
+})
+
+test('HDR lanes record into one folder per lane', async ({ page }) => {
+  await page.goto('/')
   await expect.poll(async () => (await post(page, '/capture/lanes', { lanes: [{ name: 'x1', exposure_us: 200, frames: 3 }, { name: 'x2', exposure_us: 400, frames: 3 }], cycles: 1 })).text(), { timeout: 10_000 }).toContain('lanes')
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
+  await page.getByRole('tab', { name: /^Record/ }).click()
   await page.getByRole('button', { name: /Open file manager/ }).click()
   await expect(page.getByRole('dialog', { name: 'File manager' })).toContainText('hdr_')
 })
 
-test('prominence video records raw lanes into their own session folder', async ({ page }) => {
+test('the prominence recording with the coronagraph masks the disc in its lane only', async ({ page }) => {
   await page.goto('/')
-  await expect.poll(async () => (await post(page, '/capture/lanes', { kind: 'prominence', lanes: [{ name: 'disc', exposure_us: 200, frames: 3 }, { name: 'prominence', exposure_us: 1600, frames: 3 }], cycles: 1 })).text(), { timeout: 10_000 }).toContain('lanes')
-  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
   await page.getByRole('tab', { name: /^Record/ }).click()
+  await page.getByRole('radio', { name: '+ Prominence' }).check()
+  await page.getByLabel('Frames per lane').fill('3')
+  await page.getByRole('switch', { name: /Coronagraph/ }).check()
+  await page.getByLabel('Number of cycles').fill('1')
+  await page.getByRole('button', { name: 'Start prominence recording' }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
   await page.getByRole('button', { name: /Open file manager/ }).click()
   const fm = page.getByRole('dialog', { name: 'File manager' })
   await fm.getByLabel('Show').selectOption('prominence')

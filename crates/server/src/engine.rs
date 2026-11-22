@@ -173,6 +173,9 @@ pub struct LaneSpec {
     pub gain: Option<f64>,
     pub frames: Option<u32>,
     pub seconds: Option<f64>,
+    /// Coronagraph: black out the Sun's disc in the recorded frames of this lane (otherwise frames are raw).
+    #[serde(default)]
+    pub mask_disc: bool,
 }
 
 /// Lane cycling state of a capture job: lanes are visited in order, each burst goes to the next lane.
@@ -183,6 +186,8 @@ struct Lanes {
     /// Start-to-start time of one pass through all lanes (time-lapse cadence); None = back to back.
     cycle_interval: Option<Duration>,
     cycle_started: Instant,
+    /// Index of the lane being recorded.
+    current: usize,
     /// Frames to discard after a setting change so the first kept frame has the new exposure.
     skip: u32,
 }
@@ -1247,12 +1252,12 @@ impl Engine {
                 let original = (self.exposure(), gain);
                 let dir = self.new_stem(kind_label, name.as_deref());
                 let _ = std::fs::create_dir_all(&dir);
-                let manifest = self.sidecar("lane-session", json!({ "kind": kind_label, "cycles": cycles, "lanes": lanes.iter().map(|l| json!({ "name": l.name, "exposure_us": l.exposure_us, "gain": l.gain, "frames": l.frames, "seconds": l.seconds })).collect::<Vec<_>>() }));
+                let manifest = self.sidecar("lane-session", json!({ "kind": kind_label, "cycles": cycles, "lanes": lanes.iter().map(|l| json!({ "name": l.name, "exposure_us": l.exposure_us, "gain": l.gain, "frames": l.frames, "seconds": l.seconds, "mask_disc": l.mask_disc })).collect::<Vec<_>>() }));
                 let _ = std::fs::write(dir.join("session.json"), serde_json::to_vec_pretty(&manifest).unwrap_or_default());
                 let total = cycles.map(|c| c * lanes.len() as u32);
                 let n_lanes = lanes.len();
                 self.job = Job::Capture(Box::new(CaptureJob {
-                    lanes: Some(Lanes { specs: lanes, dir, original, cycle_interval: cycle_interval_s.map(Duration::from_secs_f64), cycle_started: Instant::now(), skip: 0 }),
+                    lanes: Some(Lanes { specs: lanes, dir, original, cycle_interval: cycle_interval_s.map(Duration::from_secs_f64), cycle_started: Instant::now(), current: 0, skip: 0 }),
                     name: name.unwrap_or_default(),
                     kind: kind_label,
                     format,
@@ -1915,7 +1920,7 @@ impl Engine {
         };
     }
 
-    fn step_capture(&mut self, mut job: Box<CaptureJob>, frame: Frame) -> Job {
+    fn step_capture(&mut self, mut job: Box<CaptureJob>, mut frame: Frame) -> Job {
         let now = Instant::now();
         let total_txt = job.total_bursts.map(|t| format!("/{t}")).unwrap_or_default();
         if let CapPhase::Waiting { next_at } = job.phase {
@@ -1936,6 +1941,7 @@ impl Engine {
                 job.burst_frames = spec.frames;
                 job.burst_seconds = spec.seconds;
                 l.skip = 2;
+                l.current = ((job.burst_no - 1) % n) as usize;
                 self.set_exposure(spec.exposure_us);
                 if let (Some(g), Some(cam)) = (spec.gain, self.camera.as_mut()) {
                     let _ = cam.set_control("gain", g);
@@ -1972,6 +1978,14 @@ impl Engine {
             if l.skip > 0 {
                 l.skip -= 1; // frames already in flight carry the previous lane's exposure
                 return Job::Capture(job);
+            }
+        }
+        if job.lanes.as_ref().is_some_and(|l| l.specs[l.current].mask_disc) {
+            // coronagraph recording: the disc is blacked out in the saved frames of this lane
+            let scale = self.corona.lock().unwrap().scale;
+            match self.status.sun.as_ref() {
+                Some(s) => preview::mask_disc(&mut frame, s.pos.x, s.pos.y, s.radius * scale),
+                None => log::warn!("coronagraph lane: the Sun is not in view, frame saved unmasked"),
             }
         }
         let CapPhase::Capturing { stem, started, taken } = &mut job.phase else { unreachable!() };
