@@ -71,6 +71,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/guiding/params", put(guide_params))
         .route("/api/coronagraph", put(coronagraph))
         .route("/api/colour", put(colour))
+        .route("/api/focus", put(focus))
         .route("/api/camera/roi", put(camera_roi))
         .route("/api/session-log", put(session_log))
         .route("/api/capture/darks", post(capture_darks))
@@ -425,6 +426,13 @@ async fn session_log(s: State<AppState>, Json(b): Json<SessionLogBody>) -> Res {
 struct RoiBody { fraction: f64 }
 async fn camera_roi(s: State<AppState>, Json(b): Json<RoiBody>) -> Res {
     run(s, Command::SetRoi { fraction: b.fraction }).await
+}
+
+#[derive(Deserialize)]
+struct FocusBody { enabled: bool, #[serde(default)] reset: bool }
+/// Focus assist: a sharpness score and its history while the user turns the focuser by hand.
+async fn focus(s: State<AppState>, Json(b): Json<FocusBody>) -> Res {
+    run(s, Command::SetFocus { enabled: b.enabled, reset: b.reset }).await
 }
 
 #[derive(Deserialize)]

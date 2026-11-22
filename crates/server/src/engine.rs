@@ -53,6 +53,17 @@ struct FlipState {
     good_since: Option<Instant>,
 }
 
+/// Focus assist session: scores frames, summarises one-second bursts, keeps the history for the graph.
+struct FocusState {
+    started: Instant,
+    last_scored: Instant,
+    burst_started: Instant,
+    burst: Vec<f64>,
+    live: Option<f64>,
+    history: Vec<[f64; 2]>,
+    best: Option<(f64, Instant)>,
+}
+
 struct GotoState {
     started: Instant,
     /// The mount has been seen slewing.
@@ -109,6 +120,8 @@ pub enum Command {
     SetCoronagraph { enabled: bool, scale: f64 },
     /// White balance of a colour camera: mode off / auto / manual, manual red and blue gains (green = 1).
     SetColour { mode: String, r: f64, b: f64 },
+    /// Focus assist on or off; `reset` clears the history and the best score.
+    SetFocus { enabled: bool, reset: bool },
     /// Guiding tuning; takes effect the next time guiding starts.
     SetGuideParams { window_s: f64, deadband_px: f64, gain: f64, speed: f64, fast_speed: f64, fast_above_px: f64 },
     /// Switch flat-field correction of the live view on or off (a master flat must exist).
@@ -272,6 +285,7 @@ pub struct Engine {
     site: Option<Site>,
     guide_params: GuideParams,
     goto: Option<GotoState>,
+    focus: Option<FocusState>,
     flip: Option<FlipState>,
     last_flip: Option<Value>,
     ntp_sync: Option<bool>,
@@ -363,6 +377,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         mount_poll_failures: 0,
         site: crate::config::read(storage.config_file()).get("site").and_then(|v| serde_json::from_value(v.clone()).ok()),
         goto: None,
+        focus: None,
         flip: None,
         last_flip: crate::config::read(storage.config_file()).get("last_flip").cloned(),
         guide_params,
@@ -953,6 +968,24 @@ impl Engine {
                 }
                 self.guide_params = GuideParams { window: Duration::from_secs_f64(window_s), deadband_px, gain, speed, fast_speed, fast_above_px, ..self.guide_params };
                 crate::config::set(self.storage.config_file(), "guide", json!({ "window_s": window_s, "deadband_px": deadband_px, "gain": gain, "speed": speed, "fast_speed": fast_speed, "fast_above_px": fast_above_px }))?;
+                Ok(json!({}))
+            }
+            Command::SetFocus { enabled, reset } => {
+                if enabled {
+                    if self.camera.is_none() {
+                        return Err("no camera open".into());
+                    }
+                    if reset || self.focus.is_none() {
+                        let now = Instant::now();
+                        self.focus = Some(FocusState { started: now, last_scored: now - Duration::from_secs(1), burst_started: now, burst: vec![], live: None, history: vec![], best: None });
+                    }
+                    self.status.focus = FocusStatus { enabled: true, ..Default::default() };
+                    self.publish();
+                } else {
+                    self.focus = None;
+                    self.status.focus = FocusStatus::default();
+                    self.publish();
+                }
                 Ok(json!({}))
             }
             Command::SetColour { mode, r, b } => {
@@ -1629,6 +1662,8 @@ impl Engine {
 
     fn close_camera(&mut self) {
         self.camera = None;
+        self.focus = None;
+        self.status.focus = FocusStatus::default();
         self.status.roi = None;
         self.camera_pixel_um = None;
         self.status.camera = None;
@@ -1672,7 +1707,52 @@ impl Engine {
 
     // ----------------------------------------------------------------- frames
 
+    /// Focus assist: score about 25 frames a second, summarise each second as a lucky score, publish the history.
+    fn step_focus(&mut self, frame: &Frame) {
+        let Some(f) = self.focus.as_mut() else { return };
+        let now = Instant::now();
+        if now.duration_since(f.last_scored) < Duration::from_millis(40) {
+            return;
+        }
+        f.last_scored = now;
+        let (cx, cy) = self.status.sun.as_ref().map(|s| (s.pos.x, s.pos.y)).unwrap_or((frame.width as f64 / 2.0, frame.height as f64 / 2.0));
+        let mut note = None;
+        match rustflare_tracking::focus::sharpness(frame, cx, cy) {
+            Some(sc) => {
+                f.burst.push(sc);
+                f.live = Some(f.live.map_or(sc, |l| 0.7 * l + 0.3 * sc));
+            }
+            None => note = Some("Nothing bright to judge: is the Sun in view and the cap off?".to_string()),
+        }
+        if now.duration_since(f.burst_started) >= Duration::from_secs(1) {
+            if let Some(l) = rustflare_tracking::focus::lucky_score(&f.burst) {
+                let t = now.duration_since(f.started).as_secs_f64();
+                f.history.push([t, l]);
+                if f.history.len() > 600 {
+                    f.history.remove(0);
+                }
+                if f.best.map_or(true, |(b, _)| l > b) {
+                    f.best = Some((l, now));
+                }
+            }
+            f.burst.clear();
+            f.burst_started = now;
+        }
+        let last = f.history.last().map(|h| h[1]);
+        let skip = f.history.len().saturating_sub(180);
+        self.status.focus = FocusStatus {
+            enabled: true,
+            live: f.live,
+            lucky: last,
+            best: f.best.map(|b| b.0),
+            best_age_s: f.best.map(|b| now.duration_since(b.1).as_secs_f64()),
+            history: f.history[skip..].to_vec(),
+            note,
+        };
+    }
+
     fn on_frame(&mut self, frame: Frame) {
+        self.step_focus(&frame);
         let now = Instant::now();
         let t_frame = now;
         let ema = |old: f64, new: f64| if old == 0.0 { new } else { 0.95 * old + 0.05 * new };

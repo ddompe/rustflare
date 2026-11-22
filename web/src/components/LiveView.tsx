@@ -1,3 +1,4 @@
+import { FocusHud } from './FocusAssist'
 import React, { useRef, useState } from 'react'
 import { api, Status } from '../api'
 import { Display, cssFilter } from '../display'
@@ -106,6 +107,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
         </svg>
       </div>
       <HudLayer status={status} api={hud} previewFps={d.fps} />
+      {status && <FocusHud status={status} />}
       {t?.lost && <div className="lost-badge" role="alert">TARGET LOST</div>}
       <div className="live-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
         <button type="button" aria-label="Zoom in" onClick={() => { const zoom = Math.min(8, d.zoom * 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>+</button>

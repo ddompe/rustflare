@@ -11,6 +11,7 @@ const H: u32 = 960;
 const DISC_RADIUS: f64 = 300.0;
 const CTRL_SCENE: &str = "sim_scene";
 const CTRL_ZOOM: &str = "sim_zoom";
+const CTRL_DEFOCUS: &str = "sim_defocus";
 const PIXEL_SIZE_UM: f64 = 3.75;
 
 pub struct SimulatorDriver {
@@ -35,7 +36,7 @@ impl CameraDriver for SimulatorDriver {
         if id != "sim0" && id != "sim_osc" {
             return Err(Error::NotFound(format!("simulator camera {id}")));
         }
-        Ok(Box::new(SimCamera { colour: id == "sim_osc", sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, roi: None, zoom: 1.0, rng: 0x9E3779B97F4A7C15 }))
+        Ok(Box::new(SimCamera { colour: id == "sim_osc", sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, roi: None, zoom: 1.0, defocus: 0.0, rng: 0x9E3779B97F4A7C15 }))
     }
 }
 
@@ -51,6 +52,8 @@ struct SimCamera {
     roi: Option<rustflare_core::Roi>,
     /// Disc radius multiplier (1 = 300 px). Above ~1.6 the disc overflows the frame, like an H-alpha scope.
     zoom: f64,
+    /// Simulated focus error: edge softness in pixels (0 = sharp). Detail contrast drops with it too.
+    defocus: f64,
     rng: u64,
 }
 
@@ -88,6 +91,7 @@ impl Camera for SimCamera {
             c(CTRL_HIGH_BIT_DEPTH, "16-bit output", 0.0, 1.0, 1.0, self.high_bit as u8 as f64, None, false),
             c(CTRL_SCENE, "Sim scene (0 sun, 1 flat)", 0.0, 1.0, 1.0, self.scene as f64, None, false),
             c(CTRL_ZOOM, "Sim disc size (×300 px)", 0.5, 4.0, 0.1, self.zoom, None, false),
+            c(CTRL_DEFOCUS, "Sim defocus (px)", 0.0, 30.0, 0.5, self.defocus, None, false),
         ])
     }
 
@@ -99,6 +103,7 @@ impl Camera for SimCamera {
             CTRL_HIGH_BIT_DEPTH => self.high_bit = value >= 0.5,
             CTRL_SCENE => self.scene = if value >= 0.5 { 1 } else { 0 },
             CTRL_ZOOM => self.zoom = value.clamp(0.5, 4.0),
+            CTRL_DEFOCUS => self.defocus = value.clamp(0.0, 30.0),
             _ => return Err(Error::Invalid(format!("unknown control {id}"))),
         }
         Ok(())
@@ -120,7 +125,18 @@ impl Camera for SimCamera {
                 let signal = if self.scene == 0 {
                     let (dx, dy) = (x as f64 - cx, y as f64 - cy);
                     let r2 = (dx * dx + dy * dy) / (radius * radius);
-                    if r2 < 1.0 {
+                    let blur = self.defocus;
+                    if blur > 0.1 && r2 < (1.0 + 8.0 * blur / radius).powi(2) {
+                        // out of focus: the limb is a soft ramp and the surface detail loses contrast
+                        let rr = r2.sqrt() * radius;
+                        let edge = 1.0 / (1.0 + ((rr - radius) / (blur * 0.5)).exp());
+                        let mu = (1.0 - r2.min(0.999)).sqrt();
+                        let t = ((dx / 23.0).sin() * (dy / 31.0).cos() + 1.0) / 2.0;
+                        let plage = (-(((dx - 0.3 * radius) / 40.0).powi(2) + ((dy + 0.2 * radius) / 30.0).powi(2))).exp();
+                        let detail = 1.0 / (1.0 + blur / 4.0);
+                        let structure = 0.55 + (0.25 * t * t + 0.2 * plage) * detail;
+                        ((1.0 - 0.4 * (1.0 - mu)) * structure * edge + 0.002) * level
+                    } else if r2 < 1.0 {
                         // limb darkening, mu = sqrt(1 - r^2), times H-alpha-like structure: smooth, attached to
                         // the disc, with dark filaments and a bright plage patch
                         let mu = (1.0 - r2).sqrt();

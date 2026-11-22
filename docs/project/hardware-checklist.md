@@ -39,6 +39,8 @@ Everything below was built and tested on the simulators; each item needs the rea
 
 | new | Colour camera (OSC) | With a colour Player One or ASI: the header says colour with the pattern; the live view is in colour with plausible colours (pattern right: the Sun is not blue); a SER opens in AutoStakkert/Siril as the right Bayer pattern; ASI colour path has never run on hardware |
 
+| new | Focus assist | In bright sun with tracking on: switch Focus assist on, turn the focuser through focus and back: the score should rise to a clear peak and the best line should match what you judge as sharp; check that it is not fooled by seeing or by drift of the Sun, and whether 1 s bursts are the right length |
+
 ## M2: UI
 
 | Issue | Check |

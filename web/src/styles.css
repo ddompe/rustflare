@@ -453,3 +453,20 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 :root[data-theme='day'] .live-tools button, :root[data-theme='day'] .live .hud, :root[data-theme='day'] .live button { color: #fff; }
 .hidebtn { white-space: nowrap; }
 @media (max-width: 480px) { .hidebtn { font-size: .78rem; padding: 0 .5rem; } .top .conn { display: none; } }
+
+/* focus assist */
+.focus-score { margin: .5rem 0; }
+.fs-main { display: flex; align-items: baseline; gap: .8rem; }
+.fs-main b { font-size: 3rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.fs-trend { font-weight: 800; color: var(--muted); }
+.fs-trend.up { color: var(--ok); } .fs-trend.down { color: var(--bad); }
+.focus-graph { width: 100%; height: auto; aspect-ratio: 300 / 110; display: block; background: var(--surface); border: 1.5px solid var(--line); border-radius: 8px; margin: .4rem 0; }
+.focus-graph.empty { display: grid; place-items: center; color: var(--muted); font-size: .9rem; }
+.fg-line { stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.fg-best { stroke: var(--ok); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.fg-now { fill: var(--accent); stroke: var(--fg); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+
+.focus-hud { position: absolute; left: .5rem; top: 3.2rem; width: 30%; max-width: 160px; padding: .3rem .5rem; background: rgba(14, 12, 11, .5); border: 1.5px solid rgba(255,255,255,.28); border-radius: 10px; color: #fff; pointer-events: none; display: grid; gap: .1rem; z-index: 2; }
+.focus-hud b { font-size: 1.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.focus-hud span { font-size: .75rem; color: #ddd; }
+.focus-graph.small { height: auto; aspect-ratio: 300 / 90; border: 0; background: transparent; margin: 0; }

@@ -5,6 +5,7 @@
 //! is unit-testable without hardware (ADR 0008).
 
 pub mod flip;
+pub mod focus;
 pub mod guiding;
 pub mod solar;
 pub mod tracker;

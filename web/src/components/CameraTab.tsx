@@ -8,6 +8,7 @@ import { Flats } from './Flats'
 import { Darks } from './Darks'
 import { RoiControl } from './RoiControl'
 import { ColourControl } from './ColourControl'
+import { FocusAssist } from './FocusAssist'
 import { CameraCatalog, useDatasheet } from '../datasheet'
 
 const fmt = (c: Control, v: number) => {
@@ -199,6 +200,9 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
           <ColourControl status={status} />
         </Disclosure>
       )}
+      <Disclosure title="Focus assist" summary={status?.focus?.enabled ? `score ${status.focus.lucky?.toFixed(2) ?? "…"}` : 'off'}>
+        <FocusAssist status={status} />
+      </Disclosure>
       <Disclosure title="Frame size" summary={status?.roi ? `${status.roi.width}×${status.roi.height}` : ''}>
         <RoiControl status={status} />
       </Disclosure>

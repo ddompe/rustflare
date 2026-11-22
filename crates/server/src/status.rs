@@ -227,6 +227,22 @@ pub struct ColourStatus {
     pub applied: [f64; 3],
 }
 
+/// Focus assist: live and lucky sharpness scores and their history while the user turns the focuser.
+#[derive(Clone, Serialize, Default)]
+pub struct FocusStatus {
+    pub enabled: bool,
+    /// Smoothed score of the latest frames (immediate feedback while turning).
+    pub live: Option<f64>,
+    /// Lucky score of the last finished burst (mean of its sharpest quarter).
+    pub lucky: Option<f64>,
+    /// Best lucky score since the session started or was reset, and how long ago it was reached.
+    pub best: Option<f64>,
+    pub best_age_s: Option<f64>,
+    /// (seconds since start, lucky score) per burst, oldest first.
+    pub history: Vec<[f64; 2]>,
+    pub note: Option<String>,
+}
+
 #[derive(Clone, Serialize)]
 pub struct CoronagraphStatus {
     pub enabled: bool,
@@ -236,6 +252,7 @@ pub struct CoronagraphStatus {
 #[derive(Clone, Serialize)]
 pub struct Status {
     pub coronagraph: CoronagraphStatus,
+    pub focus: FocusStatus,
     pub colour: ColourStatus,
     pub darks: DarksStatus,
     pub perf: PerfStatus,
@@ -273,6 +290,7 @@ impl Default for Status {
             perf: PerfStatus::default(),
             darks: DarksStatus { available: false, applied: false, name: None, exposure_us: None, gain: None, matches_camera: false },
             coronagraph: CoronagraphStatus { enabled: false, scale: 1.03 },
+            focus: FocusStatus::default(),
             colour: ColourStatus { mode: "auto", r: 1.0, b: 1.0, applied: [1.0; 3] },
             guide_params: GuideParamsStatus { window_s: 10.0, deadband_px: 3.0, gain: 0.7, speed: 0.2, fast_speed: 0.8, fast_above_px: 20.0 },
             flats: FlatsStatus { available: false, applied: false, name: None },
