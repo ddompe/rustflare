@@ -70,6 +70,8 @@ struct State {
     anchor: Vec2,
     partial: bool,
     dims: (u32, u32),
+    /// The radius learned in good conditions (after many agreeing measurements): cloud and haze cannot move the radius far from it.
+    good_radius: Option<f64>,
     /// Measurements that have agreed with the model: a young model (started on one frame, maybe a bad one) is easy to correct.
     confirmed: u32,
 }
@@ -112,14 +114,14 @@ impl SunModel {
 
     /// Feeds the detector's result for one frame (`None`: nothing found) and returns the model's estimate.
     /// `free`: the mount is slewing (or being moved by hand): the Sun really moves, so follow the measurements directly.
-    pub fn update(&mut self, meas: Option<SunLocation>, now: Instant, dims: (u32, u32), free: bool, radius_prior: Option<f64>) -> Option<Estimate> {
+    pub fn update(&mut self, meas: Option<SunLocation>, now: Instant, dims: (u32, u32), free: bool, _radius_prior: Option<f64>) -> Option<Estimate> {
         if self.state.is_some_and(|s| s.dims != dims) {
             self.reset();
         }
         let Some(mut s) = self.state else {
             // nothing to predict from yet: the first measurement starts the model
             let m = meas?;
-            self.state = Some(State { pos: m.pos, radius: m.radius, vel: self.learned.unwrap_or(Vec2::new(0.0, 0.0)), at: now, last_measured: now, anchor: m.pos, partial: m.partial, dims, confirmed: 0 });
+            self.state = Some(State { pos: m.pos, radius: m.radius, vel: self.learned.unwrap_or(Vec2::new(0.0, 0.0)), at: now, last_measured: now, anchor: m.pos, partial: m.partial, dims, good_radius: None, confirmed: 0 });
             return Some(Estimate { sun: m, predicted: false, since_measured_s: 0.0 });
         };
         // predict forward, but never far from the last place a measurement agreed
@@ -133,7 +135,7 @@ impl SunModel {
         let mut predicted = true;
         if let Some(m) = meas {
             let step = (m.pos - s.pos).len();
-            let radius_ok = (m.radius / s.radius - 1.0).abs() <= GATE_RADIUS && radius_prior.map_or(true, |p| (m.radius / p - 1.0).abs() <= RADIUS_PRIOR_TOL);
+            let radius_ok = (m.radius / s.radius - 1.0).abs() <= GATE_RADIUS && s.good_radius.map_or(true, |p| (m.radius / p - 1.0).abs() <= RADIUS_PRIOR_TOL);
             let small = SMALL_STEP_RADII * s.radius;
             let gate = GATE_RADII * s.radius;
             // weight of this measurement: full for a drift-sized step, falling off towards the gate, and low when only the
@@ -215,6 +217,7 @@ impl SunModel {
                     s.vel = self.learned.unwrap_or(Vec2::new(0.0, 0.0));
                     self.history.clear();
                     s.confirmed = 0;
+                    s.good_radius = None;
                     s.last_measured = now;
                     s.partial = partial;
                     predicted = false;
@@ -222,7 +225,11 @@ impl SunModel {
                 }
             }
         }
-        if let Some(p) = radius_prior {
+        // a radius learned from many agreeing measurements is the one to trust; cloud and haze cannot move it far
+        if s.confirmed >= 200 && s.good_radius.is_none() {
+            s.good_radius = Some(s.radius);
+        }
+        if let Some(p) = s.good_radius {
             s.radius = s.radius.clamp(p * (1.0 - RADIUS_PRIOR_TOL), p * (1.0 + RADIUS_PRIOR_TOL));
         }
         self.state = Some(s);
@@ -326,14 +333,23 @@ mod tests {
     }
 
     #[test]
-    fn the_radius_stays_near_the_optics_radius() {
+    fn the_radius_stays_near_the_radius_learned_in_good_light() {
         let (mut m, t0) = (SunModel::default(), Instant::now());
-        let mut last = None;
-        for i in 0..3000 {
-            // measurements that read the radius 15 % small (hazy limb) for two minutes
-            last = m.update(Some(loc(1000.0, 700.0, 1020.0)), t0 + Duration::from_millis(40 * i), D, false, Some(1200.0));
+        // good light first: the radius is 1230 (not what the optics settings say)
+        for i in 0..400 {
+            m.update(Some(loc(1000.0, 700.0, 1230.0)), t0 + Duration::from_millis(40 * i), D, false, None);
         }
-        assert!(last.unwrap().sun.radius >= 1200.0 * 0.94 - 1.0, "radius {}", last.unwrap().sun.radius);
+        let mut last = None;
+        for i in 400..3400 {
+            // then two minutes of hazy measurements that read the radius 15 % small
+            last = m.update(Some(loc(1000.0, 700.0, 1045.0)), t0 + Duration::from_millis(40 * i), D, false, None);
+        }
+        assert!(last.unwrap().sun.radius >= 1230.0 * 0.94 - 1.0, "radius {}", last.unwrap().sun.radius);
+        // and it is not limited to some other number: a model that never saw good light follows the measurements
+        let (mut n, t1) = (SunModel::default(), Instant::now());
+        let mut e = None;
+        for i in 0..100 { e = n.update(Some(loc(1000.0, 700.0, 1228.0)), t1 + Duration::from_millis(40 * i), D, false, Some(1099.0)); }
+        assert!((e.unwrap().sun.radius - 1228.0).abs() < 2.0, "radius {}", e.unwrap().sun.radius);
     }
 
     #[test]

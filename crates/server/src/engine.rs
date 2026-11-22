@@ -2258,7 +2258,7 @@ impl Engine {
         // the image moves on purpose while slewing, calibrating or pulsing: follow the measurements then
         let free = self.mount_state.slewing == Some(true) || self.goto.is_some() || self.flip.is_some() || now < self.manual_slew_until
             || matches!(self.guide, GuideState::Calibrating(_)) || self.pulsing || now < self.pulse_settle_until;
-        let est = self.sun_model.update(meas, now, dims, free, self.radius_hint());
+        let est = self.sun_model.update(meas, now, dims, free, None);
         let was_held = self.sun_held;
         self.sun_held = est.is_some_and(|e| e.predicted && e.since_measured_s > 1.0);
         if self.sun_held != was_held && self.last_sun_event.elapsed() > Duration::from_secs(5) {
