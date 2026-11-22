@@ -2125,6 +2125,8 @@ impl Engine {
                             self.event("dead_reckoning_start", json!({ "drift_px_s": [d.x, d.y] }));
                             self.status.error = Some(format!("tracking lost: {e}. Guiding goes on from the measured drift"));
                         }
+                        // a calibration rides out blinks of the tracker (it works from medians); only a long loss ends it
+                        (GuideState::Calibrating(_), _, _) if now.duration_since(since) < Duration::from_secs(30) => {}
                         _ => {
                             self.status.error = Some(format!("tracking lost: {e}"));
                             self.stop_guiding_quietly();

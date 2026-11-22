@@ -295,6 +295,9 @@ enum Phase {
 /// Moves each axis in turn and measures the image displacement to learn the axis directions.
 pub struct Calibrator {
     phase: Phase,
+    /// Recent positions: the start and end of each move use their median, so one bad frame (shadow, cloud) cannot spoil it.
+    recent: VecDeque<(Instant, Vec2)>,
+    init_since: Option<Instant>,
     motion: [Option<Vec2>; 2],
     pub move_time: Duration,
     pub settle_time: Duration,
@@ -306,9 +309,11 @@ impl Calibrator {
     pub fn new() -> Calibrator {
         Calibrator {
             phase: Phase::Init,
+            recent: VecDeque::new(),
+            init_since: None,
             motion: [None; 2],
             move_time: Duration::from_secs(4),
-            settle_time: Duration::from_secs(1),
+            settle_time: Duration::from_millis(1500),
             speed: 0.5,
             min_move_px: 5.0,
         }
@@ -318,10 +323,38 @@ impl Calibrator {
         if axis == 0 { GuideCommand { primary: self.speed, secondary: 0.0 } } else { GuideCommand { primary: 0.0, secondary: self.speed } }
     }
 
+    /// Coordinate-wise median of the positions of the last `window`; `None` with fewer than 3 samples.
+    fn median(&self, now: Instant, window: Duration) -> Option<Vec2> {
+        let mut xs: Vec<f64> = vec![];
+        let mut ys: Vec<f64> = vec![];
+        for (t, p) in &self.recent {
+            if now.duration_since(*t) <= window {
+                xs.push(p.x);
+                ys.push(p.y);
+            }
+        }
+        if xs.len() < 3 {
+            return None;
+        }
+        xs.sort_by(|a, b| a.total_cmp(b));
+        ys.sort_by(|a, b| a.total_cmp(b));
+        Some(Vec2::new(xs[xs.len() / 2], ys[ys.len() / 2]))
+    }
+
     pub fn step(&mut self, now: Instant, pos: Vec2) -> CalAction {
+        self.recent.push_back((now, pos));
+        while self.recent.front().is_some_and(|(t, _)| now.duration_since(*t) > Duration::from_secs(3)) {
+            self.recent.pop_front();
+        }
         match self.phase {
             Phase::Init => {
-                self.phase = Phase::Moving { axis: 0, since: now, from: pos };
+                // look at the Sun for a moment first: the start of the first move is the median of that
+                let since = *self.init_since.get_or_insert(now);
+                if now.duration_since(since) < Duration::from_millis(1500) {
+                    return CalAction::None;
+                }
+                let from = self.median(now, Duration::from_millis(1500)).unwrap_or(pos);
+                self.phase = Phase::Moving { axis: 0, since: now, from };
                 CalAction::Guide(self.cmd(0))
             }
             Phase::Moving { axis, since, from } => {
@@ -336,7 +369,8 @@ impl Calibrator {
                 if now.duration_since(since) < self.settle_time {
                     return CalAction::None;
                 }
-                let d = pos - from;
+                let end = self.median(now, self.settle_time).unwrap_or(pos);
+                let d = end - from;
                 if d.len() < self.min_move_px {
                     return CalAction::Failed(format!(
                         "image moved only {:.1}px on axis {} (is sky tracking on and the guide rate adequate?)",
@@ -345,7 +379,7 @@ impl Calibrator {
                 }
                 self.motion[axis] = Some(d);
                 if axis == 0 {
-                    self.phase = Phase::Moving { axis: 1, since: now, from: pos };
+                    self.phase = Phase::Moving { axis: 1, since: now, from: end };
                     CalAction::Guide(self.cmd(1))
                 } else {
                     match Calibration::from_motion(self.motion[0].unwrap(), self.motion[1].unwrap(), self.move_time.as_secs_f64(), self.speed) {
@@ -524,8 +558,35 @@ mod tests {
         let mut c = Calibrator::new();
         let t = Instant::now();
         let p = Vec2::new(10.0, 10.0);
-        let _ = c.step(t, p);
-        let _ = c.step(t + Duration::from_secs(5), p);
-        assert!(matches!(c.step(t + Duration::from_secs(7), p), CalAction::Failed(_)));
+        let mut failed = false;
+        for i in 0..200 {
+            if matches!(c.step(t + Duration::from_millis(100 * i), p), CalAction::Failed(_)) { failed = true; break; }
+        }
+        assert!(failed, "a calibration where the image never moves must fail");
+    }
+
+    #[test]
+    fn calibration_ignores_a_few_bad_frames() {
+        // the same world as the other calibration test, with every tenth measurement a wild outlier (shadow, cloud)
+        let mut w = World::new(TRACKING_DRIFT, 1.0);
+        let mut c = Calibrator::new();
+        let mut n = 0u32;
+        for _ in 0..2000 {
+            n += 1;
+            let mut m = w.measured();
+            if n % 10 == 0 { m = m + Vec2::new(300.0, -250.0); }
+            match c.step(w.now, m) {
+                CalAction::Guide(g) => w.cmd = g,
+                CalAction::Done(cal) => {
+                    let (p, q) = axis_dirs();
+                    assert!((cal.primary_dir - p).len() < 0.15 && (cal.secondary_dir - q).len() < 0.15, "{cal:?}");
+                    return;
+                }
+                CalAction::Failed(e) => panic!("{e}"),
+                CalAction::None => {}
+            }
+            w.tick();
+        }
+        panic!("calibration never finished");
     }
 }
