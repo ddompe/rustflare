@@ -1,4 +1,4 @@
-name: Apt repository
+name: Site (user manual and apt repository)
 
 # Builds a signed apt repository from every released .deb and publishes it with GitHub Pages
 # (https://<owner>.github.io/<repo>/). Runs after each Release and can be started by hand.
@@ -7,6 +7,9 @@ on:
   workflow_run:
     workflows: [Release]
     types: [completed]
+  push:
+    branches: [main]
+    paths: ['docs/**', 'mkdocs.yml', '.github/workflows/apt-repo.yml']
   workflow_dispatch:
 
 permissions:
@@ -20,12 +23,16 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+      - name: Build the user manual
+        run: |
+          pip install mkdocs
+          mkdocs build -d site/manual
       - name: Signing key present?
         run: |
           [ -n "${{ secrets.APT_GPG_PRIVATE_KEY }}" ] || { echo "::error::secret APT_GPG_PRIVATE_KEY is not set: see docs/apt-repository.md"; exit 1; }
@@ -62,7 +69,9 @@ jobs:
           gpg --armor --export "$KEYID" > rustflare.asc
           cat > index.html <<'HTML'
           <!doctype html><title>RustFlare apt repository</title>
-          <h1>RustFlare apt repository</h1>
+          <h1>RustFlare</h1>
+          <p><a href="manual/">User manual</a></p>
+          <h2>apt repository</h2>
           <pre>curl -fsSL https://ddompe.github.io/rustflare/rustflare.gpg | sudo tee /usr/share/keyrings/rustflare.gpg >/dev/null
           echo "deb [signed-by=/usr/share/keyrings/rustflare.gpg arch=arm64] https://ddompe.github.io/rustflare stable main" | sudo tee /etc/apt/sources.list.d/rustflare.list
           sudo apt update &amp;&amp; sudo apt install rustflare</pre>

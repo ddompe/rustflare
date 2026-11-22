@@ -421,3 +421,5 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .app[data-full] .top, .app[data-full] .tabs, .app[data-full] .panel, .app[data-full] .banner { display: none; }
 .app[data-full] .view { align-self: center; }
 .app[data-full] .live { --vmax: calc(100dvh - 4rem); }
+.app[data-full] { grid-template-rows: minmax(0, 1fr); grid-template-areas: 'view'; }
+.app[data-full] .view { display: grid; align-content: center; }

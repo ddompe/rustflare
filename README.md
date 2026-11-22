@@ -36,6 +36,7 @@ Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi nex
 
 **Running it**
 - Installs and upgrades as a Debian package (`rustflare-update`, or a signed apt repository); settings (site, flats, guiding, storage, UI layout) survive reboots; auto-reconnect of camera and mount.
+- **User manual** with screenshots: [docs/manual.md](docs/manual.md), published at https://ddompe.github.io/rustflare/manual/.
 - **Field Wi-Fi hotspot** (`rustflare-hotspot`) for use without a network, with an automatic way back to the previous Wi-Fi ([docs/hotspot.md](docs/hotspot.md)).
 - Opt-in **session log** (what the tracker and guider saw, plus small frames) and a replay test harness for building regression fixtures from real sessions.
 - Optional **password** and **HTTPS** with a private certificate authority you trust once on your phone (`rustflare-tls`).
