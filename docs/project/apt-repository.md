@@ -1,6 +1,6 @@
 # Apt repository setup (maintainers)
 
-How the maintainer publishes the signed apt repository. Using it on a Pi is described in [Updating](../guide/updating.md#with-the-signed-apt-repository). With the repository, a Pi installs and upgrades RustFlare with plain `apt`, and every package is checked against your signature (the SHA-256 check in `rustflare-update` only protects against corruption, not against a tampered release).
+How the maintainer publishes the signed apt repository. Using it on a Pi is described in [Updating](../guide/updating.md#with-the-signed-apt-repository). With the repository, a Pi installs and upgrades RustFlare with plain `apt`, and every package is checked against your signature (the SHA-256 file next to a release only protects against corruption, not against a tampered release).
 
 ## One-time setup (you, about 10 minutes)
 
@@ -32,7 +32,7 @@ echo "deb [signed-by=/usr/share/keyrings/rustflare.gpg arch=arm64] https://ddomp
 sudo apt update && sudo apt install rustflare
 ```
 
-Afterwards `sudo apt update && sudo apt upgrade` updates RustFlare along with the system. As before, an update restarts the service, so do not upgrade in the middle of an observation. `rustflare-update` keeps working too.
+Afterwards `sudo apt update && sudo apt upgrade` updates RustFlare along with the system. As before, an update restarts the service, so do not upgrade in the middle of an observation.
 
 ## Rotating the key
 

@@ -46,7 +46,7 @@ Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi nex
 - A full-screen **file manager**: browse by day, check recordings (frame count, measured fps, brightness; flags *mostly dark* and *incomplete*), download, delete in bulk.
 
 **Running it**
-- Installs and upgrades as a Debian package (`rustflare-update`, or a signed apt repository); settings (site, flats, guiding, storage, UI layout) survive reboots; auto-reconnect of camera and mount.
+- Installs and upgrades as a Debian package (a `.deb` from the releases page, or the signed apt repository); settings (site, flats, guiding, storage, UI layout) survive reboots; auto-reconnect of camera and mount.
 - **User guide** with screenshots: [docs/guide/](docs/index.md), published at https://ddompe.github.io/rustflare/manual/. Start with [Getting started](docs/guide/getting-started.md); problems are covered in [Troubleshooting](docs/guide/troubleshooting.md).
 - **Field Wi-Fi hotspot** (`rustflare-hotspot`) for use without a network, with an automatic way back to the previous Wi-Fi ([docs/guide/hotspot.md](docs/guide/hotspot.md)).
 - Opt-in **session log** (what the tracker and guider saw, plus small frames) and a replay test harness for building regression fixtures from real sessions.
@@ -62,7 +62,7 @@ From a release package:
 ```sh
 # https://github.com/ddompe/rustflare/releases/latest
 sudo apt install ./rustflare_*_arm64.deb
-sudo rustflare-update          # later: install the newest release
+sudo apt install ./rustflare_*_arm64.deb   # later: download the newer .deb and run this again
 ```
 
 Or from the signed apt repository (see [docs/guide/updating.md](docs/guide/updating.md)):

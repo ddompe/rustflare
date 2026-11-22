@@ -22,14 +22,11 @@
 | `RUSTFLARE_DATA_DIR` | Default capture folder on the SD card. A drive chosen in the UI takes precedence |
 | `RUSTFLARE_PASSWORD` | Password for the UI and API (HTTP Basic, any user name). Use with HTTPS |
 | `RUSTFLARE_TLS_BIND` | HTTPS address, for example `0.0.0.0:8443`. Set up by `sudo rustflare-tls` |
-| `RUSTFLARE_REPO` | GitHub repository `rustflare-update` reads releases from |
-| `RUSTFLARE_GITHUB_TOKEN` | Read token for a private repository |
 
 ## Helper commands
 
 | Command | Purpose |
 |---|---|
-| `rustflare-update` | Install the newest release, see [Updating](../guide/updating.md) |
 | `rustflare-tls` | Create the private certificate authority and server certificate, see [Phone setup](../guide/phone-setup.md) |
 | `rustflare-hotspot` | Wi-Fi hotspot, see [Field networking](../guide/hotspot.md) |
 | `rustflare-user` | Show or change the login the service runs as (`sudo rustflare-user <login>`). It matters because drives auto-mounted for a login are writable only by that login |

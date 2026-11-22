@@ -6,7 +6,7 @@
 crates/     core camera mount tracking capture server
 web/        React + Vite UI (src/, components/)
 docs/       this documentation (guide/, reference/, project/); docs/adr/ decision records
-packaging/  files of the .deb: systemd unit, udev rule, maintainer scripts, rustflare-update, rustflare-user
+packaging/  files of the .deb: systemd unit, udev rule, maintainer scripts, rustflare-user
 scripts/    build-deb.sh, pi-deploy.sh, smoke.sh, sim/ (scenario scripts), mock-github-release.py
 .github/    CI (ci.yml) and release (release.yml) workflows
 ```
@@ -44,9 +44,8 @@ Agents and new contributors: start with `AGENTS.md` and `CONTRIBUTING.md` at the
 
 1. Bump `version` under `[workspace.package]` in `Cargo.toml`, commit.
 2. `git tag vX.Y.Z && git push origin vX.Y.Z`. `release.yml` checks the tag equals the Cargo version, builds the arm64 package and publishes the release with `SHA256SUMS`.
-3. On the Pi: `sudo rustflare-update`.
+3. On the Pi: download the new `.deb` and `SHA256SUMS`, then `sudo apt install ./rustflare_*_arm64.deb`, or `sudo apt upgrade` when the Pi uses the signed apt repository. During development `scripts/pi-deploy.sh` builds and installs a dev package.
 
-Test the update flow without GitHub: `scripts/mock-github-release.py --deb <deb> --sums SHA256SUMS --port 9999`, then `sudo env RUSTFLARE_API_URL=http://127.0.0.1:9999 rustflare-update`. (Verified this way: check, tampered-checksum abort, upgrade, already-up-to-date, config and captures preserved.)
 
 ## Conventions
 

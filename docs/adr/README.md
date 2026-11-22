@@ -15,7 +15,8 @@ an accepted record: supersede it with a new one and link both ways.
 | [0007](0007-zwo-mount-serial-driver.md) | ZWO mount: direct serial protocol, solar rate, guide-rate fix | Accepted (unverified on hardware) |
 | [0008](0008-solar-tracking-and-guiding.md) | Tracking modes, automatic calibration, pulse guiding | Accepted |
 | [0009](0009-capture-formats-and-flats.md) | SER for sequences, PNG for stills, automatic flats | Accepted |
-| [0010](0010-debian-package-and-updates.md) | Debian package, GitHub Releases, `rustflare-update` | Accepted (CI unverified) |
+| [0010](0010-debian-package-and-updates.md) | Debian package, GitHub Releases (the updater part is superseded by 0017) | Accepted |
+| [0017](0017-no-updater.md) | No updater: debs and the signed apt repository | Accepted |
 | [0011](0011-storage-selection-and-safety.md) | Storage selection and safety (USB drives, FAT32) | Accepted |
 | [0012](0012-burst-capture-and-ram-buffer.md) | Burst capture through a RAM buffer | Accepted |
 | [0013](0013-partial-disc-first-tracking-and-optics.md) | Partial-disc-first tracking, Otsu detection, optics | Accepted |

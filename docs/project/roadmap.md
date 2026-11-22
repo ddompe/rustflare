@@ -13,7 +13,7 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 - **Tracking on real H-alpha frames** (offline, from the recordings): with the Optics radius the located limb centre is stable to ~2 px (σ) over a 100-frame burst, which is the seeing; frame-to-frame step ≈ 1.4–2 px mean. **The Sun's radius in the image is ≈ 1227 px, not the 1099 px the entered optics predict** (350 mm × a nominal 3× Barlow): the limb points fit the free circle to 3 px RMS but the optics circle to 21 px. So the effective focal length is ≈ 1170 mm (a real Barlow factor ≈ 3.35×). The tracker now measures the radius from the limb whenever the optics value does not fit the data, and the Optics panel suggests the corrected focal length / factor.
 - **Saved camera settings:** after a service restart the camera comes back with its exposure/gain (6000 µs / gain 71).
 - **Bursts:** ten 100-frame bursts exactly 20 s apart, each file byte-exact (no frames lost), written to the FAT32 stick; auto-reconnect of camera and mount after a service restart; settings and camera exposure/gain persisted across restarts.
-- **Packaging on the Pi:** install, upgrade, `rustflare-update` (including tampered-checksum abort), config and captures preserved.
+- **Packaging on the Pi:** install and upgrade of the `.deb`, config and captures preserved.
 - **CI:** tests, simulator smoke test and the arm64 package build pass on GitHub.
 
 ## Before v0.3.0 (first release)
