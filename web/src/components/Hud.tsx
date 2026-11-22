@@ -34,7 +34,9 @@ const defaults = (on: boolean): Layout => ({
   hist: { on: false, fx: 0, fy: 0.3, min: false },
   strip: { on: true, fx: 0.5, fy: 0, min: !on },
   // each in its own place: the mask slider over the (masked) disc, the focus score under the top-left widget
-  mask: { on: true, fx: 0.5, fy: on ? 0.5 : 0.65, min: false }, // over the disc, which the mask blacks out anyway
+  // wide: over the disc, which the mask blacks out anyway. Phones: right-hand column, the focus score in the left-hand one,
+  // so the two can never overlap whatever height the picture has
+  mask: { on: true, fx: on ? 0.5 : 1, fy: on ? 0.5 : 0.6, min: false },
   focus: { on: true, fx: 0, fy: on ? 0.22 : 0.3, min: !on }, // phones: a one-line score, tap for the graph
 })
 

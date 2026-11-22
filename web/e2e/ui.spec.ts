@@ -212,10 +212,10 @@ test('mask size and focus score are overlay widgets that start apart', async ({ 
   const mask = page.getByRole('button', { name: /Prominence mask size overlay/ })
   await expect(mask).toBeVisible()
   await expect(page.getByRole('button', { name: /Focus score overlay/ })).toBeVisible()
-  const boxes = await page.locator('.hud-w').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom] }))
+  const boxes = await page.locator('.hud-w').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom, e.getAttribute('aria-label') ?? ''] as [number, number, number, number, string] }))
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
     const [a, b] = [boxes[i], boxes[j]]
-    expect(a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3], `widgets ${i} and ${j} overlap`).toBe(false)
+    expect(a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3], `widgets overlap: ${JSON.stringify(a)} and ${JSON.stringify(b)}`).toBe(false)
   }
   // the slider inside changes the mask without moving the widget
   const before = await mask.boundingBox()

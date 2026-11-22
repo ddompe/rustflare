@@ -524,6 +524,7 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 
 /* Mask size and focus score are overlay widgets now (Hud.tsx): draggable like the others. */
 .hud-w .mask-range { width: min(16rem, 60vw); margin-top: .3rem; }
+@media (max-width: 699px), (max-height: 520px) { .hud-w .mask-range { width: min(9rem, 40vw); } }
 .focus-body { display: grid; gap: .1rem; width: 9.5rem; }
 .focus-body b { font-size: 1.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .focus-body span { font-size: .75rem; color: #ddd; }
