@@ -182,3 +182,22 @@ test('automatic meridian flip: needs a site, switches on with its timing, and of
   await sw.click()
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).auto_flip?.enabled).toBe(false)
 })
+
+test('a message in the status bar does not move the controls', async ({ page }) => {
+  await page.goto('/')
+  await expect.poll(async () => !!(await (await page.request.get('/api/status')).json()).sun, { timeout: 10_000 }).toBe(true).catch(() => {})
+  await post(page, '/mount/tracking', { enabled: true })
+  await post(page, '/tracking/start', { mode: 'limb' })
+  await page.waitForTimeout(1000)
+  const box = async () => JSON.stringify(await page.locator('.panel').boundingBox()) + JSON.stringify(await page.locator('.live').boundingBox())
+  const bar = page.locator('.sbar')
+  await expect(bar).toContainText('Ready')
+  const before = await box()
+  const h0 = (await bar.boundingBox())!.height
+  await put(page, '/camera/control', { id: 'sim_zoom', value: 8 }) // the limb leaves the frame: the target is lost
+  await expect(bar).toContainText(/lost/i, { timeout: 10_000 })
+  expect(await box()).toBe(before)
+  expect((await bar.boundingBox())!.height).toBe(h0)
+  await put(page, '/camera/control', { id: 'sim_zoom', value: 0.9 })
+  await post(page, '/tracking/stop')
+})

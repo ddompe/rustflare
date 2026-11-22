@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TryRecvError};
 use std::sync::Arc;
+use std::io::Write;
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, watch};
 
@@ -123,6 +124,12 @@ pub enum Command {
     /// Meridian flip assist. `record_only`: just remember the pointing and Sun position. `restore`: the flip was done by
     /// hand, GoTo the recorded pointing and re-centre. Otherwise: record, GoTo (the mount turns over if it decides to), re-centre.
     StartFlip { record_only: bool, restore: bool },
+    /// Debugging: engine internals as JSON.
+    DebugState,
+    /// Debugging: save the latest frame and a note now; returns the path under the storage folder.
+    DebugSnapshot,
+    /// Save the frame and a note whenever tracking is lost (debugging).
+    SetLostFrames { enabled: bool },
     /// Automatic meridian flip on/off and its timing (minutes before the meridian to record, minutes after to flip).
     SetAutoFlip { enabled: bool, record_min: f64, flip_min: f64 },
     /// Centred region of interest covering `fraction` of the sensor in each direction (1.0 = full frame).
@@ -290,6 +297,11 @@ struct Prominence {
     skip: u32,
 }
 
+/// The lane whose frames show the disc properly: the shortest exposure among the lanes that are not coronagraph-masked.
+fn reference_lane(specs: &[LaneSpec]) -> usize {
+    specs.iter().enumerate().filter(|(_, l)| !l.mask_disc).min_by(|a, b| a.1.exposure_us.total_cmp(&b.1.exposure_us)).map_or(0, |(i, _)| i)
+}
+
 pub struct Engine {
     drivers: Vec<Box<dyn CameraDriver>>,
     sky: SimSky,
@@ -307,6 +319,18 @@ pub struct Engine {
     flip: Option<FlipState>,
     last_flip: Option<Value>,
     cal_generation: u32,
+    /// Debug aid: keep the frame (and what the software knew) whenever tracking is lost. Setting `debug.lost_frames`, on by default.
+    save_lost: bool,
+    /// Last trustworthy Sun measurement (with the frame size): held for the mask and overlays while clouds hide the limb.
+    sun_model: crate::sunmodel::SunModel,
+    manual_slew_until: Instant,
+    sun_held: bool,
+    last_sun_event: Instant,
+    /// Guiding that was running when the target was lost: target spot and calibration, resumed when the limb is found again.
+    guide_hold: Option<(Vec2, Calibration)>,
+    lost_saved: u32,
+    last_lost_saved: Option<Instant>,
+    last_exposure_change: Instant,
     auto_flip: AutoFlip,
     /// Pointing and Sun position recorded shortly before the meridian by the automatic flip.
     auto_pre: Option<Value>,
@@ -406,6 +430,15 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         flip: None,
         auto_flip: crate::config::read(storage.config_file()).get("auto_flip").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         cal_generation: 0,
+        sun_model: Default::default(),
+        manual_slew_until: Instant::now(),
+        sun_held: false,
+        last_sun_event: Instant::now() - Duration::from_secs(60),
+        save_lost: crate::config::read(storage.config_file()).get("debug").and_then(|d| d.get("lost_frames")).and_then(|v| v.as_bool()).unwrap_or(true),
+        lost_saved: 0,
+        guide_hold: None,
+        last_lost_saved: None,
+        last_exposure_change: Instant::now(),
         auto_pre: None,
         auto_done: false,
         last_auto_check: Instant::now(),
@@ -762,6 +795,8 @@ impl Engine {
             let total = f.started.elapsed().as_secs_f64();
             let rec = json!({ "pre": f.pre, "slew_s": f.slew_s, "total_s": total, "image_turned_over": f.centre.map(|c| c.1), "target_px": f.centre.map(|c| c.0), "post_error_px": post_error_px, "result": result });
             let _ = crate::config::set(self.storage.config_file(), "last_flip", rec.clone());
+            self.event("flip_done", rec.clone());
+            if f.centre.is_some_and(|c| c.1) { self.sun_model.flipped(); }
             self.last_flip = Some(rec);
         }
         self.status.flip = None;
@@ -898,7 +933,8 @@ impl Engine {
             let col = self.colour.lock().unwrap();
             self.status.colour = ColourStatus { mode: col.mode, r: col.r, b: col.b, applied: col.applied };
         }
-        self.status.session_log = SessionLogStatus { enabled: self.slog.enabled(), lines: self.slog.lines, frames: self.slog.frames, bytes: self.slog.bytes, file: self.slog.file_name() };
+        self.status.guiding.held = self.guide_hold.is_some();
+        self.status.session_log = SessionLogStatus { lost_frames: self.save_lost, lost_saved: self.lost_saved, enabled: self.slog.enabled(), lines: self.slog.lines, frames: self.slog.frames, bytes: self.slog.bytes, file: self.slog.file_name() };
         self.status.last_flip = self.last_flip.clone();
         self.status.auto_flip = AutoFlipStatus {
             enabled: self.auto_flip.enabled, record_min: self.auto_flip.record_min, flip_min: self.auto_flip.flip_min,
@@ -981,6 +1017,7 @@ impl Engine {
             Command::SetControl { id, value } => {
                 let cam = self.camera.as_mut().ok_or("no camera open")?;
                 cam.set_control(&id, value).map_err(s)?;
+                if id == CTRL_EXPOSURE_US { self.last_exposure_change = Instant::now(); }
                 if let Some(c) = self.status.camera.as_mut().and_then(|c| c.controls.iter_mut().find(|c| c.id == id)) {
                     c.value = value.clamp(c.min, c.max);
                 }
@@ -1032,6 +1069,7 @@ impl Engine {
                 Ok(json!({}))
             }
             Command::MountSlew { axis, speed } => {
+                self.manual_slew_until = Instant::now() + Duration::from_secs(if speed != 0.0 { 3600 } else { 3 });
                 if speed != 0.0 && self.goto.is_some() {
                     return Err("a GoTo is running: press STOP first".into());
                 }
@@ -1143,6 +1181,17 @@ impl Engine {
                 }
                 Ok(json!({}))
             }
+            Command::DebugState => Ok(self.debug_state()),
+            Command::DebugSnapshot => {
+                let frame = self.last_frame.clone().ok_or("no frame received yet")?;
+                let path = self.save_frame_note(&frame, "debug", "snapshot requested").ok_or("could not write the snapshot (storage?)")?;
+                Ok(json!({ "png": format!("/files/{path}.png"), "note": format!("/files/{path}.json") }))
+            }
+            Command::SetLostFrames { enabled } => {
+                self.save_lost = enabled;
+                crate::config::set(self.storage.config_file(), "debug", json!({ "lost_frames": enabled }))?;
+                Ok(json!({}))
+            }
             Command::SetRoi { fraction } => {
                 self.require_idle()?;
                 self.require_not_flats()?;
@@ -1249,7 +1298,6 @@ impl Engine {
                 .map_err(s)?;
                 self.stop_guiding_quietly();
                 let p = t.position();
-                self.status.tracking = Some(TrackingStatus { mode: t.mode(), x: p.pos.x, y: p.pos.y, radius: p.radius, lost: false });
                 self.tracker = Some(t);
                 self.lost = false;
                 Ok(json!({}))
@@ -1274,6 +1322,7 @@ impl Engine {
                     self.tracker.as_ref().unwrap().position().pos
                 };
                 self.status.guiding.target = Some((pos.x, pos.y));
+                self.event("guiding_start", json!({ "target": [pos.x, pos.y], "centred": center }));
                 self.guide = GuideState::Guiding(Guider::new(pos, self.calibration.unwrap(), self.guide_params));
                 Ok(json!({}))
             }
@@ -1370,6 +1419,7 @@ impl Engine {
                 let cap = self.buffer_capacity(frame_bytes);
                 self.buffer_cap = cap;
                 let kind = if interval.is_some() { "burst" } else { "seq" };
+                self.event("capture_start", json!({ "kind": "sequence" }));
                 self.job = Job::Capture(Box::new(CaptureJob {
                     lanes: None,
                     name: name.unwrap_or_default(),
@@ -1442,6 +1492,7 @@ impl Engine {
                 let _ = std::fs::write(dir.join("session.json"), serde_json::to_vec_pretty(&manifest).unwrap_or_default());
                 let total = cycles.map(|c| c * lanes.len() as u32);
                 let n_lanes = lanes.len();
+                self.event("capture_start", json!({ "kind": "lanes" }));
                 self.job = Job::Capture(Box::new(CaptureJob {
                     lanes: Some(Lanes { specs: lanes, dir, original, cycle_interval: cycle_interval_s.map(Duration::from_secs_f64), cycle_started: Instant::now(), current: 0, skip: 0 }),
                     name: name.unwrap_or_default(),
@@ -1783,6 +1834,7 @@ impl Engine {
     }
 
     fn close_camera(&mut self) {
+        self.sun_model.reset();
         self.camera = None;
         self.focus = None;
         self.status.focus = FocusStatus::default();
@@ -1805,7 +1857,9 @@ impl Engine {
     }
 
     fn stop_guiding_quietly(&mut self) {
+        self.guide_hold = None;
         let was_active = !matches!(self.guide, GuideState::Off);
+        if was_active { self.event("guiding_stop", json!({})); }
         self.guide = GuideState::Off;
         self.status.guiding.target = None;
         self.status.guiding.error_px = None;
@@ -1906,13 +1960,36 @@ impl Engine {
                     c.temperature_c = temp;
                 }
             }
+            // In a lane recording only the reference lane (the shortest exposure that is not coronagraph-masked) shows the
+            // disc properly. The long prominence frames are saturated: measuring the Sun on them gives a wrong circle, which
+            // then drives the mask and a false "tracking lost". Other lanes keep the last measurement and are not analysed.
+            let analyse = match &self.job {
+                Job::Capture(j) => j.lanes.as_ref().map_or(true, |l| l.skip == 0 && l.current == reference_lane(&l.specs)),
+                _ => true,
+            };
+            if !analyse {
+                self.status.perf.analysis_ms = ema(self.status.perf.analysis_ms, t_an.elapsed().as_secs_f64() * 1000.0);
+            }
             let t_loc = Instant::now();
-            let sun = locate_sun(&frame, self.radius_hint());
+            let sun = if analyse { locate_sun(&frame, self.radius_hint()) } else { None };
             self.status.perf.locate_ms = ema(self.status.perf.locate_ms, t_loc.elapsed().as_secs_f64() * 1000.0);
-            self.learn_radius(sun.as_ref());
-            self.corona.lock().unwrap().sun = sun.as_ref().map(|s| (s.pos.x, s.pos.y, s.radius));
-            self.status.sun = sun;
-            self.step_tracking(&frame, now);
+            if analyse {
+                self.learn_radius(sun.as_ref());
+                // The detector sees one frame at a time. A cloud, a shadow or an eclipse makes it jump or lose the Sun, and the
+                // mask must not follow that: everything uses the model's prediction, corrected only by measurements that agree.
+                let free = self.mount_state.slewing == Some(true) || self.goto.is_some() || self.flip.is_some() || now < self.manual_slew_until;
+                let est = self.sun_model.update(sun, now, (frame.width, frame.height), free);
+                let was_held = self.sun_held;
+                self.sun_held = est.is_some_and(|e| e.predicted && e.since_measured_s > 1.0);
+                if self.sun_held != was_held && self.last_sun_event.elapsed() > Duration::from_secs(5) {
+                    self.last_sun_event = Instant::now();
+                    self.event(if self.sun_held { "sun_predicted" } else { "sun_measured_again" }, json!({ "estimate": est.map(|e| json!({ "x": e.sun.pos.x, "y": e.sun.pos.y, "r": e.sun.radius, "since_measured_s": e.since_measured_s })), "detector": sun.map(|f| json!({ "x": f.pos.x, "y": f.pos.y, "r": f.radius })) }));
+                }
+                let sun = est.map(|e| e.sun);
+                self.corona.lock().unwrap().sun = sun.as_ref().map(|s| (s.pos.x, s.pos.y, s.radius));
+                self.status.sun = sun;
+                self.step_tracking(&frame, now);
+            }
             self.log_session(&frame, now);
             let t_cl = Instant::now();
             self.last_frame = Some(frame.clone());
@@ -1940,10 +2017,24 @@ impl Engine {
 
     fn step_tracking(&mut self, frame: &Frame, now: Instant) {
         let Some(t) = self.tracker.as_mut() else { return };
+        // frames still in flight after an exposure change (or a lane switch) are over- or under-exposed: not a real loss
+        let settling = self.last_exposure_change.elapsed() < Duration::from_secs(3);
         match t.update(frame) {
+            Err(_) if settling && !self.lost => {}
             Ok(p) => {
-                self.lost = false;
                 self.status.tracking = Some(TrackingStatus { mode: t.mode(), x: p.pos.x, y: p.pos.y, radius: p.radius, lost: false });
+                let was_lost = self.lost;
+                self.lost = false;
+                if was_lost { self.event("tracking_found", json!({ "x": p.pos.x, "y": p.pos.y, "radius": p.radius, "resuming_guiding": self.guide_hold.is_some() })); }
+                if was_lost && matches!(self.guide, GuideState::Off) && self.mount_tracking {
+                    if let Some((target, cal)) = self.guide_hold.take() {
+                        log::info!("tracking found again: guiding resumed");
+                        self.event("guiding_resumed", json!({ "target": [target.x, target.y] }));
+                        self.status.guiding.target = Some((target.x, target.y));
+                        self.guide = GuideState::Guiding(Guider::new(target, cal, self.guide_params));
+                        self.status.error = None;
+                    }
+                }
                 self.step_guide(now, p.pos);
             }
             Err(e) => {
@@ -1953,12 +2044,98 @@ impl Engine {
                     ts.lost = true;
                 }
                 if first {
+                    let held = match (&self.guide, self.calibration) { (GuideState::Guiding(g), Some(c)) => Some((g.target, c)), _ => None };
                     log::warn!("tracking lost: {e}");
+                    self.event("tracking_lost", json!({ "why": e.to_string(), "was_guiding": held.is_some(), "seconds_since_exposure_change": self.last_exposure_change.elapsed().as_secs_f64() }));
+                    self.save_lost_frame(frame, &e.to_string());
                     self.status.error = Some(format!("tracking lost: {e}"));
                     self.stop_guiding_quietly();
+                    self.guide_hold = held; // pulses stop while blind; the mount keeps tracking on its own
                 }
             }
         }
+    }
+
+    /// Always-on event log: one JSON line per tracking, guiding, exposure or flip event in `<storage>/logs/<date>/events.jsonl`
+    /// (small: events, not frames). Explains afterwards what the software did and when. Capped at 20 MB a day.
+    fn event(&self, kind: &str, detail: Value) {
+        let now = chrono::Utc::now();
+        let dir = self.storage.dir().join("logs").join(now.format("%Y-%m-%d").to_string());
+        let path = dir.join("events.jsonl");
+        if std::fs::metadata(&path).map_or(false, |m| m.len() > 20 * 1024 * 1024) || std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
+        let line = json!({ "t": now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true), "event": kind, "detail": detail,
+            "exposure_us": ctl(CTRL_EXPOSURE_US), "gain": ctl("gain"), "capture": self.status.capture.state,
+            "guide": match &self.guide { GuideState::Off => "off", GuideState::Calibrating(_) => "calibrating", GuideState::Guiding(_) => "guiding" },
+            "mount_tracking": self.mount_tracking });
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(f, "{line}");
+        }
+    }
+
+    /// Keeps the frame the tracker could not use, with what the software knew at that moment, in
+    /// `<storage>/logs/<date>/lost/`. At most one per 10 s and 100 per run, so a flapping tracker cannot fill the drive.
+    fn save_lost_frame(&mut self, frame: &Frame, why: &str) {
+        if !self.save_lost || self.lost_saved >= 100 || self.last_lost_saved.is_some_and(|t| t.elapsed() < Duration::from_secs(10)) {
+            return;
+        }
+        self.last_lost_saved = Some(Instant::now());
+        if self.save_frame_note(frame, "lost", why).is_some() {
+            self.lost_saved += 1;
+        }
+    }
+
+    /// Writes the frame as PNG plus a JSON note of what the software knew into `logs/<date>/<kind>/`; returns the path (relative to storage).
+    fn save_frame_note(&mut self, frame: &Frame, kind: &str, why: &str) -> Option<String> {
+        let now = chrono::Utc::now();
+        let day = now.format("%Y-%m-%d").to_string();
+        let dir = self.storage.dir().join("logs").join(&day).join(kind);
+        std::fs::create_dir_all(&dir).ok()?;
+        let name = format!("{kind}_{}", now.format("%H%M%S%.3fZ"));
+        let stem = dir.join(&name);
+        let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
+        let lane = match &self.job {
+            Job::Capture(j) => j.lanes.as_ref().map(|l| json!({ "name": l.specs[l.current].name, "mask_disc": l.specs[l.current].mask_disc, "skip_frames_left": l.skip, "burst": j.burst_no })),
+            _ => None,
+        };
+        let note = json!({
+            "time_utc": now.to_rfc3339(), "why": why,
+            "frame": { "w": frame.width, "h": frame.height, "mean": frame.mean_fraction(), "saturated": frame.saturated_fraction() },
+            "exposure_us": ctl(CTRL_EXPOSURE_US), "gain": ctl("gain"),
+            "seconds_since_exposure_change": self.last_exposure_change.elapsed().as_secs_f64(),
+            "tracking": self.status.tracking.as_ref().map(|t| json!({ "mode": t.mode, "x": t.x, "y": t.y, "radius": t.radius })),
+            "sun": self.status.sun.as_ref().map(|s| json!({ "x": s.pos.x, "y": s.pos.y, "r": s.radius, "partial": s.partial })),
+            "coronagraph": { "enabled": self.status.coronagraph.enabled, "scale": self.status.coronagraph.scale },
+            "capture": self.status.capture.state, "lane": lane,
+            "guiding": match &self.guide { GuideState::Off => "off", GuideState::Calibrating(_) => "calibrating", GuideState::Guiding(_) => "guiding" },
+            "engine": self.debug_state(),
+        });
+        if rustflare_capture::write_png(&stem.with_extension("png"), frame).is_ok() {
+            let _ = std::fs::write(stem.with_extension("json"), serde_json::to_vec_pretty(&note).unwrap_or_default());
+            log::info!("{kind}: frame saved to {}", stem.with_extension("png").display());
+            return Some(format!("logs/{day}/{kind}/{name}"));
+        }
+        None
+    }
+
+    /// Engine internals that are not in the status, for debugging (`GET /api/debug/state`).
+    fn debug_state(&self) -> Value {
+        let lanes = match &self.job {
+            Job::Capture(j) => j.lanes.as_ref().map(|l| json!({ "current": l.current, "reference": reference_lane(&l.specs), "skip_frames_left": l.skip, "burst": j.burst_no, "names": l.specs.iter().map(|x| x.name.clone()).collect::<Vec<_>>() })),
+            _ => None,
+        };
+        json!({
+            "job": match &self.job { Job::Idle => "idle", Job::Capture(_) => "capture", _ => "other" },
+            "lanes": lanes, "lost": self.lost, "guide_hold": self.guide_hold.map(|(t, _)| [t.x, t.y]),
+            "seconds_since_exposure_change": self.last_exposure_change.elapsed().as_secs_f64(),
+            "tracker_position": self.tracker.as_ref().map(|t| { let p = t.position(); json!({ "x": p.pos.x, "y": p.pos.y, "radius": p.radius }) }),
+            "sun_held": self.sun_held, "learned_drift_px_s": self.sun_model.learned_drift().map(|d| [d.x, d.y]), "sun_for_mask": self.corona.lock().ok().and_then(|c| c.sun),
+            "mount_tracking": self.mount_tracking, "fps": self.fps_ema, "save_lost_frames": self.save_lost, "lost_saved": self.lost_saved,
+            "auto_flip": { "enabled": self.auto_flip.enabled, "recorded": self.auto_pre.is_some(), "done": self.auto_done },
+            "flip_phase": self.flip.as_ref().map(|f| f.phase), "calibration_generation": self.cal_generation,
+        })
     }
 
     /// One line per second into the session log (when it is on). Only technical state: no site, no device names.
@@ -1996,12 +2173,14 @@ impl Engine {
                 CalAction::None => {}
                 CalAction::Guide(g) => cmd = Some(g),
                 CalAction::Done(cal) => {
+                    self.event("calibration_done", json!(cal));
                     self.calibration = Some(cal);
                     self.cal_generation += 1;
                     self.guide = GuideState::Off;
                     cmd = Some(GuideCommand::STOP);
                 }
                 CalAction::Failed(msg) => {
+                    self.event("calibration_failed", json!({ "why": msg.to_string() }));
                     failure = Some(format!("calibration failed: {msg}"));
                     self.guide = GuideState::Off;
                     cmd = Some(GuideCommand::STOP);
@@ -2049,6 +2228,7 @@ impl Engine {
     }
 
     fn finish_capture(&mut self, file: Option<String>, note: &str) {
+        self.event("capture_end", json!({ "note": note, "file": file }));
         let c = &mut self.status.capture;
         c.state = "idle";
         c.phase = note.into();
@@ -2060,6 +2240,7 @@ impl Engine {
     }
 
     fn abort_job(&mut self, why: &str) {
+        self.event("capture_abort", json!({ "why": why, "job": match &self.job { Job::Idle => "idle", Job::Capture(_) => "capture", Job::Single { .. } => "single", Job::Prominence(_) => "prominence", Job::Darks(_) => "darks", Job::Flats(_) => "flats" } }));
         let job = std::mem::replace(&mut self.job, Job::Idle);
         match job {
             Job::Idle | Job::Single { .. } => {}
@@ -2087,6 +2268,8 @@ impl Engine {
     }
 
     fn set_exposure(&mut self, us: f64) {
+        self.last_exposure_change = Instant::now();
+        self.event("exposure", json!({ "us": us }));
         if let Some(cam) = self.camera.as_mut() {
             if cam.set_control(CTRL_EXPOSURE_US, us).is_ok() {
                 if let Some(c) = self.status.camera.as_mut().and_then(|c| c.controls.iter_mut().find(|c| c.id == CTRL_EXPOSURE_US)) {
@@ -2186,11 +2369,13 @@ impl Engine {
                 job.burst_frames = spec.frames;
                 job.burst_seconds = spec.seconds;
                 l.skip = 2;
+                self.last_exposure_change = Instant::now();
                 l.current = ((job.burst_no - 1) % n) as usize;
                 self.set_exposure(spec.exposure_us);
                 if let (Some(g), Some(cam)) = (spec.gain, self.camera.as_mut()) {
                     let _ = cam.set_control("gain", g);
                 }
+                self.event("lane", json!({ "name": spec.name, "exposure_us": spec.exposure_us, "gain": spec.gain, "cycle": cycle, "mask_disc": spec.mask_disc }));
                 lane_label = Some(spec.name.clone());
                 let l = job.lanes.as_ref().unwrap();
                 l.dir.join(format!("lane-{}", sanitize(&spec.name))).join(format!("{}_c{cycle:03}", sanitize(&spec.name)))

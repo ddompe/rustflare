@@ -87,7 +87,6 @@ export function TrackTab({ status, anchorPick, setAnchorPick, goto, next }: { st
         <ol className="steps">
           <Step done title="Tracking" bad={t.lost} state={t.lost ? 'TARGET LOST' : 'following'}>
             <div className="hint-text">{t.mode} @ {t.x.toFixed(0)}, {t.y.toFixed(0)}{t.radius ? ` · r ${t.radius.toFixed(0)} px` : ''}</div>
-            {t.lost && <div className="err" role="alert">The target left the frame. Slew it back into view (Aim) or restart tracking.</div>}
           </Step>
           {!mountTracking && (
             <Step done={false} title="Mount solar tracking" state="off" action={<button type="button" className="small" onClick={() => goto('aim')}>Go to Aim</button>}>

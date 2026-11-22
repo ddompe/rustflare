@@ -11,6 +11,8 @@ export function SessionLog({ status }: { status: Status | null }) {
   const l = status?.session_log
   return (
     <div>
+      <Switch label="Save the frame when tracking is lost" checked={l?.lost_frames ?? true} onChange={(on) => run(() => api('PUT', '/debug/lost-frames', { enabled: on }))}
+        hint={`On by default. Keeps the picture and a note (exposure, gain, lane, mask, last Sun position) in logs/<date>/lost on the capture drive, at most one every 10 s. ${l?.lost_saved ? `${l.lost_saved} saved since the service started.` : 'None saved yet.'}`} />
       <Switch label="Record a session log" checked={!!l?.enabled} onChange={(on) => run(() => api('PUT', '/session-log', { enabled: on, frame_every_s: every === '0' ? null : parseFloat(every) }))}
         hint={l?.enabled ? `${l.lines} lines, ${l.frames} frames, ${mb(l.bytes)} in ${l.file}` : 'Off. When on, one line per second (camera level, detected Sun, tracking, guiding error, guide pulses) goes into the logs folder on the capture drive.'} />
       <label className="field"><span className="hint-text">Save a small picture every</span>

@@ -16,13 +16,14 @@ export interface Status {
   clock?: { ntp_synchronized: boolean | null }
   goto?: { target: string; phase: string } | null
   flip?: { phase: string; elapsed_s: number; detail: string } | null
+  sun_held?: boolean
   auto_flip?: { enabled: boolean; record_min: number; flip_min: number; stage: 'off' | 'waiting' | 'recorded' | 'flipping' | 'done' }
   last_flip?: unknown
   guide_params?: { window_s: number; deadband_px: number; gain: number; speed: number; fast_speed: number; fast_above_px: number }
   coronagraph?: { enabled: boolean; scale: number }
   focus?: { enabled: boolean; live: number | null; lucky: number | null; best: number | null; best_age_s: number | null; history: [number, number][]; note: string | null }
   colour?: { mode: string; r: number; b: number; applied: [number, number, number] }
-  session_log?: { enabled: boolean; lines: number; frames: number; bytes: number; file: string | null }
+  session_log?: { lost_frames: boolean; lost_saved: number; enabled: boolean; lines: number; frames: number; bytes: number; file: string | null }
   roi?: { x: number; y: number; width: number; height: number; sensor_width: number; sensor_height: number } | null
   darks?: { available: boolean; applied: boolean; name: string | null; exposure_us: number | null; gain: number | null; matches_camera: boolean }
   flats?: { applied: boolean; available: boolean; name: string | null }
@@ -33,7 +34,7 @@ export interface Status {
   /** What the mount itself reports (read back every ~2 s); everything but info and tracking may be null. */
   mount: { info: string; tracking: boolean; slewing?: boolean | null; at_home?: boolean | null; park?: 'unparked' | 'parking' | 'parked' | null; alt_az?: boolean | null; link?: 'usb' | 'ble' | null; link_up?: boolean } | null
   tracking: Tracking | null
-  guiding: { state: 'off' | 'calibrating' | 'guiding'; calibration: Calibration | null; target: [number, number] | null; error_px: number | null }
+  guiding: { state: 'off' | 'calibrating' | 'guiding'; calibration: Calibration | null; target: [number, number] | null; error_px: number | null; held?: boolean }
   capture: {
     state: 'idle' | 'single' | 'sequence' | 'bursts' | 'flats' | 'flushing'
     phase: string; done: number; total: number | null; file: string | null; last_file: string | null

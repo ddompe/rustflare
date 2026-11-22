@@ -13,12 +13,11 @@ export function chipsFor(status: Status | null): ChipSpec[] {
   if (!status || !cam) return []
   const chips: ChipSpec[] = []
   const g = status.guiding
-  const t = status.tracking
   if (cam.saturated > 0.001) chips.push({ key: 'clip', tone: 'bad', value: `${(cam.saturated * 100).toFixed(1)}%`, label: 'clipping', tab: 'camera', title: 'Pixels at full scale: reduce exposure or gain' })
   if (!status.sun && !status.tracking?.lost) chips.push({ key: 'sun', tone: 'warn', label: 'No Sun found', tab: 'camera', title: 'Too dark? Try more exposure' })
   if (status.mount?.park === 'parked' || status.mount?.park === 'parking') chips.push({ key: 'park', tone: 'warn', label: 'Mount parked', tab: 'aim', title: 'Parked on the mount: motion is disabled' })
-  if (t?.lost) chips.push({ key: 'trk', tone: 'bad', label: 'TARGET LOST', tab: 'track', title: 'The tracked target left the frame' })
-  else if (g.state === 'calibrating') chips.push({ key: 'trk', tone: 'warn', label: 'Calibrating…', tab: 'track', title: 'Calibration in progress' })
+  // a lost target is shown once, in the status bar at the bottom
+  if (g.state === 'calibrating') chips.push({ key: 'trk', tone: 'warn', label: 'Calibrating…', tab: 'track', title: 'Calibration in progress' })
   return chips
 }
 
@@ -32,8 +31,8 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
   return (
     <div className="strip">
       <span className="sr-only" role="status" aria-live="polite">{alerts}</span>
-      {chips.length > 0 && (
-        <ul className="chips">
+      {!!status?.camera && (
+        <ul className="chips" aria-label="Warnings">
           {chips.map((x) => (
             <li key={x.key}>
               <button type="button" className={`chip ${x.tone} ${x.key}`} title={x.title} onClick={() => goto(x.tab)}>

@@ -9,6 +9,7 @@ mod security;
 mod sessionlog;
 mod status;
 mod storage;
+mod sunmodel;
 
 use clap::Parser;
 use std::path::PathBuf;

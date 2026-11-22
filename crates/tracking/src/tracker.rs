@@ -47,13 +47,65 @@ fn px8(f: &Frame, x: u32, y: u32) -> u8 {
     }
 }
 
+/// A pixel in 8-bit units (fractional for 16-bit data), before any stretch.
+#[inline]
+fn px_f(f: &Frame, x: u32, y: u32) -> f64 {
+    match f.format {
+        PixelFormat::Mono8 => f.data[y as usize * f.width as usize + x as usize] as f64,
+        PixelFormat::Mono16 => f.pixel(x, y) as f64 / 256.0,
+    }
+}
+
+/// How a dim frame is brightened for detection: the sensor's black level is subtracted, then the rest is multiplied.
+#[derive(Copy, Clone)]
+struct View { gain: f64, black: f64 }
+
+/// A pixel in 8-bit units after brightening a dim frame.
+#[inline]
+fn pxs(f: &Frame, x: u32, y: u32, v: View) -> u8 {
+    if v.gain == 1.0 { return px8(f, x, y); }
+    ((px_f(f, x, y) - v.black).max(0.0) * v.gain).min(255.0) as u8
+}
+
+/// How much to brighten the frame so the Sun is detected the same in full sun and under cloud or a tree's shadow
+/// (the light can drop a hundredfold within seconds, and the top 8 bits of a dim 16-bit frame hold almost nothing).
+/// Only dim frames are brightened: the 99.5th percentile is brought to 128 (8-bit units). `None`: too dark to hold
+/// a Sun at all (below the sensor noise).
+fn view_gain(frame: &Frame) -> Option<View> {
+    let mut hist = vec![0u32; 4096]; // 1/16 of an 8-bit unit per bin
+    let mut n = 0u64;
+    for y in (0..frame.height).step_by(DISC_STEP as usize * 2) {
+        for x in (0..frame.width).step_by(DISC_STEP as usize * 2) {
+            hist[((px_f(frame, x, y) * 16.0) as usize).min(4095)] += 1;
+            n += 1;
+        }
+    }
+    let pct = |q: f64| {
+        let target = (n as f64 * q) as u64;
+        let mut acc = 0u64;
+        for (i, c) in hist.iter().enumerate() {
+            acc += *c as u64;
+            if acc >= target { return (i as f64 + 1.0) / 16.0; }
+        }
+        256.0
+    };
+    let p995 = pct(0.995);
+    let floor = if frame.format == PixelFormat::Mono8 { 8.0 } else { 1.5 };
+    if p995 < floor { return None; }
+    if p995 >= 128.0 { return Some(View { gain: 1.0, black: 0.0 }); }
+    // the sky's level (the sensor's black offset) is the low end of the histogram: take it away before multiplying
+    let p2 = pct(0.02);
+    let black = if p2 < 0.25 * p995 { (p2 - 0.1).max(0.0) } else { 0.0 };
+    Some(View { gain: 128.0 / (p995 - black).max(0.5), black })
+}
+
 /// Otsu threshold of the (subsampled) frame, or `None` if the frame is not "bright Sun on darker sky".
 ///
 /// Half-of-peak thresholds fail on H-alpha: bright plage and prominences push the peak well above the
 /// typical disc level, putting the cut inside the disc. Otsu splits sky from disc wherever the
 /// histogram's valley is. A frame needs two clearly different populations (upper class at least twice
 /// as bright as the lower), otherwise there is no limb in view (e.g. a field entirely on the disc).
-fn sun_threshold(frame: &Frame) -> Option<u8> {
+fn otsu_threshold(frame: &Frame, view: View) -> Option<u8> {
     // Histogram on a log-intensity axis (256 bins over ln(1+v), v in 0..=255): brightness structure on the
     // disc is multiplicative (plage, filaments), so sky-vs-disc then outweighs dark-disc-vs-plage.
     const LN256: f64 = 5.545_177_444_479_562;
@@ -65,7 +117,7 @@ fn sun_threshold(frame: &Frame) -> Option<u8> {
     let mut n = 0u64;
     for y in (0..frame.height).step_by(DISC_STEP as usize) {
         for x in (0..frame.width).step_by(DISC_STEP as usize) {
-            let v = px8(frame, x, y);
+            let v = pxs(frame, x, y, view);
             hist[bin_of(v)] += 1;
             vals[v as usize] += 1;
             n += 1;
@@ -112,13 +164,61 @@ fn sun_threshold(frame: &Frame) -> Option<u8> {
     Some(thr)
 }
 
+/// The cut between the black sky and anything brighter than it (shadows, thin cloud, limb darkening included).
+///
+/// Otsu splits at the biggest brightness jump, which on a disc crossed by a tree's shadow is the shadow edge: the
+/// shadowed part of the disc then counts as "sky", shadow edges become false limb points and the fit swings around.
+/// The sky itself is a dark mode, so cut just above it instead. `None` if no frame fraction looks like sky.
+fn sky_edge_threshold(frame: &Frame, view: View) -> Option<(u8, f64)> {
+    let mut vals = [0u32; 256];
+    let mut n = 0u64;
+    for y in (0..frame.height).step_by(DISC_STEP as usize) {
+        for x in (0..frame.width).step_by(DISC_STEP as usize) {
+            vals[pxs(frame, x, y, view) as usize] += 1;
+            n += 1;
+        }
+    }
+    if n == 0 {
+        return None;
+    }
+    // the sky: the tallest bin among the darkest values, extended up while the histogram has not died away
+    let (mut peak, mut pc) = (0usize, 0u32);
+    for v in 0..=40 {
+        if vals[v] > pc { pc = vals[v]; peak = v; }
+    }
+    let nn = n as f64;
+    let mut sky_hi = peak;
+    while sky_hi < 250 && (vals[sky_hi + 1..=(sky_hi + 3).min(255)].iter().any(|&c| c as f64 > 0.04 * pc as f64)) {
+        sky_hi += 1;
+    }
+    let thr = sky_hi + 3;
+    let sky: u64 = vals[..=sky_hi].iter().map(|&c| c as u64).sum();
+    let above: u64 = vals[thr.min(255)..].iter().map(|&c| c as u64).sum();
+    let mean_above = vals.iter().enumerate().skip(thr.min(255)).map(|(v, &c)| v as f64 * c as f64).sum::<f64>() / above.max(1) as f64;
+    if (sky as f64) < 0.02 * nn || (above as f64) < 0.02 * nn || mean_above < 2.0 * thr as f64 || mean_above < 6.0 || thr > 120 {
+        return None;
+    }
+    Some((thr as u8, above as f64 / nn))
+}
+
+fn sun_threshold(frame: &Frame, view: View) -> Option<u8> {
+    let otsu = otsu_threshold(frame, view);
+    let Some((sky_thr, _)) = sky_edge_threshold(frame, view) else { return otsu };
+    match otsu {
+        None => Some(sky_thr),
+        Some(o) if sky_thr < o => Some(sky_thr),
+        _ => otsu,
+    }
+}
+
 /// Centroid and equivalent radius of the bright disc.
 pub fn find_disc(frame: &Frame) -> Option<(Vec2, f64)> {
-    let thr = sun_threshold(frame)?;
+    let view = view_gain(frame)?;
+    let thr = sun_threshold(frame, view)?;
     let (mut sx, mut sy, mut n) = (0f64, 0f64, 0f64);
     for y in (0..frame.height).step_by(DISC_STEP as usize) {
         for x in (0..frame.width).step_by(DISC_STEP as usize) {
-            if px8(frame, x, y) >= thr {
+            if pxs(frame, x, y, view) >= thr {
                 sx += x as f64;
                 sy += y as f64;
                 n += 1.0;
@@ -150,11 +250,12 @@ pub struct SunLocation {
 /// `expected_radius` (pixels, from the optics) makes the partial-disc fit much more reliable; if the
 /// data disagree with it, the radius is fitted freely instead.
 pub fn locate_sun(frame: &Frame, expected_radius: Option<f64>) -> Option<SunLocation> {
-    let thr = sun_threshold(frame)?;
+    let view = view_gain(frame)?;
+    let thr = sun_threshold(frame, view)?;
     let (w, h) = (frame.width, frame.height);
     let st = DISC_STEP as usize;
-    let touches_edge = (0..w).step_by(st).any(|x| px8(frame, x, 0) >= thr || px8(frame, x, h - 1) >= thr)
-        || (0..h).step_by(st).any(|y| px8(frame, 0, y) >= thr || px8(frame, w - 1, y) >= thr);
+    let touches_edge = (0..w).step_by(st).any(|x| pxs(frame, x, 0, view) >= thr || pxs(frame, x, h - 1, view) >= thr)
+        || (0..h).step_by(st).any(|y| pxs(frame, 0, y, view) >= thr || pxs(frame, w - 1, y, view) >= thr);
     if !touches_edge {
         let (c, r) = find_disc(frame)?;
         return Some(SunLocation { pos: c, radius: r, partial: false, radius_from_optics: None, fit_rms: None });
@@ -227,17 +328,18 @@ impl Tracker {
 }
 
 /// Edge points of the bright region, excluding points where the region is merely cut off by the frame border.
-fn limb_points(frame: &Frame) -> Vec<(f64, f64)> {
+fn limb_points(frame: &Frame, expected: Option<f64>) -> Vec<(f64, f64)> {
     let st = DISC_STEP;
-    let Some(thr) = sun_threshold(frame) else { return vec![] };
+    let Some(view) = view_gain(frame) else { return vec![] };
+    let Some(thr) = sun_threshold(frame, view) else { return vec![] };
     let margin = 2 * st;
     let mut pts = vec![];
     let mut y = margin;
     while y + margin < frame.height {
         let mut x = margin;
         while x + margin < frame.width {
-            if px8(frame, x, y) >= thr {
-                let edge = [(x - st, y), (x + st, y), (x, y - st), (x, y + st)].iter().any(|&(nx, ny)| px8(frame, nx, ny) < thr);
+            if pxs(frame, x, y, view) >= thr {
+                let edge = [(x - st, y), (x + st, y), (x, y - st), (x, y + st)].iter().any(|&(nx, ny)| pxs(frame, nx, ny, view) < thr);
                 if edge {
                     pts.push((x as f64, y as f64));
                 }
@@ -246,7 +348,58 @@ fn limb_points(frame: &Frame) -> Vec<(f64, f64)> {
         }
         y += st;
     }
-    pts
+    trim_outliers(pts, expected)
+}
+
+/// Keeps the edge points that lie on one circle and drops the rest: the edges of a shadow (a branch, a pole) or of a
+/// cloud inside the disc can be a third of all points, too many for a least-squares fit or a median cut to ignore.
+/// RANSAC: try circles through random point triples, keep the one most points agree with, then polish with those.
+fn trim_outliers(pts: Vec<(f64, f64)>, expected: Option<f64>) -> Vec<(f64, f64)> {
+    let free = ransac_circle(&pts, None);
+    let near = expected.and_then(|e| ransac_circle(&pts, Some(e)));
+    // a circle near the optics' radius wins unless it explains clearly fewer points than the free one
+    let pick = match (near, free) {
+        (Some(n), Some(f)) if n.3 * 10 >= f.3 * 6 => Some(n),
+        (Some(n), None) => Some(n),
+        (_, f) => f,
+    };
+    let Some((cx0, cy0, r0, inl)) = pick else { return pts };
+    if inl < 30 { return pts; }
+    let tol = 1.5 * DISC_STEP as f64;
+    let (mut cx, mut cy, mut r) = (cx0, cy0, r0);
+    let mut keep: Vec<(f64, f64)> = pts.iter().copied().filter(|p| ((p.0 - cx).hypot(p.1 - cy) - r).abs() <= tol).collect();
+    // polish on the inliers, then take everything within the tolerance of the polished circle
+    if let Some((x, y, rr)) = kasa(&keep) {
+        if rr.is_finite() && (20.0..=20000.0).contains(&rr) { cx = x; cy = y; r = rr; }
+    }
+    let polished: Vec<(f64, f64)> = pts.iter().copied().filter(|p| ((p.0 - cx).hypot(p.1 - cy) - r).abs() <= tol).collect();
+    if polished.len() >= 30 { keep = polished; }
+    keep
+}
+
+/// The circle through three random points that most points lie on: (cx, cy, r, inliers). With `near`, only circles within
+/// 20 % of that radius count.
+fn ransac_circle(pts: &[(f64, f64)], near: Option<f64>) -> Option<(f64, f64, f64, usize)> {
+    let n = pts.len();
+    if n < 60 {
+        return None;
+    }
+    let tol = 1.5 * DISC_STEP as f64; // the points sit on a grid of this spacing
+    let mut seed: u64 = 0x9E37_79B9_7F4A_7C15 ^ n as u64;
+    let mut next = || { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; (seed % n as u64) as usize };
+    let mut best = None::<(f64, f64, f64, usize)>;
+    for _ in 0..300 {
+        let (a, b, c) = (pts[next()], pts[next()], pts[next()]);
+        let d = 2.0 * (a.0 * (b.1 - c.1) + b.0 * (c.1 - a.1) + c.0 * (a.1 - b.1));
+        if d.abs() < 1e-6 { continue; }
+        let ux = ((a.0 * a.0 + a.1 * a.1) * (b.1 - c.1) + (b.0 * b.0 + b.1 * b.1) * (c.1 - a.1) + (c.0 * c.0 + c.1 * c.1) * (a.1 - b.1)) / d;
+        let uy = ((a.0 * a.0 + a.1 * a.1) * (c.0 - b.0) + (b.0 * b.0 + b.1 * b.1) * (a.0 - c.0) + (c.0 * c.0 + c.1 * c.1) * (b.0 - a.0)) / d;
+        let r = (a.0 - ux).hypot(a.1 - uy);
+        if !(20.0..=20000.0).contains(&r) || near.is_some_and(|e| (r / e - 1.0).abs() > 0.2) { continue; }
+        let inl = pts.iter().filter(|p| ((p.0 - ux).hypot(p.1 - uy) - r).abs() <= tol).count();
+        if best.map_or(true, |b| inl > b.3) { best = Some((ux, uy, r, inl)); }
+    }
+    best
 }
 
 /// Algebraic (Kåsa) circle fit: x²+y² = 2ax + 2by + c.
@@ -273,7 +426,7 @@ fn kasa(pts: &[(f64, f64)]) -> Option<(f64, f64, f64)> {
 /// Fits the solar limb. With `radius` fixed, only the centre is estimated (Gauss–Newton from
 /// `start`, or from a Kåsa fit when no start is given); otherwise centre and radius come from Kåsa.
 fn fit_limb(frame: &Frame, start: Option<Vec2>, radius: Option<f64>) -> Option<(Vec2, f64)> {
-    fit_limb_pts(&limb_points(frame), start, radius)
+    fit_limb_pts(&limb_points(frame, radius), start, radius)
 }
 
 /// RMS distance of the limb points from the circle (centre, radius): how well a radius explains the data.
@@ -296,7 +449,7 @@ pub struct LimbFit {
 /// a free fit; otherwise the radius is measured from the data (the optics are probably off: a Barlow's real
 /// factor depends on its spacing, so a nominal 3x can be 3.35x). Measured on real H-alpha frames.
 pub fn fit_limb_auto(frame: &Frame, expected: Option<f64>) -> Option<LimbFit> {
-    let pts = limb_points(frame);
+    let pts = limb_points(frame, expected);
     let free = fit_limb_pts(&pts, None, None).map(|(c, r)| (c, r, limb_rms(&pts, c, r)));
     if let Some(er) = expected {
         if let Some((c, r)) = fit_limb_pts(&pts, None, Some(er)) {
@@ -311,7 +464,7 @@ pub fn fit_limb_auto(frame: &Frame, expected: Option<f64>) -> Option<LimbFit> {
 
 /// Both fits side by side, for diagnostics: (free, with the expected radius), each (centre, radius, rms).
 pub fn limb_fits(frame: &Frame, expected: Option<f64>) -> (Option<(Vec2, f64, f64)>, Option<(Vec2, f64, f64)>) {
-    let pts = limb_points(frame);
+    let pts = limb_points(frame, expected);
     let free = fit_limb_pts(&pts, None, None).map(|(c, r)| (c, r, limb_rms(&pts, c, r)));
     let fixed = expected.and_then(|er| fit_limb_pts(&pts, None, Some(er))).map(|(c, r)| (c, r, limb_rms(&pts, c, r)));
     (free, fixed)
@@ -504,6 +657,51 @@ mod tests {
         assert!(!p.held && (p.pos.x - 310.0).abs() < 2.0);
         let p = t.update(&disc_frame(500.0, 205.0, 100.0)).unwrap();
         assert!(p.held, "a 190px jump must be held");
+    }
+
+    /// A 16-bit frame of a partial disc (sky ~0.8 in 8-bit units like the real camera's black level), scaled by `level`
+    /// (1.0 = a bright 200-count disc), with an optional dark wedge and a dark vertical band across the disc: a tree's shadow.
+    fn shadowed(cx: f64, cy: f64, r: f64, level: f64, shadows: bool) -> Frame {
+        let (w, h) = (640u32, 480u32);
+        let mut d = Vec::with_capacity((w * h * 2) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let (dx, dy) = (x as f64 - cx, y as f64 - cy);
+                let mut v = 0.8; // the sensor's black level, under everything
+                if dx * dx + dy * dy < r * r {
+                    let mut sig = 200.0 * level * (1.0 - 0.3 * (dx * dx + dy * dy).sqrt() / r); // limb darkening
+                    if shadows {
+                        if (x as f64 - 300.0).abs() < 25.0 { sig *= 0.08; }                                // a vertical band, nearly black
+                        if (x as f64 - (400.0 + (y as f64 - 100.0) * 0.12)).abs() < 3.0 && y > 100 { sig = 0.0; } // thin slit down to sky level
+                    }
+                    v += sig;
+                }
+                d.extend_from_slice(&((v * 256.0 + 0.5) as u16).to_le_bytes());
+            }
+        }
+        Frame::new(w, h, PixelFormat::Mono16, d)
+    }
+
+    #[test]
+    fn limb_survives_shadows_and_a_hundredfold_dimmer_light() {
+        let (cx, cy, r) = (520.0, 300.0, 380.0);
+        for (level, shadows) in [(1.0, false), (1.0, true), (0.05, true), (0.012, true)] {
+            let f = shadowed(cx, cy, r, level, shadows);
+            let s = locate_sun(&f, Some(r)).unwrap_or_else(|| panic!("no Sun at level {level} shadows {shadows}"));
+            assert!(s.partial);
+            assert!((s.pos.x - cx).abs() < 10.0 && (s.pos.y - cy).abs() < 10.0, "level {level} shadows {shadows}: {:?}", s);
+            assert!((s.radius - r).abs() < 15.0, "level {level} shadows {shadows}: radius {}", s.radius);
+        }
+        // and the limb tracker keeps following through it
+        let mut t = Tracker::limb(&shadowed(cx, cy, r, 1.0, false), Some(r)).unwrap();
+        let p = t.update(&shadowed(cx + 6.0, cy - 4.0, r, 0.02, true)).unwrap();
+        assert!((p.pos.x - (cx + 6.0)).abs() < 10.0 && (p.pos.y - (cy - 4.0)).abs() < 10.0, "{:?}", p);
+    }
+
+    #[test]
+    fn a_frame_below_the_noise_has_no_sun() {
+        let f = shadowed(520.0, 300.0, 380.0, 0.0005, false);
+        assert!(locate_sun(&f, Some(380.0)).is_none());
     }
 
     #[test]

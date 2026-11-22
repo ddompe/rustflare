@@ -171,6 +171,26 @@ mod tests {
         }
     }
 
+    /// Developer tool: `RUSTFLARE_THUMBS=<folder of session PNGs> cargo test -p rustflare-server thumbs_report -- --nocapture`
+    /// prints what the Sun detector finds in every picture (centre, radius, partial), to judge its stability.
+    #[test]
+    fn thumbs_report_if_provided() {
+        let Ok(dir) = std::env::var("RUSTFLARE_THUMBS") else { return };
+        let mut names: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "png")).collect();
+        names.sort();
+        let expected: Option<f64> = std::env::var("RUSTFLARE_EXPECTED_R").ok().and_then(|v| v.parse().ok());
+        let (mut xs, mut ys, mut rs, mut miss) = (vec![], vec![], vec![], 0);
+        for p in &names {
+            let f = rustflare_capture::read_png(p).unwrap();
+            match rustflare_tracking::locate_sun(&f, expected) {
+                Some(s) => { println!("{} x {:6.1} y {:6.1} r {:6.1} partial {}", p.file_name().unwrap().to_string_lossy(), s.pos.x, s.pos.y, s.radius, s.partial); xs.push(s.pos.x); ys.push(s.pos.y); rs.push(s.radius); }
+                None => { miss += 1; println!("{} none", p.file_name().unwrap().to_string_lossy()); }
+            }
+        }
+        let sd = |v: &Vec<f64>| { let m = v.iter().sum::<f64>() / v.len().max(1) as f64; (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / v.len().max(1) as f64).sqrt() };
+        println!("found {} of {}; spread (std) x {:.1} y {:.1} r {:.1}", xs.len(), names.len(), sd(&xs), sd(&ys), sd(&rs));
+    }
+
     fn walk(p: &Path) -> Vec<PathBuf> {
         let mut out = vec![];
         if let Ok(rd) = std::fs::read_dir(p) {

@@ -119,23 +119,20 @@ function Offset({ status }: { status: Status }) {
   const arrow = (d: number, pos: string, neg: string) => (Math.abs(d) < 1 ? '' : d > 0 ? pos : neg)
   return (
     <div className="offset" aria-live="polite">
-      {!sun ? (
-        <div className="muted">No Sun found in the frame (too dark? try more exposure).</div>
-      ) : (
-        <>
-          <div className={`offset-big ${centered ? 'ok' : ''}`}>{centered ? 'Centred' : `${dist.toFixed(0)} px off centre`}</div>
-          {!centered && (
-            <div className="offset-move">
-              Move the image <b>{arrow(dx, '→', '←')}{Math.abs(dx) >= 1 ? ` ${Math.abs(dx).toFixed(0)} px` : ''}</b>{' '}
-              <b>{arrow(dy, '↓', '↑')}{Math.abs(dy) >= 1 ? ` ${Math.abs(dy).toFixed(0)} px` : ''}</b>
-              {pad && <span className="muted"> · hold {pad}</span>}
-            </div>
-          )}
-          <div className="hint-text">
-            Sun centre {sun.pos.x.toFixed(0)}, {sun.pos.y.toFixed(0)} · radius {sun.radius.toFixed(0)} px{sun.partial ? ' (partial disc, fitted)' : ''} · {((dist / sun.radius) * 100).toFixed(0)}% of radius
-          </div>
-        </>
-      )}
+      {/* three fixed rows whatever the state, so the panel never changes size and pushes the pad around */}
+      <div className={`offset-big ${centered ? 'ok' : ''} ${sun ? '' : 'muted'}`}>{!sun ? 'No Sun found' : centered ? 'Centred' : `${dist.toFixed(0)} px off centre`}</div>
+      <div className="offset-move">
+        {!sun ? <span className="muted">Too dark? Try more exposure.</span> : centered ? <span className="muted">Nothing to move.</span> : (
+          <>
+            Move the image <b>{arrow(dx, '→', '←')}{Math.abs(dx) >= 1 ? ` ${Math.abs(dx).toFixed(0)} px` : ''}</b>{' '}
+            <b>{arrow(dy, '↓', '↑')}{Math.abs(dy) >= 1 ? ` ${Math.abs(dy).toFixed(0)} px` : ''}</b>
+            {pad && <span className="muted"> · hold {pad}</span>}
+          </>
+        )}
+      </div>
+      <div className="hint-text offset-info">
+        {sun ? <>Sun centre {sun.pos.x.toFixed(0)}, {sun.pos.y.toFixed(0)} · radius {sun.radius.toFixed(0)} px{sun.partial ? ' (partial, fitted)' : ''} · {((dist / sun.radius) * 100).toFixed(0)}% of radius</> : '\u00a0'}
+      </div>
     </div>
   )
 }

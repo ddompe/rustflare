@@ -1,5 +1,5 @@
 import { KeyboardEvent, useEffect, useRef, useState } from 'react'
-import { api, useStatus } from './api'
+import { api, Status, useStatus } from './api'
 import { useDisplay } from './display'
 import { useSetting } from './settings'
 import { LiveView } from './components/LiveView'
@@ -72,15 +72,11 @@ export function App() {
         <span className={`conn ${connected ? 'ok' : 'bad'}`}><i aria-hidden="true" />{connected ? 'Online' : 'Reconnecting…'}</span>
         {cam && <span className="camname">{cam.name} · {cam.width}×{cam.height} · {cam.bits}-bit{cam.bayer ? ` · colour ${cam.bayer}` : ''}</span>}
         <span className="hright">
-          {status?.mount && <button type="button" className="hstop" onClick={() => { api('POST', '/mount/stop').catch(() => {}) }} aria-label="Stop the mount">STOP</button>}
+          <button type="button" className="hfiles" onClick={() => setFilesOpen(true)} aria-label="Files: recordings on the drive">Files</button>
           <button type="button" className="themebtn" onClick={() => setTheme(theme === 'night' ? 'day' : 'night')} aria-label={theme === 'night' ? 'Switch to the daylight theme' : 'Switch to the night theme'}>{theme === 'night' ? '☀' : '☾'}</button>
           <button type="button" className="hidebtn" onClick={() => setFull(true)}>Hide controls</button>
         </span>
       </header>
-      {((status?.error && !(status.tracking?.lost && /tracking lost/i.test(status.error))) || (!connected && !status)) && (
-        <div className="banner" role="alert">{status?.error ?? 'Connecting to the RustFlare server…'}</div>
-      )}
-
       <section className="view" aria-label="Live view">
         <LiveView status={status} display={display} setDisplay={setDisplay} anchorPick={anchorPick} onPicked={() => setAnchorPick(false)} onDisplay={() => openMore('display')} />
         <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} noQuick={tab === 'aim'} hide={tab === 'aim' ? ['sun'] : []} />
@@ -117,8 +113,34 @@ export function App() {
         {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={() => setFilesOpen(true)} />}
         {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} />}
       </main>
+      <StatusBar status={status} connected={connected} />
       {full && <button type="button" className="fullbtn" aria-pressed onClick={() => setFull(false)}>Show controls</button>}
       {filesOpen && <FileManagerScreen status={status} onClose={() => setFilesOpen(false)} />}
+    </div>
+  )
+}
+
+/**
+ * One reserved line at the bottom for messages (errors, lost target, connection), so showing or hiding one never moves the
+ * controls. Tap a long message to read all of it (it opens upwards over the page, it does not push anything).
+ */
+function StatusBar({ status, connected }: { status: Status | null; connected: boolean }) {
+  const [open, setOpen] = useState(false)
+  const lost = !!status?.tracking?.lost
+  const held = !!status?.guiding?.held
+  let tone: 'bad' | 'warn' | '' = ''
+  let text = ''
+  if (!connected && !status) { tone = 'warn'; text = 'Connecting to the RustFlare server…' }
+  else if (status?.error) { tone = 'bad'; text = status.error }
+  else if (lost) { tone = 'bad'; text = held ? 'Target lost: guiding is paused and resumes by itself when the limb is back in view.' : 'Target lost: slew it back into view (Aim) or restart tracking.' }
+  else if (held) { tone = 'warn'; text = 'Guiding is paused until the target is found again.' }
+  else if (status?.sun_held) { tone = 'warn'; text = 'Sun hidden or unclear (cloud?): holding its last position.' }
+  return (
+    <div className={`sbar ${tone}`} role="status" aria-live="polite">
+      <button type="button" className="sbar-btn" disabled={!text} aria-expanded={open} onClick={() => setOpen(!open)}>
+        {text ? <><i aria-hidden="true" /><span>{text}</span></> : <span className="sbar-idle">Ready</span>}
+      </button>
+      {open && text && <div className="sbar-pop" onClick={() => setOpen(false)}>{text}</div>}
     </div>
   )
 }

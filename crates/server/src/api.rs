@@ -75,6 +75,11 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/focus", put(focus))
         .route("/api/camera/roi", put(camera_roi))
         .route("/api/session-log", put(session_log))
+        .route("/api/debug/lost-frames", put(lost_frames))
+        .route("/api/debug/state", get(|s| run(s, Command::DebugState)))
+        .route("/api/debug/snapshot", post(|s| run(s, Command::DebugSnapshot)))
+        .route("/api/debug/logs", get(debug_logs))
+        .route("/api/debug/events", get(debug_events))
         .route("/api/capture/darks", post(capture_darks))
         .route("/api/darks/applied", put(darks_applied))
         .route("/api/datasheet/:kind", get(datasheet))
@@ -421,6 +426,50 @@ async fn darks_applied(s: State<AppState>, Json(b): Json<FlatApplied>) -> Res {
 struct SessionLogBody { enabled: bool, frame_every_s: Option<f64> }
 async fn session_log(s: State<AppState>, Json(b): Json<SessionLogBody>) -> Res {
     run(s, Command::SetSessionLog { enabled: b.enabled, frame_every_s: b.frame_every_s }).await
+}
+
+/// Lists the files in the logs folder (events, session logs, lost-frame pictures), newest first; fetch them from /files/<path>.
+async fn debug_logs(State(st): State<AppState>) -> Json<Value> {
+    let root = st.storage.dir();
+    let mut out: Vec<(std::time::SystemTime, String, u64)> = Vec::new();
+    let mut stack = vec![root.join("logs")];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() { stack.push(p); continue }
+            if let (Ok(m), Ok(rel)) = (e.metadata(), p.strip_prefix(&root)) {
+                out.push((m.modified().unwrap_or(std::time::UNIX_EPOCH), rel.to_string_lossy().into_owned(), m.len()));
+            }
+        }
+    }
+    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out.truncate(500);
+    Json(json!(out.into_iter().map(|(t, p, n)| json!({ "path": p, "bytes": n, "modified_unix": t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) })).collect::<Vec<_>>()))
+}
+
+/// The last `n` (default 200) lines of the newest events log: tracking, guiding, exposure, lane and flip events.
+async fn debug_events(State(st): State<AppState>, axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>) -> Json<Value> {
+    let n: usize = q.get("n").and_then(|v| v.parse().ok()).unwrap_or(200).min(5000);
+    let mut days: Vec<_> = std::fs::read_dir(st.storage.dir().join("logs")).map(|r| r.flatten().map(|e| e.path()).collect()).unwrap_or_default();
+    days.sort();
+    let mut lines: Vec<Value> = Vec::new();
+    for d in days.iter().rev() {
+        if let Ok(t) = std::fs::read_to_string(d.join("events.jsonl")) {
+            let mut v: Vec<Value> = t.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            v.extend(lines);
+            lines = v;
+            if lines.len() >= n { break; }
+        }
+    }
+    let skip = lines.len().saturating_sub(n);
+    Json(json!(lines.split_off(skip)))
+}
+
+#[derive(Deserialize)]
+struct LostFramesBody { enabled: bool }
+async fn lost_frames(s: State<AppState>, Json(b): Json<LostFramesBody>) -> Res {
+    run(s, Command::SetLostFrames { enabled: b.enabled }).await
 }
 
 #[derive(Deserialize)]

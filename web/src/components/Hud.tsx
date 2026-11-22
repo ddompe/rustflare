@@ -180,7 +180,7 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
   }
   if (w('guide').on && tracking) {
     const lost = !!t?.lost
-    const label = lost ? 'TARGET LOST' : g.state === 'guiding' ? 'Holding' : g.state === 'calibrating' ? 'Calibrating' : t ? `Tracking ${t.mode}` : 'Idle'
+    const label = lost ? 'Lost' : g.state === 'guiding' ? 'Holding' : g.state === 'calibrating' ? 'Calibrating' : t ? `Tracking ${t.mode}` : 'Idle'
     out.push(
       <Widget key="guide" id="guide" label="Guiding" w={w('guide')} api={api}
         mini={<span className={lost ? 'bad-text' : ''}>{lost ? 'LOST' : g.state === 'guiding' ? <>Hold <b className="cv">{g.error_px?.toFixed(1) ?? '–'}</b> px</> : label}</span>}>

@@ -54,6 +54,8 @@ pub struct GuidingStatus {
     pub calibration: Option<Calibration>,
     pub target: Option<(f64, f64)>,
     pub error_px: Option<f64>,
+    /// The target was lost while guiding: pulses are paused and guiding resumes by itself when the limb is found again.
+    pub held: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -184,6 +186,9 @@ pub struct GuideParamsStatus {
 
 #[derive(Clone, Serialize)]
 pub struct SessionLogStatus {
+    /// Saving the frame whenever tracking is lost, and how many were saved since the service started.
+    pub lost_frames: bool,
+    pub lost_saved: u32,
     pub enabled: bool,
     pub lines: u64,
     pub frames: u64,
@@ -295,7 +300,7 @@ pub struct Status {
 impl Default for Status {
     fn default() -> Self {
         Status {
-            session_log: SessionLogStatus { enabled: false, lines: 0, frames: 0, bytes: 0, file: None },
+            session_log: SessionLogStatus { lost_frames: true, lost_saved: 0, enabled: false, lines: 0, frames: 0, bytes: 0, file: None },
             roi: None,
             perf: PerfStatus::default(),
             darks: DarksStatus { available: false, applied: false, name: None, exposure_us: None, gain: None, matches_camera: false },
@@ -317,7 +322,7 @@ impl Default for Status {
             sun: None,
             mount: None,
             tracking: None,
-            guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None },
+            guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None, held: false },
             capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0 },
             error: None,
             seq: 0,
