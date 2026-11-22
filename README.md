@@ -16,6 +16,7 @@ Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi nex
 - USB re-enumeration and Bluetooth link loss are detected; the mount is found again automatically.
 
 **Cameras** (Player One, and ZWO ASI through the vendor library; the ASI driver is written but not yet run on a real camera)
+- **Frame size (ROI)**: read out the centre 75/50/25 % of the sensor for a much higher frame rate (57 fps full frame, 153 fps at 50 % on the Apollo-M MINI over USB 3).
 - Exposure, gain, offset and 8/16-bit with a logarithmic exposure slider, histogram with clipping warning, sensor temperature, device datasheet card.
 - **Darks** (cap on, same exposure and gain) and **flats**: guided workflow (cap on, check level, capture), automatic exposure to about 50 %, master flat applied to the live view (recordings stay raw) and remembered across restarts.
 
@@ -35,6 +36,8 @@ Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi nex
 
 **Running it**
 - Installs and upgrades as a Debian package (`rustflare-update`, or a signed apt repository); settings (site, flats, guiding, storage, UI layout) survive reboots; auto-reconnect of camera and mount.
+- **Field Wi-Fi hotspot** (`rustflare-hotspot`) for use without a network, with an automatic way back to the previous Wi-Fi ([docs/hotspot.md](docs/hotspot.md)).
+- Opt-in **session log** (what the tracker and guider saw, plus small frames) and a replay test harness for building regression fixtures from real sessions.
 - Optional **password** and **HTTPS** with a private certificate authority you trust once on your phone (`rustflare-tls`).
 - Built-in simulators for the camera and mount, so everything can be tried without hardware; Playwright browser tests run in CI.
 

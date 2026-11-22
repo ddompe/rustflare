@@ -28,6 +28,8 @@ Everything below was built and tested on the simulators; each item needs the rea
 
 | new | ROI | Camera > Frame size: 50 % and 25 % in the phone UI; fps overlay jumps; tracking restarts; back to Full (measured via the API on 2026-11-21: 57 -> 153 fps) |
 
+| new | Hotspot | At home, in a terminal with an ethernet cable or the Pi's screen if possible: `sudo rustflare-hotspot create`, then `up --yes --minutes 10`; join the Wi-Fi with the iPhone and open http://10.42.0.1:8080; it returns to the home Wi-Fi by itself (tested on the Pi with a 2-minute cycle on 2026-11-21; no phone was available to join it) |
+
 ## M2: UI
 
 | Issue | Check |
