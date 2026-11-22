@@ -23,6 +23,8 @@ const GUIDE_PULSE_MS: &str = "3000";
 enum Reply {
     None,
     EndsWith(u8),
+    /// The reply has `n` segments, each ended by the terminator: read until the n-th (`:GAST#` answers `date#pointing#flags#`).
+    Segments(u8, usize),
     Exactly(&'static str),
 }
 
@@ -131,7 +133,7 @@ impl<P: Read + Write + Send> Mount for Zwo<P> {
 
     /// Pointing from `:GAST#`, whose reply is `<date&time&offset>#<RA&Dec>#<flags>#` (read-only query).
     fn equatorial(&mut self) -> Result<Option<(f64, f64)>> {
-        let r = send(&mut self.port, ":GAST#", Reply::EndsWith(END_CHAR))?;
+        let r = send(&mut self.port, ":GAST#", Reply::Segments(END_CHAR, 3))?;
         Ok(parse_gast_pointing(&String::from_utf8_lossy(&r)))
     }
 
@@ -274,7 +276,7 @@ fn send_raw<T: Read + Write>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec
     let expected_len = match &reply {
         Reply::None => return Ok(vec![]),
         Reply::Exactly(s) => Some(s.len()),
-        Reply::EndsWith(_) => None,
+        Reply::EndsWith(_) | Reply::Segments(..) => None,
     };
     let mut buf = Vec::new();
     loop {
@@ -286,6 +288,7 @@ fn send_raw<T: Read + Write>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec
         }
         match &reply {
             Reply::EndsWith(c) if b[0] == *c => { buf.pop(); break; }
+            Reply::Segments(c, n) if b[0] == *c && buf.iter().filter(|x| **x == *c).count() >= *n => break,
             Reply::Exactly(_) if Some(buf.len()) == expected_len => break,
             _ => {}
         }
@@ -321,6 +324,16 @@ mod tests {
     /// Model reply and a "tracking off" `:GU#` reply (what the constructor reads), then `extra` replies.
     fn mount(extra: &str) -> Zwo<Mock> {
         Zwo::new(Mock { written: String::new(), replies: format!("AM5#n#{extra}").bytes().collect() }, "mock").unwrap()
+    }
+
+    #[test]
+    fn pointing_is_read_from_the_whole_three_part_gast_reply() {
+        // the mount answers :GAST# with three '#'-terminated parts; reading only the first one lost the pointing (found on the real mount)
+        let reply = "11/22/26&11:42:07&+06:00#15:47:53&-19*58:26#nNHGM040400880#";
+        let mut m = Zwo::new(Mock { written: String::new(), replies: format!("AM5#n#{reply}").bytes().collect() }, "mock").unwrap();
+        let (ra, dec) = m.equatorial().unwrap().expect("pointing");
+        assert!((ra - 15.7981).abs() < 0.001 && (dec + 19.974).abs() < 0.001, "{ra} {dec}");
+        assert!(m.port.replies.is_empty(), "the whole reply must be consumed, or it corrupts the next answer");
     }
 
     #[test]
