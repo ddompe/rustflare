@@ -76,6 +76,16 @@ struct State {
     confirmed: u32,
 }
 
+/// In near-total darkness (cloud, a tree, the Sun blocked) the detector measures sensor noise, and now and then a cluster of noise
+/// agrees with itself and re-locks the model somewhere random (seen on the real Sun: the held model wandered over 1,200 px in 20
+/// minutes of cloud). Below this fraction of the brightness seen in good light there is nothing to measure.
+pub const DARK_FRACTION: f64 = 0.03;
+
+/// True when `level` (mean frame brightness, 0..1) is too low to measure the Sun, given the brightness `good` learned in good light.
+pub fn too_dark(good: Option<f64>, level: f64) -> bool {
+    good.is_some_and(|g| level < DARK_FRACTION * g)
+}
+
 impl SunModel {
     /// The image turned over (meridian flip): the drift turns with it.
     pub fn flipped(&mut self) {
@@ -370,6 +380,15 @@ mod tests {
             e = m.update(Some(loc(1000.0 + 20.0 * i as f64, 700.0, 1200.0)), t0 + Duration::from_millis(40 * i as u64), D, true, None);
         }
         assert!((e.unwrap().sun.pos.x - (1000.0 + 20.0 * 39.0)).abs() < 1.0);
+    }
+
+    #[test]
+    fn near_total_darkness_is_not_measured() {
+        assert!(too_dark(Some(0.5), 0.003));
+        assert!(too_dark(Some(0.5), 0.014));
+        assert!(!too_dark(Some(0.5), 0.02)); // thin cloud: still measurable
+        assert!(!too_dark(Some(0.5), 0.29));
+        assert!(!too_dark(None, 0.0), "before any good light was seen, nothing is judged dark");
     }
 
     #[test]

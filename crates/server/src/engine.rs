@@ -355,6 +355,8 @@ pub struct Engine {
     pulse_settle_until: Instant,
     manual_slew_until: Instant,
     sun_held: bool,
+    /// Mean frame brightness (0..1) seen while the Sun was being measured well: what "good light" means for this setup.
+    good_level: Option<f64>,
     /// When the tracker started failing (it is only called lost after a couple of seconds: shadows come and go).
     fail_since: Option<Instant>,
     fail_saved: bool,
@@ -482,6 +484,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         pulse_settle_until: Instant::now(),
         manual_slew_until: Instant::now(),
         sun_held: false,
+        good_level: None,
         fail_since: None,
         fail_saved: false,
         last_sun_event: Instant::now() - Duration::from_secs(60),
@@ -2260,6 +2263,13 @@ impl Engine {
         // the image moves on purpose while slewing, calibrating or pulsing: follow the measurements then
         let free = self.mount_state.slewing == Some(true) || self.goto.is_some() || self.flip.is_some() || now < self.manual_slew_until
             || matches!(self.guide, GuideState::Calibrating(_)) || self.pulsing || now < self.pulse_settle_until;
+        // learn what good light looks like, and do not measure in the dark
+        let level = self.status.camera.as_ref().map_or(0.0, |c| c.mean);
+        if !self.sun_held && meas.is_some() && level > 0.05 {
+            self.good_level = Some(self.good_level.map_or(level, |g| 0.995 * g + 0.005 * level));
+        }
+        let dark = crate::sunmodel::too_dark(self.good_level, level);
+        let meas = if dark { None } else { meas };
         let est = self.sun_model.update(meas, now, dims, free, None);
         let was_held = self.sun_held;
         self.sun_held = est.is_some_and(|e| e.predicted && e.since_measured_s > 1.0);
