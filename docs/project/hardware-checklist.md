@@ -9,6 +9,7 @@ Everything below was built and tested on the simulators; each item needs the rea
 - [x] Camera and USB stick on separate USB 3 controllers: ~57 fps held while a 3.4 GB sequence flushed (#58)
 - [x] Pi clock NTP-synchronised, hardware RTC present
 - [x] 2026-11-22 (owner): BLE connection to the AM3, Go to Sun, darks applied, flat applied in the overlay
+- [x] 2026-11-22: safe eject of the FAT32 stick, tracking on real H-alpha with a Lunt LS50, the pointing readout (`:GAST#`) within 0.3 degrees of the Sun, the mount command log, guiding through a cloud pass (dead reckoning), focus assist (feedback in #78), the 60-second pointing check, and a 10-minute hotspot cycle joined from the phone
 - [x] 2026-11-22: real prominence-lane recordings with the coronagraph (they exposed the Sun-detection and mask problems fixed the same day; a clean run after the fixes is still to be checked)
 
 ## Found on the Sun on 2026-11-22 and fixed (to re-verify)
