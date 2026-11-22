@@ -60,6 +60,7 @@ assets = [
   ["../../packaging/rustflare-update", "usr/bin/", "755"],
   ["../../packaging/rustflare-user", "usr/bin/", "755"],
   ["../../packaging/rustflare-tls", "usr/bin/", "755"],
+  ["../../packaging/rustflare-hotspot", "usr/bin/", "755"],
   ["../../LICENSE", "usr/share/doc/rustflare/", "644"],
   ["../../NOTICE.md", "usr/share/doc/rustflare/", "644"],
   ["../../LICENSE.vidoxide", "usr/share/doc/rustflare/", "644"],
