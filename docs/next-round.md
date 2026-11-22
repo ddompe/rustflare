@@ -9,3 +9,8 @@ Work in this order; commit and push after each item, update the GitHub issue and
 5. **Pi hotspot / field networking (#37).** An opt-in access-point mode for use without Wi-Fi: NetworkManager-based (`nmcli`) helper `rustflare-hotspot` (create/enable/disable, SSID and password, status), documented, with a systemd or UI switch only if it is safe: never change the network the owner is currently connected through without an explicit confirmation and a way back (test the helper's dry-run output on the Pi; do NOT bring the hotspot up while the owner depends on the Wi-Fi connection unless it is a time-limited test with an automatic revert). Document the iPhone steps.
 
 Rules that still apply: never move the mount or send mount commands (it is off to save battery); no personal data (site coordinates, device addresses, owner name) in the public repo; do not delete files you did not create; end with a summary comment in the final message and make sure everything is pushed.
+
+## Added during the 8 pm session
+
+- OSC / debayer (#56): Bayer frames, debayered live view, raw Bayer SER, for planetary and eclipse work.
+- HDR bracketing lanes (new issue): several exposure brackets cycled by the engine, each lane in its own directory, for eclipses and lunar video (no occulting of the Sun).
