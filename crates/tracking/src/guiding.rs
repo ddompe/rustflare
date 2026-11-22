@@ -43,6 +43,9 @@ impl Calibration {
     }
 }
 
+/// The longest single guide command: the mount ends a timed pulse by itself after 3 s.
+const MAX_PULSE_CHUNK: Duration = Duration::from_millis(2500);
+
 /// Guide speeds in multiples of the sidereal rate, signed, per axis.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct GuideCommand {
@@ -238,7 +241,13 @@ impl Guider {
             }
             let v = if px > 0.0 { speed } else { -speed };
             let cmd = if i == 0 { GuideCommand { primary: v, secondary: 0.0 } } else { GuideCommand { primary: 0.0, secondary: v } };
-            self.pending.push_back((cmd, dur));
+            // The mount stops a guide pulse by itself after 3 s: a longer correction is sent as back-to-back pulses of at most 2.5 s.
+            let mut left = dur;
+            while left > Duration::ZERO {
+                let chunk = left.min(MAX_PULSE_CHUNK);
+                self.pending.push_back((cmd, chunk));
+                left -= chunk;
+            }
             let dir = if i == 0 { self.cal.primary_dir } else { self.cal.secondary_dir };
             self.applied = self.applied + dir * (self.cal.rate[i] * v * dur.as_secs_f64());
         }
@@ -339,7 +348,7 @@ pub enum CalAction {
 
 enum Phase {
     Init,
-    Moving { axis: usize, since: Instant, from: Vec2 },
+    Moving { axis: usize, since: Instant, from: Vec2, last_cmd: Instant },
     Settling { axis: usize, since: Instant, from: Vec2 },
 }
 
@@ -405,13 +414,17 @@ impl Calibrator {
                     return CalAction::None;
                 }
                 let from = self.median(now, Duration::from_millis(1500)).unwrap_or(pos);
-                self.phase = Phase::Moving { axis: 0, since: now, from };
+                self.phase = Phase::Moving { axis: 0, since: now, from, last_cmd: now };
                 CalAction::Guide(self.cmd(0))
             }
-            Phase::Moving { axis, since, from } => {
+            Phase::Moving { axis, since, from, last_cmd } => {
                 if now.duration_since(since) >= self.move_time {
                     self.phase = Phase::Settling { axis, since: now, from };
                     CalAction::Guide(GuideCommand::STOP)
+                } else if now.duration_since(last_cmd) >= MAX_PULSE_CHUNK {
+                    // the mount ends a guide command by itself after 3 s: keep the move going, or the motion measured is shorter than assumed
+                    self.phase = Phase::Moving { axis, since, from, last_cmd: now };
+                    CalAction::Guide(self.cmd(axis))
                 } else {
                     CalAction::None
                 }
@@ -430,7 +443,7 @@ impl Calibrator {
                 }
                 self.motion[axis] = Some(d);
                 if axis == 0 {
-                    self.phase = Phase::Moving { axis: 1, since: now, from: end };
+                    self.phase = Phase::Moving { axis: 1, since: now, from: end, last_cmd: now };
                     CalAction::Guide(self.cmd(1))
                 } else {
                     match Calibration::from_motion(self.motion[0].unwrap(), self.motion[1].unwrap(), self.move_time.as_secs_f64(), self.speed) {
@@ -454,19 +467,24 @@ mod tests {
 
     /// Fake world: the true image position integrates drift + commanded guide motion in 100 ms steps;
     /// measurements add seeing jitter (deterministic pseudo-random, uniform within +-`jitter` px).
-    struct World { t0: Instant, now: Instant, pos: Vec2, cmd: GuideCommand, drift: Vec2, jitter: f64, rng: u64 }
+    struct World { t0: Instant, now: Instant, pos: Vec2, cmd: GuideCommand, cmd_age: f64, drift: Vec2, jitter: f64, rng: u64 }
     impl World {
         fn new(drift: Vec2, jitter: f64) -> World {
             let t = Instant::now();
-            World { t0: t, now: t, pos: Vec2::new(640.0, 480.0), cmd: GuideCommand::STOP, drift, jitter, rng: 0x2545F4914F6CDD1D }
+            World { t0: t, now: t, pos: Vec2::new(640.0, 480.0), cmd: GuideCommand::STOP, cmd_age: 0.0, drift, jitter, rng: 0x2545F4914F6CDD1D }
         }
         fn noise(&mut self) -> f64 {
             self.rng ^= self.rng << 13; self.rng ^= self.rng >> 7; self.rng ^= self.rng << 17;
             ((self.rng >> 11) as f64 / (1u64 << 53) as f64 * 2.0 - 1.0) * self.jitter
         }
+        /// Sends a command to the mount: it restarts the mount's own 3 s timer.
+        fn issue(&mut self, c: GuideCommand) { self.cmd = c; self.cmd_age = 0.0; }
         fn tick(&mut self) {
             let (p, q) = axis_dirs();
-            self.pos = self.pos + (self.drift + p * (self.cmd.primary * PX_PER_SIDEREAL) + q * (self.cmd.secondary * PX_PER_SIDEREAL)) * 0.1;
+            // like the real mount: a guide command runs for at most 3 s on its own
+            self.cmd_age += 0.1;
+            let c = if self.cmd_age > 3.0 { GuideCommand::STOP } else { self.cmd };
+            self.pos = self.pos + (self.drift + p * (c.primary * PX_PER_SIDEREAL) + q * (c.secondary * PX_PER_SIDEREAL)) * 0.1;
             self.now += Duration::from_millis(100);
         }
         /// What the tracker would report: the true position plus seeing jitter.
@@ -479,8 +497,8 @@ mod tests {
         for _ in 0..1000 {
             let m = w.measured();
             match c.step(w.now, m) {
-                CalAction::Guide(g) => w.cmd = g,
-                CalAction::Done(cal) => { w.cmd = GuideCommand::STOP; return cal; }
+                CalAction::Guide(g) => w.issue(g),
+                CalAction::Done(cal) => { w.issue(GuideCommand::STOP); return cal; }
                 CalAction::Failed(e) => panic!("{e}"),
                 CalAction::None => {}
             }
@@ -496,7 +514,7 @@ mod tests {
             let m = w.measured();
             if let Some(c) = g.step(w.now, m) {
                 if c != GuideCommand::STOP { pulses += 1; }
-                w.cmd = c;
+                w.issue(c);
             }
             w.tick();
             if secs - (w.elapsed() - start) < tail {
@@ -577,7 +595,7 @@ mod tests {
         while w.elapsed() - start < 300.0 {
             let m = w.measured();
             dm.observe(w.now, m, g.applied());
-            if let Some(c) = g.step(w.now, m) { w.cmd = c; }
+            if let Some(c) = g.step(w.now, m) { w.issue(c); }
             w.tick();
         }
         let d = dm.drift().expect("drift learned");
@@ -590,7 +608,7 @@ mod tests {
         let mut worst = 0f64;
         while w.elapsed() - start < 240.0 {
             let virt = dr.position(w.now, g.applied());
-            if let Some(c) = g.step(w.now, virt) { w.cmd = c; }
+            if let Some(c) = g.step(w.now, virt) { w.issue(c); }
             w.tick();
             worst = worst.max((w.pos - target).len());
         }
@@ -616,13 +634,13 @@ mod tests {
                 let phase = i % 120;
                 if phase < 10 {
                     let m = w.measured();
-                    if let Some(c) = g.step(w.now, m) { w.cmd = c; }
+                    if let Some(c) = g.step(w.now, m) { w.issue(c); }
                 } else {
                     if phase == 10 {
                         let r = g.judge_now(w.now);
-                        if let Some(c) = r { w.cmd = c; }
+                        if let Some(c) = r { w.issue(c); }
                     }
-                    if let Some(c) = g.tick(w.now) { w.cmd = c; }
+                    if let Some(c) = g.tick(w.now) { w.issue(c); }
                 }
                 w.tick();
                 if i > 3000 { worst = worst.max((w.pos - target).len()); }
@@ -662,7 +680,7 @@ mod tests {
             let mut m = w.measured();
             if n % 10 == 0 { m = m + Vec2::new(300.0, -250.0); }
             match c.step(w.now, m) {
-                CalAction::Guide(g) => w.cmd = g,
+                CalAction::Guide(g) => w.issue(g),
                 CalAction::Done(cal) => {
                     let (p, q) = axis_dirs();
                     assert!((cal.primary_dir - p).len() < 0.15 && (cal.secondary_dir - q).len() < 0.15, "{cal:?}");
