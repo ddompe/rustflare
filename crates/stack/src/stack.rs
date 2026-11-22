@@ -8,6 +8,7 @@
 use crate::align::{accumulate_shifted, Aligner};
 use crate::calib::Calibration;
 use crate::image::{bin, sharpness, valid_mask, Img};
+use crate::multipoint::{add_box, build_grid, LocalAligner, Patch};
 use crate::ser::Ser;
 use serde::Serialize;
 use std::path::Path;
@@ -49,10 +50,20 @@ pub struct Options {
     pub clip: f32,
     /// Fraction of the frames whose aligned mean is the reference of the second alignment pass (0 = one pass only).
     pub refine: f64,
+    /// Multi-point alignment (needs `align`): a shift and a frame selection per alignment point.
+    pub multipoint: bool,
+    /// Half-width of an alignment point's box, in binned pixels (the grid pitch is 1.5 times this).
+    pub ap_half: usize,
+    /// How far (binned pixels) a point may move from the global shift.
+    pub search: usize,
+    /// Fraction of the frames (the best by global score) whose points are measured.
+    pub register: f64,
+    /// A point needs this fraction of the 90th-percentile detail of all points.
+    pub min_structure: f64,
 }
 
 impl Default for Options {
-    fn default() -> Self { Options { keep: 0.25, align: true, threads: 2, bin: 2, whiten: 0.7, erode: 8, rank: Rank::Reference, cache_mb: 1024, integer_shifts: false, clip: 0.0, refine: 0.10 } }
+    fn default() -> Self { Options { keep: 0.25, align: true, threads: 2, bin: 2, whiten: 0.7, erode: 8, rank: Rank::Reference, cache_mb: 1024, integer_shifts: false, clip: 0.0, refine: 0.10, multipoint: true, ap_half: 24, search: 14, register: 0.5, min_structure: 0.05 } }
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -72,6 +83,12 @@ pub struct Report {
     pub clipped_fraction: f64,
     /// Detail the two halves of the stack have in common (noise cancels): the quality measure to compare stacks with.
     pub signal: f64,
+    /// The same measure for the global-shift stack, when multi-point alignment ran.
+    pub signal_global: f64,
+    /// Alignment points used (0 = global alignment only) and how far their shifts differ from the global one (full-resolution px, rms).
+    pub aps: usize,
+    pub local_shift_rms_px: f64,
+    pub multipoint_seconds: f64,
     pub first_timestamp: Option<f64>,
     pub rank_seconds: f64,
     pub stack_seconds: f64,
@@ -257,8 +274,6 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         refine_change = (shifts_b.iter().zip(&shifts2).map(|(a, c)| (a.0 - c.0).powi(2) + (a.1 - c.1).powi(2)).sum::<f64>() / n as f64).sqrt() * b as f64;
         (shifts_b, score, bright) = (shifts2, score2, bright2);
     }
-    drop(cache);
-
     let mut order: Vec<usize> = (0..n).collect();
     match opts.rank {
         Rank::Reference => by(&score, &mut order),
@@ -339,10 +354,123 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         0.0
     };
 
+    // multi-point: each alignment point gets its own shift per frame and its own best frames
+    let (mut aps_n, mut mp_rms, mut signal_global, mut mp_seconds) = (0usize, 0.0f64, signal, 0.0f64);
+    let mut signal = signal;
+    // sigma clipping works on the global-shift stack: asking for it turns multi-point off
+    if opts.multipoint && opts.align && opts.clip == 0.0 && n >= 8 {
+        let t2 = Instant::now();
+        let mut ord: Vec<usize> = (0..n).collect();
+        by(&score, &mut ord);
+        let top = ((n as f64 * opts.refine.max(0.1)).round() as usize).clamp(3, n);
+        let mut ref_d = vec![0f32; bw * bh];
+        {
+            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
+            for &i in &ord[..top] {
+                accumulate_shifted(&mut ref_d, &get(&mut s, i)?.d, bw, bh, shifts_b[i].0, shifts_b[i].1);
+            }
+        }
+        for v in &mut ref_d {
+            *v /= top as f32;
+        }
+        let ref_img = Img { w: bw, h: bh, d: ref_d };
+        let half = opts.ap_half.max(4);
+        let grid = build_grid(&ref_img, &valid, half, (half * 3 / 2).max(1), opts.min_structure);
+        if !grid.is_empty() {
+            aps_n = grid.len();
+            let la = LocalAligner::new(half, opts.search);
+            let refp: Vec<Patch> = grid.iter().map(|&(x, y)| la.prepare(&ref_img.d, bw, bh, x as isize, y as isize)).collect();
+            let reg_n = ((n as f64 * opts.register).round() as usize).clamp(kept_n, n);
+            let registered: Vec<usize> = ord[..reg_n].to_vec();
+            let local_r = run_parallel(reg_n, opts.threads, |k| {
+                let i = registered[k];
+                let mut s = Ser::open(path).map_err(|e| e.to_string())?;
+                let img = get(&mut s, i)?;
+                let (gx, gy) = (shifts_b[i].0.round() as isize, shifts_b[i].1.round() as isize);
+                Ok::<_, String>(grid.iter().enumerate().map(|(j, &(x, y))| {
+                    let cur = la.prepare(&img.d, bw, bh, x as isize + gx, y as isize + gy);
+                    let (dx, dy, ncc) = la.correlate(&refp[j], &cur);
+                    (gx as f32 + dx, gy as f32 + dy, ncc)
+                }).collect::<Vec<_>>())
+            });
+            let mut local: Vec<Vec<(f32, f32, f32)>> = Vec::with_capacity(reg_n);
+            for (k, r) in local_r.into_iter().enumerate() {
+                local.push(r.map_err(|e| format!("frame {}: {e}", registered[k]))?);
+            }
+            // per point: the best `kept_n` frames by correlation, alternately into two halves (to measure the result)
+            let per_ap = kept_n.min(reg_n);
+            let mut chosen = vec![vec![0u8; aps_n]; reg_n];
+            let (mut rs, mut rc) = (0.0f64, 0usize);
+            for j in 0..aps_n {
+                let mut idx: Vec<usize> = (0..reg_n).collect();
+                idx.sort_by(|&a, &c| local[c][j].2.partial_cmp(&local[a][j].2).unwrap_or(std::cmp::Ordering::Equal));
+                for (rank, &k) in idx[..per_ap].iter().enumerate() {
+                    chosen[k][j] = if rank % 2 == 0 { 1 } else { 2 };
+                    let g = shifts_b[registered[k]];
+                    rs += ((local[k][j].0 as f64 - g.0).powi(2) + (local[k][j].1 as f64 - g.1).powi(2)) as f64;
+                    rc += 1;
+                }
+            }
+            mp_rms = (rs / rc.max(1) as f64).sqrt() * b as f64;
+            let accs = Mutex::new(Vec::<[(Vec<f32>, Vec<f32>); 2]>::new());
+            let next = AtomicUsize::new(0);
+            std::thread::scope(|sc| {
+                for _ in 0..opts.threads.max(1).min(reg_n) {
+                    sc.spawn(|| {
+                        let mut my = Ser::open(path).expect("reopen");
+                        let mut st = [(vec![0f32; w * h], vec![0f32; w * h]), (vec![0f32; w * h], vec![0f32; w * h])];
+                        loop {
+                            let k = next.fetch_add(1, Ordering::Relaxed);
+                            if k >= reg_n {
+                                break;
+                            }
+                            if chosen[k].iter().all(|&c| c == 0) {
+                                continue;
+                            }
+                            let Some(frame) = load(&mut my, registered[k]) else { continue };
+                            for (j, &(x, y)) in grid.iter().enumerate() {
+                                let c = chosen[k][j];
+                                if c == 0 {
+                                    continue;
+                                }
+                                let (dx, dy, _) = local[k][j];
+                                let g = &mut st[(c - 1) as usize];
+                                add_box(&mut g.0, &mut g.1, &frame, w, h, (x * b) as isize, (y * b) as isize, half * b, dx * b as f32, dy * b as f32);
+                            }
+                        }
+                        accs.lock().unwrap().push(st);
+                    });
+                }
+            });
+            let mut sums = [(vec![0f32; w * h], vec![0f32; w * h]), (vec![0f32; w * h], vec![0f32; w * h])];
+            for st in accs.into_inner().unwrap() {
+                for (g, part) in sums.iter_mut().zip(st) {
+                    for (d, v) in g.0.iter_mut().zip(part.0) { *d += v; }
+                    for (d, v) in g.1.iter_mut().zip(part.1) { *d += v; }
+                }
+            }
+            // where no point reaches, the global stack shows through
+            let e = 0.02 * per_ap as f32;
+            let blend = |num: &[f32], den: &[f32], e: f32| -> Vec<f32> { (0..w * h).map(|i| (num[i] + e * data[i]) / (den[i] + e)).collect() };
+            let a = blend(&sums[0].0, &sums[0].1, e / 2.0);
+            let bb = blend(&sums[1].0, &sums[1].1, e / 2.0);
+            let both_num: Vec<f32> = sums[0].0.iter().zip(&sums[1].0).map(|(x, y)| x + y).collect();
+            let both_den: Vec<f32> = sums[0].1.iter().zip(&sums[1].1).map(|(x, y)| x + y).collect();
+            signal = {
+                let eval_valid = valid_mask(&bin(&mean, w, h, 2), 2.0, opts.erode);
+                common_detail(&bin(&a, w, h, 2).d, &bin(&bb, w, h, 2).d, w / 2, h / 2, &eval_valid)
+            };
+            data = blend(&both_num, &both_den, e);
+        }
+        mp_seconds = t2.elapsed().as_secs_f64();
+    }
+    drop(cache);
+    signal_global = if aps_n > 0 { signal_global } else { signal };
+
     // sigma clipping: the spread of the kept frames about their mean, then the mean without the outliers (hot pixels, cosmic
     // rays, a frame with a bird in it)
     let mut clipped_fraction = 0.0;
-    if opts.clip > 0.0 && kept_n >= 5 {
+    if opts.clip > 0.0 && kept_n >= 5 && aps_n == 0 {
         let mean_px = data.clone();
         let run = |pass: u8, std: &[f32]| -> Vec<(Vec<f32>, Vec<f32>)> {
             let out = Mutex::new(Vec::new());
@@ -406,6 +534,10 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         refine_change_px: refine_change,
         clipped_fraction,
         signal,
+        signal_global,
+        aps: aps_n,
+        local_shift_rms_px: mp_rms,
+        multipoint_seconds: mp_seconds,
         first_timestamp: ser.timestamp(0),
         rank_seconds,
         stack_seconds: t1.elapsed().as_secs_f64(),

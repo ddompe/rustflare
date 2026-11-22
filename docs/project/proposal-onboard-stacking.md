@@ -133,3 +133,26 @@ Built: reference refined against the aligned mean of the best 10 % (second align
 - *Not yet true:* no real flat or raw dark from the field day exists (the flat SER was not on the stick and darks were never kept raw before today), so calibration is tested on synthetic data only. The first raw flat and dark taken with this release will be the real test.
 
 **Plan correction for M1:** use the refined mean as the AP reference; correlate on 2x-binned images (the cache already holds them; half-width 24 binned pixels, pitch 2.25x like Siril); register only the better half of the frames per point (Siril's "register percent") to bound the cost; rank per point by the normalised correlation peak; blend with a Hann window straight into one accumulator (no per-point buffers); fall back to the global stack where no point has enough structure. Success is measured by the split-half detail of the multi-point stack against the global one on the same bursts, and by eye on the limb and the granulation.
+
+## M1 done and review (2026-11-22): multi-point alignment
+
+Built (`crates/stack/src/multipoint.rs`, wired into `stack.rs`; on by default, `--global` turns it off): a grid of alignment points on the structured parts of the reference (the aligned mean of the best frames), a 2x-binned local correlation per point and frame (box half-width 24, search 14 px, pitch 1.5x half-width), registration of the better half of the frames only, the best 25 % chosen **per point** by normalised correlation, Hann-window blending straight into one accumulator, and the global stack showing through where no point reaches. `--clip` uses the global stack (it turns multi-point off).
+
+**Results on the field-day bursts** (split-half detail, both stacks aligned so the comparison is valid): disc lane 0.00035 against 0.00025 for global alignment (+40 %, 322 points), prominence lane 0.00099 against 0.00084 (+18 %, 111 points, glow around the prominence correctly left out). By eye the multi-point disc stack is visibly crisper (finer fibrils, more contrast) with no seams; the prominence base and limb ring are crisper too. Local shifts differ from the global shift by 1.3 to 1.7 px rms, which is the distortion one shift per frame cannot follow. Synthetic tests: the local aligner recovers a known displacement field to under 0.5 px, and on frames bent by a smooth field multi-point beats global by 12 % on the same measure (the real data gains more than the synthetic scene, whose texture is smooth).
+
+**Cost (measured on a fast Mac core):** 100 frames of 1944x1472, global plus multi-point, 7 to 8.5 s on one thread and about 4 s on two. A Pi 5 core is several times slower: expect **12 to 25 s per burst on two cores**. That fits a 30 s cadence only just, and only if the stacker really gets two cores. Levers if needed: register fewer frames (`--register 30`), a larger point pitch, fewer frames kept, or stacking only every Nth burst.
+
+**Assumptions checked or revised**
+
+- *Multi-point is what matters for the Sun.* Confirmed by the numbers and the pictures above.
+- *The error against the true scene can judge a stack.* No: every stack sits in the distorted coordinates of its reference frames. The split-half detail is the measure (and it needs both stacks aligned).
+- *Per-point reference from the first-pass mean.* Works; the mean is a little blurred by the frame-to-frame distortion, which costs some correlation sharpness but not bias.
+- *Not compared with Siril 1.5 or AutoStakkert* (not installed here, and AutoStakkert is Windows only). That comparison stays open; it would be worth doing with the owner's own tools on the same SER.
+- *Still untested on the Pi,* with real flats and darks, and with a recording running at the same time.
+
+**Plan correction for M2 (the Pi service):**
+
+- The pause policy does not poll HTTP: the recorder writes `capture.state` (state, storage folder, time) to a small file under `/var/lib/rustflare/` on every change and every 10 s, and the stacker reads it (stale means the recorder is not running, so nothing is recording). The stacker also learns the current storage folder from it.
+- The recorder writes `<recording>.ready` when the writer has closed the last part of a burst, which is the "file complete" signal (the sidecar is not).
+- The stacker is a subcommand, `rustflare-stack watch`, run by a systemd unit that is **off by default**, with `Nice=19`, `CPUWeight`, `IOWeight`, `IOSchedulingClass=idle`, `MemoryMax`, and its own read-rate cap; its settings (enabled, keep percent, flat and dark paths, pause policy) live in `/var/lib/rustflare/stack.json`, which the web server will edit in M3.
+- Stacking a burst costs up to 25 s of two cores on the Pi: default policy "only between bursts", threads 2.
