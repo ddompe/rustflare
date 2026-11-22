@@ -4,14 +4,15 @@
 #   sudo rustflare-hotspot create [--ssid NAME] [--password PASS]   define the profile (does not switch anything on)
 #   sudo rustflare-hotspot up [--minutes N] [--keep] [--yes]        switch the hotspot on (needs --yes)
 #   sudo rustflare-hotspot down                                      switch it off and go back to the previous Wi-Fi
+# With a second Wi-Fi radio (USB dongle) the hotspot uses it and the home network stays connected (--iface to choose).
 # Add --dry-run to any command to print what would be done.
 #
-# The Pi has one Wi-Fi radio: while the hotspot is on, the Pi is NOT on your home network (and an ssh session over
+# One Wi-Fi radio: while the hotspot is on, the Pi is NOT on your home network (and an ssh session over
 # Wi-Fi ends). So `up` asks for --yes and, unless you pass --keep, switches back to the previous network by itself
 # after N minutes (default 30), which also protects you from locking yourself out.
 set -eu
 PROFILE="${RUSTFLARE_HOTSPOT_PROFILE:-RustFlare-hotspot}"
-IFACE="${RUSTFLARE_WIFI_IFACE:-wlan0}"
+IFACE="${RUSTFLARE_WIFI_IFACE:-}"
 STATE_DIR="${RUSTFLARE_STATE_DIR:-/var/lib/rustflare}"
 PREV_FILE="$STATE_DIR/hotspot.previous"
 DRY=0
@@ -21,11 +22,27 @@ need_nm() { command -v nmcli >/dev/null 2>&1 || { echo "NetworkManager (nmcli) i
 active_wifi() { nmcli -t -f NAME,DEVICE connection show --active | awk -F: -v d="$IFACE" '$2==d {print $1; exit}'; }
 exists() { nmcli -t -f NAME connection show | grep -qx "$PROFILE"; }
 
+wifi_devices() { nmcli -t -f DEVICE,TYPE device | awk -F: '$2=="wifi"{print $1}'; }
+# Which radio carries the hotspot? An explicit --iface wins. With two Wi-Fi radios (e.g. a USB dongle) the one that is not
+# connected to a network is used, so the Pi stays on its home Wi-Fi while it also serves the hotspot. With one radio it is
+# that radio and the home network is given up while the hotspot is on.
+pick_iface() {
+  [ -n "$IFACE" ] && return 0
+  spare=""
+  for d in $(wifi_devices); do
+    nmcli -t -f DEVICE,STATE device | grep -q "^$d:connected" || { spare="$d"; break; }
+  done
+  IFACE="${spare:-$(wifi_devices | head -1)}"
+  [ -n "$IFACE" ] || { echo "no Wi-Fi interface found" >&2; exit 1; }
+}
+radios() { wifi_devices | wc -l; }
+
 cmd="${1:-status}"; [ $# -gt 0 ] && shift
 SSID="RustFlare-$(hostname | sed 's/\.local$//')"; PASS=""; MINUTES=30; KEEP=0; YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ssid) SSID="$2"; shift ;;
+    --iface) IFACE="$2"; shift ;;
     --password) PASS="$2"; shift ;;
     --minutes) MINUTES="$2"; shift ;;
     --keep) KEEP=1 ;;
@@ -37,9 +54,11 @@ while [ $# -gt 0 ]; do
 done
 
 need_nm
+pick_iface
 case "$cmd" in
 status)
-  echo "wifi interface : $IFACE"
+  echo "wifi radios    : $(radios) ($(wifi_devices | tr '\n' ' '))"
+  echo "hotspot radio  : $IFACE$( [ "$(radios)" -gt 1 ] && echo " (a second radio: the home network stays connected)")"
   echo "active network : $(active_wifi || true)"
   if exists; then echo "hotspot profile: $PROFILE (ssid $(nmcli -s -g 802-11-wireless.ssid connection show "$PROFILE" 2>/dev/null))"; else echo "hotspot profile: not created (run: sudo rustflare-hotspot create)"; fi
   [ "$(active_wifi || true)" = "$PROFILE" ] && echo "hotspot is ON: join the Wi-Fi, then open http://10.42.0.1:8080 (or https://10.42.0.1:8443)" || echo "hotspot is off"
@@ -59,12 +78,20 @@ create)
   ;;
 up)
   exists || { echo "no hotspot profile yet: run 'sudo rustflare-hotspot create' first" >&2; exit 1; }
-  if [ "$YES" != 1 ] && [ "$DRY" != 1 ]; then
+  if [ "$YES" != 1 ] && [ "$DRY" != 1 ] && [ "$(radios)" -le 1 ]; then
     echo "This takes the Pi off its current Wi-Fi ($(active_wifi || echo none)) and an ssh session over Wi-Fi will end." >&2
     echo "Run again with --yes to continue (it switches back by itself after $MINUTES minutes unless you pass --keep)." >&2
     exit 1
   fi
   PREV="$(active_wifi || true)"
+  # Two radios: the hotspot is on the other one, the home network is untouched, no revert is needed.
+  if [ "$(radios)" -gt 1 ] && [ -z "$PREV" ]; then
+    run nmcli connection up "$PROFILE" ifname "$IFACE"
+    [ "$DRY" = 1 ] && { echo "(dry run: nothing was switched on)"; exit 0; }
+    echo "hotspot on $IFACE; the home network stays connected. Join the Wi-Fi and open http://10.42.0.1:8080"
+    echo "switch off with: sudo rustflare-hotspot down"
+    exit 0
+  fi
   mkdir -p "$STATE_DIR" 2>/dev/null || true
   [ -n "$PREV" ] && [ "$PREV" != "$PROFILE" ] && { [ "$DRY" = 1 ] && echo "+ remember previous network: $PREV" || echo "$PREV" > "$PREV_FILE"; }
   if [ "$KEEP" != 1 ] && [ -n "$PREV" ]; then
@@ -79,6 +106,7 @@ up)
 down)
   run systemctl stop rustflare-hotspot-revert.timer 2>/dev/null || true
   run nmcli connection down "$PROFILE" 2>/dev/null || true
+  if [ "$(radios)" -gt 1 ] && [ ! -f "$PREV_FILE" ]; then echo "hotspot off (the home network was never touched)"; exit 0; fi
   if [ -f "$PREV_FILE" ]; then run nmcli connection up "$(cat "$PREV_FILE")"; else echo "no previous network recorded; NetworkManager will reconnect on its own"; fi
   echo "hotspot off"
   ;;

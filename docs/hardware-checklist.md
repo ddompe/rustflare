@@ -30,6 +30,9 @@ Everything below was built and tested on the simulators; each item needs the rea
 
 | new | Hotspot | At home, in a terminal with an ethernet cable or the Pi's screen if possible: `sudo rustflare-hotspot create`, then `up --yes --minutes 10`; join the Wi-Fi with the iPhone and open http://10.42.0.1:8080; it returns to the home Wi-Fi by itself (tested on the Pi with a 2-minute cycle on 2026-11-21; no phone was available to join it) |
 
+| new | Hotspot with a USB Wi-Fi dongle | Plug a dongle; `sudo rustflare-hotspot status` shows 2 radios; `create` then `up`: the hotspot comes up on the dongle while ssh over the home Wi-Fi keeps working |
+| new | iPhone and HTTPS landing page | Open http://astropi.local:8080 on the phone: the page says whether HTTPS works and lists the three steps; make sure *Certificate Trust Settings* is switched on for RustFlare local CA |
+
 ## M2: UI
 
 | Issue | Check |

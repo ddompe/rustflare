@@ -74,10 +74,31 @@ pub fn http_redirector(ca: PathBuf, https_port: u16) -> axum::Router {
     }))
     .fallback(move |req: Request| async move {
         let host = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("astropi.local");
-        let host = host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host);
-        let loc = format!("https://{host}:{https_port}{}", req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/"));
-        (StatusCode::TEMPORARY_REDIRECT, [(header::LOCATION, loc)]).into_response()
+        let host = host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host).to_string();
+        let path = req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/").to_string();
+        if path == "/" || path.starts_with("/?") {
+            // A landing page instead of a blind redirect: a phone that does not trust the CA yet would show nothing at
+            // all after the redirect. The page tests whether HTTPS works from this browser and either continues there or
+            // explains the three steps.
+            return ([(header::CONTENT_TYPE, "text/html; charset=utf-8"), (header::CACHE_CONTROL, "no-store")], landing_page(&host, https_port)).into_response();
+        }
+        (StatusCode::TEMPORARY_REDIRECT, [(header::LOCATION, format!("https://{host}:{https_port}{path}"))]).into_response()
     })
+}
+
+/// The plain-HTTP landing page (also useful on its own: it has the certificate download).
+pub fn landing_page(host: &str, https_port: u16) -> String {
+    let host: String = host.chars().filter(|c| c.is_ascii_alphanumeric() || ".-:[]".contains(*c)).collect();
+    format!(r##"<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RustFlare</title>
+<style>body{{font:17px/1.5 -apple-system,system-ui,sans-serif;background:#0d0c0b;color:#eee;margin:0;padding:1.2rem;max-width:34rem}}h1{{color:#ff7a3d;margin:.2rem 0}}a.b{{display:block;background:#ff7a3d;color:#1a0b00;padding:.9rem 1rem;border-radius:10px;text-align:center;font-weight:700;text-decoration:none;margin:.8rem 0}}li{{margin:.5rem 0}}.m{{color:#aaa}}code{{background:#222;padding:.1rem .3rem;border-radius:4px}}</style>
+<h1>RustFlare</h1><p id="st" class="m">Checking the secure connection&hellip;</p>
+<a class="b" href="https://{host}:{https_port}/">Open RustFlare (https)</a>
+<div id="help" style="display:none"><p><b>This phone does not trust the RustFlare certificate yet.</b> Do these once:</p><ol>
+<li><a href="/rustflare-ca.crt">Download the certificate</a> and tap Allow.</li>
+<li>Settings &rsaquo; <b>Profile Downloaded</b> &rsaquo; Install.</li>
+<li>Settings &rsaquo; General &rsaquo; About &rsaquo; <b>Certificate Trust Settings</b> &rsaquo; switch on <b>RustFlare local CA</b>. <span class="m">(Installing is not enough: this switch is the step that is usually missed.)</span></li>
+<li>Come back to this page: it continues by itself.</li></ol></div>
+<script>fetch("https://{host}:{https_port}/rustflare-probe",{{mode:"no-cors",cache:"no-store"}}).then(function(){{st.textContent="Secure connection works, opening…";location.replace("https://{host}:{https_port}/")}}).catch(function(){{st.textContent="Secure connection failed from this browser.";help.style.display="block"}})</script>"##)
 }
 
 #[cfg(test)]
@@ -102,5 +123,13 @@ mod tests {
     #[test]
     fn constant_time_compare_is_correct() {
         assert!(same(b"abc", b"abc") && !same(b"abc", b"abd") && !same(b"abc", b"ab") && !same(b"", b"a"));
+    }
+
+    #[test]
+    fn landing_page_carries_the_secure_address_and_cleans_the_host() {
+        let p = landing_page("astropi.local\"><script>", 8443);
+        assert!(p.contains("https://astropi.local:8443/") || p.contains("astropi.local"), "{p}");
+        assert!(!p.contains("\"><script>"), "the host must not be able to inject markup");
+        assert!(p.contains("/rustflare-ca.crt") && p.contains("Certificate Trust Settings"));
     }
 }

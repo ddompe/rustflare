@@ -2,7 +2,9 @@
 
 Out in a field there may be no Wi-Fi. `rustflare-hotspot` turns the Pi into an access point your phone joins directly.
 
-**The Pi has one Wi-Fi radio.** While the hotspot is on, the Pi is *not* on your home network (and an ssh session over Wi-Fi ends). That is why `up` needs `--yes` and switches back by itself after a time limit unless you ask it to stay.
+**With one Wi-Fi radio** (the Pi's built-in one) While the hotspot is on, the Pi is *not* on your home network (and an ssh session over Wi-Fi ends). That is why `up` needs `--yes` and switches back by itself after a time limit unless you ask it to stay.
+
+**With two radios** (the built-in one plus a USB Wi-Fi dongle) the hotspot uses the spare radio and the Pi stays on your home network at the same time, so there is no switching, no time limit and ssh keeps working. `rustflare-hotspot` picks the radio that is not connected (or use `--iface wlan1`); `status` shows what it found. (Written from the NetworkManager documentation and tested on the single-radio Pi only; the two-radio path needs a dongle to verify.)
 
 ## Set up (once, at home, on the Pi)
 

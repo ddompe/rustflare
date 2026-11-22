@@ -41,7 +41,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,zbus=warn,tracing=warn")).init();
     // Frames are several MB. With glibc's defaults each one is a fresh mmap that is page-faulted in and unmapped again
     // (hundreds of MB/s of kernel work). Keeping big blocks on the heap lets freed frame buffers be reused as they are.
     #[cfg(target_os = "linux")]
