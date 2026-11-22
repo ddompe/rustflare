@@ -2,7 +2,7 @@
 
 Work is tracked on the [GitHub project board](https://github.com/users/ddompe/projects/1) (one issue per item; closed = done). This page is the narrative summary.
 
-**Where we are:** version 0.3.0, the first release. It has captured real H-alpha data with the owner's Player One Apollo-M MINI and ZWO AM3 on a Raspberry Pi 5. The open items under *Before v0.3.0* are the hardware checks the owner still has to run; they are in the [hardware checklist](hardware-checklist.md).
+**Where we are:** version 0.3.1. It has captured real H-alpha data with the owner's Player One Apollo-M MINI and ZWO AM3 on a Raspberry Pi 5. The open items under *Before v0.3.0* are the hardware checks the owner still has to run; they are in the [hardware checklist](hardware-checklist.md).
 
 ## Verified on the real system (first session, 2026-11-21)
 

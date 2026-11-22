@@ -38,3 +38,7 @@ A red banner shows the last problem (camera error, lost target, storage unavaila
 ## Header: STOP, theme and Hide controls
 
 With a mount connected, a red **STOP** in the header stops the mount from any tab. The sun or moon button switches between the night theme (dark, easy on dark-adapted eyes) and a **daylight theme** (light, high contrast, for bright sun on a phone screen); the image stays black in both. **Hide controls** shows the image only.
+
+## Quick capture
+
+On every tab except Aim and Record, below the picture, **● Rec** starts the recording exactly as set up on the [Record tab](record.md) (sequence, prominence or HDR lanes) and **Snap** saves a single frame. While recording, the strip shows progress and a Stop button.

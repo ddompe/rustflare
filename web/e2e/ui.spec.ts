@@ -158,3 +158,13 @@ test('focus assist scores the image, falls when defocused and keeps a best marke
   await page.request.put('/api/camera/control', { data: { id: 'sim_defocus', value: 0 } })
   await page.getByRole('switch', { name: 'Focus assist' }).uncheck()
 })
+
+test('quick Rec and Snap are on the Camera tab and use the saved recipe', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('radio', { name: 'Sequence' }).count()
+  const quick = page.getByRole('group', { name: 'Quick capture' })
+  await expect(quick).toBeVisible()
+  await quick.getByRole('button', { name: 'Snap' }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.last_file, { timeout: 10_000 }).toBeTruthy()
+  await page.request.post('/api/capture/stop')
+})

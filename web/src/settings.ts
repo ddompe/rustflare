@@ -24,6 +24,12 @@ function save(key: string, value: unknown) {
   timers[key] = window.setTimeout(() => { api('PUT', '/ui', { key, value }).catch(() => {}) }, 400)
 }
 
+/** Reads a saved setting outside a component (the quick Rec button reuses the Record tab's last recipe). */
+export function getSetting<T>(key: string, def: T): T {
+  const v = cache[key]
+  return v === undefined || v === null ? def : (v as T)
+}
+
 export function useSetting<T>(key: string, def: T): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(() => {
     const stored = cache[key]

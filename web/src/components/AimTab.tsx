@@ -273,7 +273,7 @@ function SendHome({ status, disabled, reason }: { status: Status; disabled: bool
 }
 
 /** Slew to where the Sun is now, then switch solar tracking on. Needs a saved site and a trustworthy clock. */
-function GoToSun({ status, disabled }: { status: Status; disabled: boolean }) {
+function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boolean; openMore?: (focus: string) => void }) {
   const [ask, setAsk] = useState(false)
   const { err, busy, run } = useAction()
   const clockBad = status.clock?.ntp_synchronized === false
@@ -294,7 +294,7 @@ function GoToSun({ status, disabled }: { status: Status; disabled: boolean }) {
           </div>
         </div>
       )}
-      {!status.site && <div className="hint-text">Set your site first: More, Site.</div>}
+      {!status.site && <div className="hint-text">Go to Sun needs your site. {openMore ? <button type="button" className="linklike" onClick={() => openMore('site')}>Set the site</button> : 'Set it in More, Site.'}</div>}
       {sky && <div className="hint-text">Sun now: altitude {sky.altitude_deg.toFixed(1)}°, azimuth {sky.azimuth_deg.toFixed(0)}°{sky.altitude_deg < 0 ? ' (below the horizon)' : ''}</div>}
       <ErrorLine error={err} />
     </div>
@@ -304,7 +304,7 @@ function GoToSun({ status, disabled }: { status: Status; disabled: boolean }) {
 import { MeridianFlip } from './MeridianFlip'
 
 /** Step 2: connect the mount, switch on solar tracking, slew the region of interest into view. */
-export function AimTab({ status, next }: { status: Status | null; next: () => void }) {
+export function AimTab({ status, next, openMore }: { status: Status | null; next: () => void; openMore?: (focus: string) => void }) {
   const { err, run } = useAction()
   const m = status?.mount
   const sheet = useDatasheet('mount', status, m ? shortInfo(m.info) : null)
@@ -315,7 +315,7 @@ export function AimTab({ status, next }: { status: Status | null; next: () => vo
       {parked && <div className="warn" role="alert">{m.park === 'parking' ? 'The mount is parking: motion is disabled.' : 'Parked on the mount: motion is disabled.'}</div>}
       <Offset status={status} />
       <Pad status={status} locked={parked} />
-      <GoToSun status={status} disabled={parked || !!status.goto} />
+      <GoToSun status={status} disabled={parked || !!status.goto} openMore={openMore} />
       <Disclosure title="Meridian flip">
         <MeridianFlip status={status} />
       </Disclosure>

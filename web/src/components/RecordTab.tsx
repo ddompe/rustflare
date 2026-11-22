@@ -5,6 +5,7 @@ import { FileManagerButton } from './FileManager'
 import { ProminencePair } from './ProminencePair'
 import { LaneEditor, parseLanes, PRESETS } from './BracketLanes'
 import { useSetting } from '../settings'
+import { recordRequest } from '../recipe'
 
 const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`)
 
@@ -75,16 +76,8 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
   const diskNeed = burstSecs && every_s ? burstBytes / Math.max(every_s, burstSecs) / 1e6 : 0
 
   const start = () => {
-    if (kind === 'plain') {
-      return repeating
-        ? run(() => api('POST', '/capture/bursts', { name: nm, frames: n(frames), seconds: n(seconds), interval_s: n(every), bursts: n(repeats), format, on_full: onFull }))
-        : run(() => api('POST', '/capture/sequence', { name: nm, frames: n(frames), seconds: n(seconds), format, on_full: onFull }))
-    }
-    const f = parseFloat(factor) || 8
-    const list = kind === 'prominence'
-      ? [{ name: 'disc', exposure_us: exp, frames: n(frames), seconds: n(seconds) }, { name: 'prominence', exposure_us: (exp ?? 0) * f, frames: n(frames), seconds: n(seconds), mask_disc: mask }]
-      : lanes.map((l) => ({ name: l.name, exposure_us: (parseFloat(l.exposure_ms) || 0) * 1000, gain: l.gain ? parseFloat(l.gain) : undefined, frames: parseInt(l.frames, 10) || undefined }))
-    return run(() => api('POST', '/capture/lanes', { name: nm, kind: kind === 'hdr' ? 'hdr' : 'prominence', cycles: n(repeats), cycle_interval_s: n(every), format: format === 'png' ? 'ser' : format, on_full: onFull, lanes: list }))
+    const q = recordRequest({ kind, name, format, onFull, frames, seconds, every, repeats, factor, mask, lanes }, cam)
+    return run(() => api('POST', q.path, q.body))
   }
 
   return (

@@ -470,3 +470,23 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 .focus-hud b { font-size: 1.6rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .focus-hud span { font-size: .75rem; color: #ddd; }
 .focus-graph.small { height: auto; aspect-ratio: 300 / 90; border: 0; background: transparent; margin: 0; }
+
+/* quick capture on every tab */
+.quick { display: flex; gap: .4rem; align-items: stretch; margin-top: .3rem; }
+.quick button { min-height: 40px; font-size: .9rem; padding: 0 .8rem; }
+.quick-rec { flex: 1; font-weight: 800; background: var(--accent); color: var(--accent-ink); border-color: transparent; text-align: left; }
+.quick-rec .muted { color: inherit; opacity: .75; font-weight: 600; margin-left: .3rem; }
+.strip:has(.quick) { display: block; }
+/* live tools: one horizontal row on phones, wrapping instead of clipping */
+@media (max-width: 699px) {
+  .live-tools, .app[data-tab='camera'] .live-tools { flex-direction: row; flex-wrap: wrap; top: auto; bottom: .4rem; right: auto; left: .4rem; max-width: calc(100% - .8rem); gap: .25rem; }
+  .live-tools button, .app[data-tab='camera'] .live-tools button { width: 38px; height: 38px; font-size: 1.15rem; }
+  .hist svg { height: 3.2rem; }
+}
+.linklike { min-height: 36px; padding: 0 .6rem; font-size: .85rem; }
+
+/* small picture tabs: the tool row stays one line and small so it does not cover the Sun */
+@media (max-width: 699px) {
+  .app:not([data-tab='camera']) .live-tools { flex-wrap: nowrap; gap: .2rem; }
+  .app:not([data-tab='camera']) .live-tools button { width: 32px; height: 32px; font-size: 1rem; }
+}

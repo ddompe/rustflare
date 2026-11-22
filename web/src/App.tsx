@@ -83,7 +83,7 @@ export function App() {
 
       <section className="view" aria-label="Live view">
         <LiveView status={status} display={display} setDisplay={setDisplay} anchorPick={anchorPick} onPicked={() => setAnchorPick(false)} onDisplay={() => openMore('display')} />
-        <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} hide={tab === 'aim' ? ['sun'] : []} />
+        <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} noQuick={tab === 'aim'} hide={tab === 'aim' ? ['sun'] : []} />
       </section>
 
       <nav className="tabs" role="tablist" aria-label="Session steps" onKeyDown={onKey}>
@@ -112,7 +112,7 @@ export function App() {
 
       <main ref={panelRef} className="panel" id="panel" role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={-1}>
         {tab === 'camera' && <CameraTab status={status} next={() => goto('aim')} />}
-        {tab === 'aim' && <AimTab status={status} next={() => goto('track')} />}
+        {tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} />}
         {tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} />}
         {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={() => setFilesOpen(true)} />}
         {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} />}

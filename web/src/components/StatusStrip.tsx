@@ -1,4 +1,5 @@
-import { Status } from '../api'
+import { api, Status } from '../api'
+import { recipeLabel, recordRequest, savedRecipe } from '../recipe'
 
 export type TabId = 'camera' | 'aim' | 'track' | 'record' | 'more'
 
@@ -21,7 +22,9 @@ export function chipsFor(status: Status | null): ChipSpec[] {
   return chips
 }
 
-export function StatusStrip({ status, goto, onStop, hideRec, hide = [] }: { status: Status | null; goto: (t: TabId) => void; onStop: () => void; hideRec?: boolean; hide?: string[] }) {
+export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick }: { status: Status | null; goto: (t: TabId) => void; onStop: () => void; hideRec?: boolean; hide?: string[]; noQuick?: boolean }) {
+  const quick = !!status?.camera && status.capture.state === 'idle' && !hideRec && !noQuick
+  const startQuick = () => { const r = savedRecipe(); const q = recordRequest(r, status!.camera!); api('POST', q.path, q.body).catch(() => {}) }
   const chips = chipsFor(status).filter((x) => !hide.includes(x.key))
   const c = status?.capture
   const recording = !!c && c.state !== 'idle' && !hideRec
@@ -41,6 +44,12 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [] }: { stat
             </li>
           ))}
         </ul>
+      )}
+      {quick && (
+        <div className="quick" role="group" aria-label="Quick capture">
+          <button type="button" className="quick-rec" onClick={startQuick}>● Rec <span className="muted">{recipeLabel(savedRecipe())}</span></button>
+          <button type="button" onClick={() => api('POST', '/capture/single', {}).catch(() => {})}>Snap</button>
+        </div>
       )}
       {recording && c && (
         <div className="recbar">
