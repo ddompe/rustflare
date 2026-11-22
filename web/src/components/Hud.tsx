@@ -1,5 +1,6 @@
 import { KeyboardEvent, PointerEvent, ReactNode, useEffect, useRef, useState } from 'react'
-import { Status } from '../api'
+import { api as callApi, Status } from '../api'
+import { FocusBody } from './FocusAssist'
 import { useSetting } from '../settings'
 
 /**
@@ -11,7 +12,7 @@ import { useSetting } from '../settings'
  * size or the screen shape: left = fx * (W - w), top = fy * (H - h). Widgets only react to their own pointer events and
  * stop them there, so dragging one never pans the image and a drag on the picture never moves one.
  */
-export type HudId = 'rec' | 'buffer' | 'guide' | 'hist' | 'strip'
+export type HudId = 'rec' | 'buffer' | 'guide' | 'hist' | 'strip' | 'mask' | 'focus'
 interface W { on: boolean; fx: number; fy: number; min: boolean }
 type Layout = Record<HudId, W>
 
@@ -21,6 +22,8 @@ export const HUD_ITEMS: { id: HudId; label: string; short: string; when: string 
   { id: 'guide', label: 'Guiding error', short: 'Guiding', when: 'shows while tracking' },
   { id: 'hist', label: 'Histogram', short: 'Histogram', when: '' },
   { id: 'strip', label: 'Status: fps, disk, exposure, mount, flats', short: 'Status', when: '' },
+  { id: 'mask', label: 'Prominence mask size', short: 'Mask size', when: 'shows with the prominence view' },
+  { id: 'focus', label: 'Focus score', short: 'Focus score', when: 'shows with focus assist' },
 ]
 
 /** Corners and edges, so nothing sits over the middle of the picture by default. Phones start with none. */
@@ -30,6 +33,9 @@ const defaults = (on: boolean): Layout => ({
   buffer: { on, fx: 1, fy: 0.9, min: false },
   hist: { on: false, fx: 0, fy: 0.3, min: false },
   strip: { on: true, fx: 0.5, fy: 0, min: !on },
+  // each in its own place: the mask slider over the (masked) disc, the focus score under the top-left widget
+  mask: { on: true, fx: 0.5, fy: on ? 0.5 : 0.65, min: false }, // over the disc, which the mask blacks out anyway
+  focus: { on: true, fx: 0, fy: on ? 0.22 : 0.3, min: !on }, // phones: a one-line score, tap for the graph
 })
 
 const small = () => typeof matchMedia === 'function' && matchMedia('(max-width: 699px), (max-height: 520px)').matches
@@ -227,6 +233,27 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
           <dt>Flat</dt><dd className={flats ? 'ok' : 'muted'}>{flats ? 'applied' : 'none'}</dd>
           <dt>Dark</dt><dd className={status.darks?.applied ? 'ok' : 'muted'}>{status.darks?.applied ? (status.darks.matches_camera ? 'applied' : 'mismatch') : 'none'}</dd>
         </dl>
+      </Widget>,
+    )
+  }
+  const corona = status.coronagraph
+  if (w('mask').on && corona?.enabled) {
+    const pct = Math.round(corona.scale * 100)
+    out.push(
+      <Widget key="mask" id="mask" label="Prominence mask size" w={w('mask')} api={api}
+        mini={<span>Mask <b className="cv">{pct}%</b></span>}>
+        <div><b>Mask size</b> <b className="cv">{pct}%</b> <span className="cl">of the disc</span></div>
+        <input type="range" className="mask-range" aria-label="Prominence mask size" min={0.9} max={1.2} step={0.005} value={corona.scale}
+          onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onPointerMove={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}
+          onChange={(e) => callApi('PUT', '/coronagraph', { enabled: true, scale: parseFloat(e.target.value) }).catch(() => {})} />
+      </Widget>,
+    )
+  }
+  if (w('focus').on && status.focus?.enabled) {
+    out.push(
+      <Widget key="focus" id="focus" label="Focus score" w={w('focus')} api={api}
+        mini={<span>Focus <b className="cv">{status.focus.lucky != null ? status.focus.lucky.toFixed(2) : '…'}</b></span>}>
+        <FocusBody status={status} />
       </Widget>,
     )
   }

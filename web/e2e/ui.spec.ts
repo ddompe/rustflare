@@ -201,3 +201,27 @@ test('a message in the status bar does not move the controls', async ({ page }) 
   await put(page, '/camera/control', { id: 'sim_zoom', value: 0.9 })
   await post(page, '/tracking/stop')
 })
+
+test('mask size and focus score are overlay widgets that start apart', async ({ page }) => {
+  await expect.poll(async () => !!(await (await page.request.get('/api/status')).json()).sun, { timeout: 10_000 }).toBe(true).catch(() => {})
+  const hasSun = !!(await (await page.request.get('/api/status')).json()).sun
+  test.skip(!hasSun, 'the simulator scene has no Sun in view')
+  await put(page, '/coronagraph', { enabled: true, scale: 1.03 })
+  await put(page, '/focus', { enabled: true })
+  await page.goto('/')
+  const mask = page.getByRole('button', { name: /Prominence mask size overlay/ })
+  await expect(mask).toBeVisible()
+  await expect(page.getByRole('button', { name: /Focus score overlay/ })).toBeVisible()
+  const boxes = await page.locator('.hud-w').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom] }))
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const [a, b] = [boxes[i], boxes[j]]
+    expect(a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3], `widgets ${i} and ${j} overlap`).toBe(false)
+  }
+  // the slider inside changes the mask without moving the widget
+  const before = await mask.boundingBox()
+  await mask.getByRole('slider').fill('1.1')
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).coronagraph.scale).toBeCloseTo(1.1, 2)
+  expect(await mask.boundingBox()).toEqual(before)
+  await put(page, '/coronagraph', { enabled: false, scale: 1.03 })
+  await put(page, '/focus', { enabled: false })
+})

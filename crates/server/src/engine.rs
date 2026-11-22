@@ -2107,7 +2107,7 @@ impl Engine {
         let day = now.format("%Y-%m-%d").to_string();
         let dir = self.storage.dir().join("logs").join(&day).join(kind);
         std::fs::create_dir_all(&dir).ok()?;
-        let name = format!("{kind}_{}", now.format("%H%M%S%.3fZ"));
+        let name = format!("{kind}_{}", now.format("%H%M%S%3fZ")); // no dot: with_extension would cut it
         let stem = dir.join(&name);
         let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
         let lane = match &self.job {

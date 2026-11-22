@@ -61,15 +61,15 @@ export function FocusAssist({ status }: { status: Status | null }) {
   )
 }
 
-/** Compact score and history drawn over the live image, so the focuser can be turned while watching the picture. */
-export function FocusHud({ status }: { status: Status }) {
+/** Compact score and history for the focus overlay widget (see Hud.tsx), so the focuser can be turned while watching the picture. */
+export function FocusBody({ status }: { status: Status }) {
   const f = status.focus
   if (!f?.enabled) return null
   return (
-    <div className="focus-hud" aria-hidden="true">
+    <div className="focus-body">
       <b>{f.lucky != null ? f.lucky.toFixed(2) : '…'}</b>
       <span>best {f.best != null ? f.best.toFixed(2) : '–'}</span>
-      <Graph history={f.history as [number, number][]} best={f.best ?? null} small />
+      <div aria-hidden="true"><Graph history={f.history as [number, number][]} best={f.best ?? null} small /></div>
     </div>
   )
 }
