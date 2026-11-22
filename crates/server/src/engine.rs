@@ -192,6 +192,14 @@ impl Handle {
     }
 }
 
+/// What the guider is given on a frame: a measured position, only the time (a pulse may need to end), or the order to
+/// judge what was collected (the end of a burst of measurements in a lane recording).
+enum GuideInput {
+    Pos(Vec2),
+    Tick,
+    Judge,
+}
+
 enum GuideState {
     Off,
     Calibrating(Calibrator),
@@ -331,6 +339,7 @@ pub struct Engine {
     last_good: Option<(Instant, Vec2, Vec2)>,
     /// A guide pulse is running (or just ended): the image moves on purpose, so the gate must follow the measurements.
     pulsing: bool,
+    was_analysing: bool,
     pulse_settle_until: Instant,
     manual_slew_until: Instant,
     sun_held: bool,
@@ -447,6 +456,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         dead: None,
         last_good: None,
         pulsing: false,
+        was_analysing: false,
         pulse_settle_until: Instant::now(),
         manual_slew_until: Instant::now(),
         sun_held: false,
@@ -1991,6 +2001,9 @@ impl Engine {
             // In a lane recording only the reference lane (the shortest exposure that is not coronagraph-masked) shows the
             // disc properly. The long prominence frames are saturated: measuring the Sun on them gives a wrong circle, which
             // then drives the mask and a false "tracking lost". Other lanes keep the last measurement and are not analysed.
+            let sparse = matches!(&self.job, Job::Capture(j) if j.lanes.is_some());
+            let drift = self.drift_model.drift();
+            if let GuideState::Guiding(g) = &mut self.guide { g.set_sparse(sparse); g.set_drift(drift); }
             let analyse = match &self.job {
                 Job::Capture(j) => j.lanes.as_ref().map_or(true, |l| l.skip == 0 && l.current == reference_lane(&l.specs)),
                 _ => true,
@@ -2010,6 +2023,14 @@ impl Engine {
                     self.feed_sun_model(sun, now, (frame.width, frame.height));
                 }
                 self.step_tracking(&frame, now, sun);
+                self.was_analysing = true;
+            } else if matches!(self.guide, GuideState::Guiding(_)) {
+                // Lane recordings measure only the reference lane, in bursts with long gaps. Pulses must still end on time, and
+                // the corrections are judged when a burst of measurements ends (their frames then carry the long exposures).
+                if self.was_analysing { self.step_guide(now, GuideInput::Judge); } else { self.step_guide(now, GuideInput::Tick); }
+                self.was_analysing = false;
+            } else {
+                self.was_analysing = false;
             }
             self.log_session(&frame, now);
             let t_cl = Instant::now();
@@ -2105,7 +2126,7 @@ impl Engine {
                         let applied = if let GuideState::Guiding(g) = &self.guide { g.applied() } else { Vec2::default() };
                         if matches!(self.guide, GuideState::Guiding(_)) { self.drift_model.observe(now, gp, applied); }
                         self.last_good = Some((now, gp, applied));
-                        self.step_guide(now, gp);
+                        self.step_guide(now, GuideInput::Pos(gp));
                     }
                     None => self.dead_reckon(now),
                 }
@@ -2170,7 +2191,7 @@ impl Engine {
             return;
         }
         let virt = dr.position(now, applied);
-        self.step_guide(now, virt);
+        self.step_guide(now, GuideInput::Pos(virt));
     }
 
     /// Always-on event log: one JSON line per tracking, guiding, exposure or flip event in `<storage>/logs/<date>/events.jsonl`
@@ -2276,17 +2297,26 @@ impl Engine {
         }
     }
 
-    fn step_guide(&mut self, now: Instant, pos: Vec2) {
+    fn step_guide(&mut self, now: Instant, input: GuideInput) {
         let mut cmd = None;
         let mut failure = None;
         match &mut self.guide {
             GuideState::Off => {}
             GuideState::Guiding(g) => {
-                cmd = g.step(now, pos);
-                // show the averaged offset the guider acts on (the instantaneous one is mostly seeing)
-                self.status.guiding.error_px = Some(g.filtered_error().map_or((g.target - pos).len(), |e| e.len()));
+                match input {
+                    GuideInput::Pos(pos) => {
+                        cmd = g.step(now, pos);
+                        // show the averaged offset the guider acts on (the instantaneous one is mostly seeing)
+                        self.status.guiding.error_px = Some(g.filtered_error().map_or((g.target - pos).len(), |e| e.len()));
+                    }
+                    GuideInput::Tick => cmd = g.tick(now),
+                    GuideInput::Judge => {
+                        cmd = g.judge_now(now);
+                        if let Some(e) = g.filtered_error() { self.status.guiding.error_px = Some(e.len()); }
+                    }
+                }
             }
-            GuideState::Calibrating(c) => match c.step(now, pos) {
+            GuideState::Calibrating(c) => match (if let GuideInput::Pos(pos) = input { c.step(now, pos) } else { CalAction::None }) {
                 CalAction::None => {}
                 CalAction::Guide(g) => cmd = Some(g),
                 CalAction::Done(cal) => {

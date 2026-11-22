@@ -107,11 +107,18 @@ pub struct Guider {
     /// Total image motion (pixels) the pulses sent so far were meant to produce. Position minus this is what the mount
     /// would have done on its own: its drift, whatever the guider did.
     applied: Vec2,
+    /// Measurements arrive in short bursts with long gaps (lane recordings): samples are only collected by `step`, and
+    /// the caller says when to judge them (`judge_now`), e.g. when a burst ends.
+    sparse: bool,
+    /// The mount's learned unguided drift, px/s (from `DriftModel`): corrections aim where the Sun will be half-way to the
+    /// next judgement, so a constant drift does not leave a constant offset (drift x interval / gain) behind.
+    drift: Option<Vec2>,
+    last_judge: Option<Instant>,
 }
 
 impl Guider {
     pub fn new(target: Vec2, cal: Calibration, params: GuideParams) -> Guider {
-        Guider { target, cal, params, samples: VecDeque::new(), pending: VecDeque::new(), pulse_end: None, judge_after: None, filtered_error: None, quick: false, applied: Vec2::default() }
+        Guider { target, cal, params, samples: VecDeque::new(), pending: VecDeque::new(), pulse_end: None, judge_after: None, filtered_error: None, quick: false, applied: Vec2::default(), sparse: false, drift: None, last_judge: None }
     }
 
     /// Image motion the guide pulses so far were meant to cause, in pixels (from the calibration).
@@ -130,30 +137,49 @@ impl Guider {
         self.filtered_error
     }
 
+    pub fn set_sparse(&mut self, sparse: bool) {
+        self.sparse = sparse;
+    }
+
+    /// The mount's unguided drift in image pixels per second, once known (None: no feed-forward).
+    pub fn set_drift(&mut self, drift: Option<Vec2>) {
+        self.drift = drift;
+    }
+
+    /// Time keeping only: ends or continues a running pulse. Call on frames that carry no measurement.
+    pub fn tick(&mut self, now: Instant) -> Option<GuideCommand> {
+        let end = self.pulse_end?;
+        if now < end {
+            return None;
+        }
+        match self.pending.pop_front() {
+            Some((cmd, dur)) => {
+                self.pulse_end = Some(now + dur);
+                Some(cmd)
+            }
+            None => {
+                self.pulse_end = None;
+                self.samples.clear(); // positions measured while moving say nothing about the drift
+                self.judge_after = Some(now + if self.quick { Duration::from_secs(2) } else { self.params.min_interval });
+                Some(GuideCommand::STOP)
+            }
+        }
+    }
+
     /// Call on every new measurement; returns a command only when the mount needs one.
     pub fn step(&mut self, now: Instant, pos: Vec2) -> Option<GuideCommand> {
         // 1. a pulse is running (or just finished)
-        if let Some(end) = self.pulse_end {
-            if now < end {
-                return None;
-            }
-            return match self.pending.pop_front() {
-                Some((cmd, dur)) => {
-                    self.pulse_end = Some(now + dur);
-                    Some(cmd)
-                }
-                None => {
-                    self.pulse_end = None;
-                    self.samples.clear(); // positions measured while moving say nothing about the drift
-                    self.judge_after = Some(now + if self.quick { Duration::from_secs(2) } else { self.params.min_interval });
-                    Some(GuideCommand::STOP)
-                }
-            };
+        if self.pulse_end.is_some() {
+            return self.tick(now);
         }
         // 2. gather the averaging window
         self.samples.push_back((now, pos));
-        while self.samples.front().is_some_and(|(t, _)| now.duration_since(*t) > self.params.window) {
+        let window = if self.sparse { Duration::from_secs(20) } else { self.params.window };
+        while self.samples.front().is_some_and(|(t, _)| now.duration_since(*t) > window) {
             self.samples.pop_front();
+        }
+        if self.sparse {
+            return None; // the caller judges when a burst ends
         }
         if self.judge_after.is_some_and(|t| now < t) {
             return None;
@@ -163,18 +189,43 @@ impl Guider {
         if span < needed {
             return None; // not enough data to tell drift from seeing
         }
+        self.judge(now)
+    }
+
+    /// Judges the samples collected so far (at least a handful) and starts a correction if one is needed. For sparse
+    /// measurements, called when a burst of them ends; the pulses then run while the next frames are not measured.
+    pub fn judge_now(&mut self, now: Instant) -> Option<GuideCommand> {
+        if self.pulse_end.is_some() || self.samples.len() < 8 || self.judge_after.is_some_and(|t| now < t) {
+            return None;
+        }
+        self.judge(now)
+    }
+
+    fn judge(&mut self, now: Instant) -> Option<GuideCommand> {
         let n = self.samples.len() as f64;
         let mean = self.samples.iter().fold(Vec2::default(), |a, (_, p)| a + *p) * (1.0 / n);
-        let err = self.target - mean;
-        self.filtered_error = Some(err);
+        let offset = self.target - mean;
+        self.filtered_error = Some(offset);
+        // feed-forward: where the Sun will be half-way to the next judgement, if nothing is done
+        let interval = self.last_judge.map_or(self.params.min_interval, |t| now.duration_since(t)).clamp(self.params.min_interval, Duration::from_secs(120));
+        self.last_judge = Some(now);
+        let err = match self.drift {
+            Some(d) => offset - d * (interval.as_secs_f64() * 0.5),
+            None => offset,
+        };
         if err.len() < self.params.deadband_px {
             self.quick = false;
+            if self.sparse { self.samples.clear(); } // the next burst starts a fresh average
             return None;
         }
         // 3. plan gentle pulses, one axis at a time: image motion wanted = gain x error, in axis coordinates
         let big = err.len() > self.params.fast_above_px;
         self.quick = big;
-        let (speed, max_pulse) = if big { (self.params.fast_speed, self.params.max_pulse * 2) } else { (self.params.speed, self.params.max_pulse) };
+        let (speed, mut max_pulse) = if big { (self.params.fast_speed, self.params.max_pulse * 2) } else { (self.params.speed, self.params.max_pulse) };
+        if self.sparse {
+            // judged rarely (once per burst): the correction for the whole gap must fit in one go, so allow it to run as long as the gap
+            max_pulse = max_pulse.max(interval.mul_f64(0.6));
+        }
         let a = self.cal.img_to_axes.apply(err * self.params.gain);
         for (i, px) in [a.x, a.y].into_iter().enumerate() {
             let rate = self.cal.rate[i] * speed; // image px per second while pulsing
@@ -183,7 +234,7 @@ impl Guider {
             }
             let dur = Duration::from_secs_f64((px.abs() / rate).min(max_pulse.as_secs_f64()));
             if dur < Duration::from_millis(100) {
-                continue; // below what the 10 Hz measurement loop can time
+                continue; // below what the measurement loop can time
             }
             let v = if px > 0.0 { speed } else { -speed };
             let cmd = if i == 0 { GuideCommand { primary: v, secondary: 0.0 } } else { GuideCommand { primary: 0.0, secondary: v } };
@@ -546,6 +597,41 @@ mod tests {
         assert!(worst < 12.0, "the framing moved {worst:.1} px in four minutes of dead reckoning");
         // for comparison, doing nothing for the same time moves it by drift x time
         assert!(TRACKING_DRIFT.len() * 240.0 > 100.0);
+    }
+
+    /// Lane recordings: a one-second burst of measurements every 12 s, judged when the burst ends. Feed-forward from the
+    /// learned drift removes the offset a purely proportional correction leaves behind against a steady drift.
+    #[test]
+    fn sparse_guiding_with_feed_forward_holds_the_framing() {
+        fn run_bursts(ff: bool) -> f64 {
+            let mut w = World::new(TRACKING_DRIFT, 1.0);
+            let cal = calibrate(&mut w);
+            let target = w.pos;
+            let mut g = Guider::new(target, cal, GuideParams::default());
+            g.set_sparse(true);
+            if ff { g.set_drift(Some(TRACKING_DRIFT)); }
+            let mut worst = 0f64;
+            for i in 0..6000u32 {
+                // 0.1 s per tick: a burst of 1 s of measurements every 12 s, judged on the tick after it
+                let phase = i % 120;
+                if phase < 10 {
+                    let m = w.measured();
+                    if let Some(c) = g.step(w.now, m) { w.cmd = c; }
+                } else {
+                    if phase == 10 {
+                        let r = g.judge_now(w.now);
+                        if let Some(c) = r { w.cmd = c; }
+                    }
+                    if let Some(c) = g.tick(w.now) { w.cmd = c; }
+                }
+                w.tick();
+                if i > 3000 { worst = worst.max((w.pos - target).len()); }
+            }
+            worst
+        }
+        let (plain, ff) = (run_bursts(false), run_bursts(true));
+        assert!(ff < 6.0, "with feed-forward the framing still moved {ff:.1} px");
+        assert!(ff < plain, "feed-forward ({ff:.1} px) should beat the plain proportional correction ({plain:.1} px)");
     }
 
     #[test]
