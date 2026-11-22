@@ -86,3 +86,37 @@ Next: check the stacks on more bursts of the day, then M1 (the `.ready` marker, 
 ### Raw in, float out (owner's rule, 2026-11-22)
 
 The stacker reads **only raw data**: SER recordings, and dark and flat masters it builds itself from the raw dark and flat SER files (mean in float, flat minus dark, normalised). It does not read the recorder's `_master.png` files, which are derived, rounded convenience copies for the live view. To make that possible the recorder now keeps the **raw dark frames** as a SER next to the master (flats already did). The output is a **32-bit float FITS** by default (`--u16` for unsigned 16-bit).
+
+## What the documentation of the established stackers says (read 2026-11-22)
+
+Sources: the [Siril multi-point documentation](https://siril.readthedocs.io/en/latest/preprocessing/multipoint.html), the [PlanetarySystemStacker README](https://github.com/deix/PlanetarySystemStacker), and the [AutoStakkert site](https://www.autostakkert.com/wp/). The AutoStakkert pages do not document the algorithm (only change notes and download links; Windows only, version 4.0.13, development "slowed to a crawl"), so what follows for it is the common pipeline, not its internals.
+
+| Step | Siril 1.5 multi-point | PlanetarySystemStacker | RustFlare M0 |
+|---|---|---|---|
+| Quality | Laplacian, brightness-normalised | overall quality, then local contrast per point | agreement of the aligned frame's detail with the burst mean |
+| Reference | average of the best 5 % of frames | patch with most structure on the best frame, then a mean of the best | the single best frame |
+| Global alignment | "Surface (detail)" mode for solar and lunar | on the structure patch | phase correlation on high-passed, windowed images |
+| Local alignment | grid of correlation boxes (half-width 24, pitch 2.25x), min brightness, contrast and structure filters; search width 14 px; shifts smoothed (radius 2.5); optional refinement against a first-pass stack | mesh of alignment points, dim and flat ones dropped | none yet |
+| Frame selection | **per point**: "register percent" and "stack percent", with a soft raised-cosine cutoff | **per point**, best N | one set for the whole image |
+| Stacking | sub-pixel patch shifts, Hann-feathered blending, brightness matching; "object changing fast" for the Sun | stack the patches, blend, fill gaps from the global background | global shift, mean |
+| Output | 16-bit integer FITS by default, optional float | not stated | 32-bit float FITS |
+| Sharpening | not part of stacking | optional, separate step | none (display side) |
+
+What this means for us: global alignment plus a global frame set (M0) is only the first half. For the Sun, **local shifts and per-region frame selection are what both tools rely on**, because seeing warps the disc differently in different places and the best frames for one patch are not the best for another. Two cheap steps before that: build the reference from the mean of the best 5 to 10 % and iterate (refine against a first-pass stack), and normalise brightness per frame.
+
+## Revised milestones
+
+| | Milestone | Gate |
+|---|---|---|
+| M0 | **Done.** CLI, raw in, float FITS out, global alignment, reference-agreement ranking, flat/dark from raw SER | synthetic tests; looks right on a real burst |
+| M0.5 | Reference from the best 5 to 10 % and refine against a first-pass stack; per-frame brightness normalisation; robust mean (sigma clip); a fixed-pattern-immune quality metric; a batch command for a whole session folder with FITS headers from the sidecar (exposure, gain) and a manifest | several bursts across the hour; numbers stable |
+| M1 | **Multi-point alignment** in pure Rust: grid, per-point search, smoothed shifts, per-point selection with a soft cutoff, feathered blend | visibly better than M0 on disc and limb; compare with Siril 1.5 on the same bursts |
+| M2 | Pi: `.ready` marker from the recorder, watcher, queue, systemd limits, benchmark on the Pi with a recording running | the owner decides the Pi step is worth it (after M1) |
+| M3 | Web page (status file, thumbnails, presets) | |
+| M4 | Sharpening (display only), time-lapse of the stacks, drizzle (low value unless undersampled), colour | |
+
+Multi-point moves **ahead** of the service: it is what decides whether on-board stacking is worth having at all.
+
+## Follow-up from the raw-data rule
+
+The recorder still writes its dark and flat masters as 16-bit PNG and applies those to the live view. They are display copies, but they are also rounded means; writing them as float FITS (and reading those back) would be consistent with the rest. Not done yet.
