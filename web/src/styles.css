@@ -415,11 +415,10 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 @media (min-width: 900px) { .fm-screen { inset: 3vh 8vw; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .6); } }
 .live-tools button.tool-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
-/* Image only: hide everything but the live view and its status strip */
-.fullbtn { position: fixed; z-index: 30; right: calc(.5rem + env(safe-area-inset-right)); bottom: calc(.5rem + env(safe-area-inset-bottom)); min-height: 40px; padding: 0 .8rem; font-size: .85rem; background: #000c; border: 1px solid #fff6; color: #fff; border-radius: 8px; opacity: .85; }
-.app:not([data-full]) .fullbtn { bottom: auto; top: calc(.25rem + env(safe-area-inset-top)); min-height: 32px; padding: 0 .6rem; }
-.app[data-full] .top, .app[data-full] .tabs, .app[data-full] .panel, .app[data-full] .banner { display: none; }
-.app[data-full] .view { align-self: center; }
-.app[data-full] .live { --vmax: calc(100dvh - 4rem); }
-.app[data-full] { grid-template-rows: minmax(0, 1fr); grid-template-areas: 'view'; }
-.app[data-full] .view { display: grid; align-content: center; }
+/* Image only: hide everything but the live view */
+.hidebtn { margin-left: auto; min-height: 36px; padding: 0 .7rem; font-size: .85rem; }
+.fullbtn { position: fixed; z-index: 30; right: calc(.6rem + env(safe-area-inset-right)); bottom: calc(.6rem + env(safe-area-inset-bottom)); min-height: 40px; padding: 0 .8rem; font-size: .85rem; background: #000b; border: 1px solid #fff6; color: #fff; border-radius: 8px; opacity: .8; }
+.app[data-full] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: 'view'; }
+.app[data-full] .top, .app[data-full] .tabs, .app[data-full] .panel, .app[data-full] .banner, .app[data-full] .strip { display: none; }
+.app[data-full] .view { display: grid; align-content: center; justify-items: center; padding: 0; }
+.app[data-full] .live { --vmax: 100dvh; border: 0; border-radius: 0; }

@@ -68,6 +68,7 @@ export function App() {
         <img className="mark" src="/logo-mark.svg" alt="" width="26" height="26" />
         <h1>Rust<span>Flare</span></h1>
         <span className={`conn ${connected ? 'ok' : 'bad'}`}><i aria-hidden="true" />{connected ? 'Online' : 'Reconnecting…'}</span>
+        <button type="button" className="hidebtn" onClick={() => setFull(true)}>Hide controls</button>
         {cam && <span className="camname">{cam.name} · {cam.width}×{cam.height} · {cam.bits}-bit</span>}
       </header>
       {(status?.error || (!connected && !status)) && (
@@ -110,7 +111,7 @@ export function App() {
         {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={() => setFilesOpen(true)} />}
         {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} />}
       </main>
-      <button type="button" className="fullbtn" aria-pressed={full} onClick={() => setFull((v) => !v)}>{full ? 'Show controls' : 'Hide controls'}</button>
+      {full && <button type="button" className="fullbtn" aria-pressed onClick={() => setFull(false)}>Show controls</button>}
       {filesOpen && <FileManagerScreen status={status} onClose={() => setFilesOpen(false)} />}
     </div>
   )
