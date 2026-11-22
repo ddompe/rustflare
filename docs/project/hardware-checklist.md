@@ -69,6 +69,12 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 | new | Aim > Go to: pick Moon, Jupiter, Saturn, Mars in turn (the selector shows altitude; one below the horizon should warn and offer *Go anyway*). Check the mount arrives within a degree or two, tracking starts (lunar rate for the Moon), and how far the target is from the frame centre (note it: the planets use approximate elements) |
 | new | Record a short planetary video (SER, short exposure, high gain) and check it plays; try *Home when finished* at the end of a counted recording |
 
+## Storage by UUID
+
+| Check | How |
+|---|---|
+| A renamed mount is followed | Eject the stick (More > Storage), replug it; if the desktop mounts it under another name (`...1`), More > Storage still shows it available with the same folder and a recording starts (checked once on 2026-11-22: `ASTRODRIVE` became `ASTRODRIVE1` and the saved choice followed it after the upgrade) |
+
 ## Stacker (rustflare-stack)
 
 | Check | How |

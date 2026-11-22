@@ -16,6 +16,8 @@ Enter the telescope's native focal length and, if you use one, the Barlow or red
 
 ## Storage
 
+The drive is remembered by its **filesystem UUID**, not by the name it was mounted under. Desktop auto-mounting names a drive after its label and appends a number when a stale mount point is left (`ASTRODRIVE`, then `ASTRODRIVE1`); RustFlare finds the drive again wherever it is mounted, and settings saved by older versions follow a renamed mount by themselves when exactly one mount fits.
+
 Pick the drive for captures (a USB stick appears automatically) and press *Use*; the choice is remembered. It shows free space and the recording time left at the current frame rate.
 
 - A removed drive is never silently replaced by the SD card: recording refuses to start until it is back.

@@ -27,6 +27,7 @@ export interface StackConfig {
   float: boolean
   flat: string | null
   darks: string[]
+  include_unmarked: boolean
 }
 interface Calibration { path: string; kind: 'dark' | 'flat'; frames: number; exposure_us: number | null; gain: number | null }
 export interface StackInfo {
@@ -96,7 +97,7 @@ export function Stacking({ info, reload }: { info: StackInfo | null; reload: () 
         </div>
       ) : (
         <div className="hint-text" role="status">
-          The stacker is not running{info.service === 'failed' ? ' (it stopped with an error)' : ''}. On the Pi: <code>sudo systemctl enable --now rustflare-stack</code>. It runs at the lowest priority and never starts while frames are being written, unless you choose Always.
+          The stacker service is not running{info.service === 'failed' ? ' (it stopped with an error)' : ''}. It is installed and enabled with RustFlare, so this is unusual; on the Pi try <code>sudo systemctl enable --now rustflare-stack</code>. It runs at the lowest priority and never starts while frames are being written, unless you choose Always.
         </div>
       )}
       <h4 className="stack-head">Stacks{info.total ? ` (${info.total})` : ''}</h4>
@@ -129,6 +130,7 @@ export function Stacking({ info, reload }: { info: StackInfo | null; reload: () 
         {(id) => <input id={id} type="number" inputMode="numeric" min={1} max={100} step={5} value={keep} onChange={(e) => setKeep(e.target.value)} onBlur={() => { const n = parseFloat(keep); if (n >= 1 && n <= 100 && n !== c.keep_percent) save({ keep_percent: n }) }} />}
       </Field>
       <Switch label="Multi-point alignment" hint="A shift for each patch of the picture, not one per frame: sharper, a little slower." checked={c.multipoint} disabled={busy} onChange={(v) => save({ multipoint: v })} />
+      <Switch label="Also stack older recordings" hint="Recordings on the drive that were made before the stacker was switched on (without the finished-marker). Off: only new recordings are stacked." checked={c.include_unmarked} disabled={busy} onChange={(v) => save({ include_unmarked: v })} />
       <Field label="Flat" hint={flats.length ? 'The raw flat-field recording (Camera tab, Flats). The stacker builds its own master from it.' : 'No flat recordings on this drive yet.'}>
         {(id) => (
           <select id={id} value={c.flat ?? ''} disabled={busy} onChange={(e) => save({ flat: e.target.value || null })}>

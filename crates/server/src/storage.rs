@@ -119,6 +119,46 @@ struct State {
     dir: PathBuf,
     /// Mount point the directory was on when selected; it must still be mounted to use the directory.
     required_mount: Option<PathBuf>,
+    /// The drive's filesystem UUID and the folder inside it. The mount point's name is not stable (the desktop mounts a drive as
+    /// `/media/<user>/<LABEL>` and as `<LABEL>1` when a stale mount point of that name is left over), the UUID is.
+    uuid: Option<String>,
+    rel: Option<PathBuf>,
+    checked: Option<std::time::Instant>,
+}
+
+/// Filesystem UUID of a block device, from `/dev/disk/by-uuid`.
+#[cfg(target_os = "linux")]
+fn uuid_of(device: &str) -> Option<String> {
+    let dev = std::fs::canonicalize(device).ok()?;
+    std::fs::read_dir("/dev/disk/by-uuid").ok()?.flatten().find(|e| std::fs::canonicalize(e.path()).ok().as_deref() == Some(dev.as_path())).map(|e| e.file_name().to_string_lossy().to_string())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn uuid_of(_device: &str) -> Option<String> { None }
+
+/// Where the drive with `uuid` is mounted now, and the stored folder on it: (directory, mount point).
+pub fn resolve_uuid(uuid: &str, rel: &Path, mounts: &[Mount], uuid_of: &dyn Fn(&str) -> Option<String>) -> Option<(PathBuf, PathBuf)> {
+    mounts.iter().filter(|m| m.device.starts_with('/')).find(|m| uuid_of(&m.device).as_deref() == Some(uuid)).map(|m| (m.point.join(rel), m.point.clone()))
+}
+
+/// The mount point a path on a removable drive was under: `/media/<user>/<LABEL>`, `/run/media/<user>/<LABEL>`, `/media/<LABEL>`, `/mnt/<name>`.
+fn removable_root(path: &Path) -> Option<PathBuf> {
+    let parts: Vec<_> = path.components().collect();
+    let n = match parts.get(1).and_then(|c| c.as_os_str().to_str())? {
+        "media" => if parts.len() >= 4 { 4 } else { 3 }, // /media/<user>/<LABEL> (a bare /media/<LABEL> has no user part)
+        "run" if parts.get(2).and_then(|c| c.as_os_str().to_str()) == Some("media") => 5,
+        "mnt" => 3,
+        _ => return None,
+    };
+    (parts.len() >= n).then(|| parts[..n].iter().collect())
+}
+
+/// A drive that used to be at `old_root` and is mounted under a slightly different name now (`ASTRODRIVE` became `ASTRODRIVE1`):
+/// the one mount in the same folder whose name is the old name followed by digits. Only an unambiguous match counts.
+pub fn renamed_mount(old_root: &Path, mounts: &[Mount]) -> Option<Mount> {
+    let (parent, name) = (old_root.parent()?, old_root.file_name()?.to_string_lossy().to_string());
+    let hits: Vec<&Mount> = mounts.iter().filter(|m| m.point.parent() == Some(parent) && m.point.file_name().map_or(false, |n| { let n = n.to_string_lossy(); n.starts_with(&name) && n.len() > name.len() && n[name.len()..].chars().all(|c| c.is_ascii_digit()) })).collect();
+    (hits.len() == 1).then(|| hits[0].clone())
 }
 
 pub struct Storage {
@@ -137,11 +177,36 @@ impl Storage {
         if from_saved {
             log::info!("storage: using saved choice {} (from {}; overrides --data-dir)", dir.display(), config_file.display());
         }
-        let required_mount = containing_mount(&dir, &read_mounts()).map(|m| m.point.clone());
+        let cfg = crate::config::read(&config_file);
+        let mut uuid = cfg.get("data_dir_uuid").and_then(|v| v.as_str()).map(String::from);
+        let mut rel = cfg.get("data_dir_rel").and_then(|v| v.as_str()).map(PathBuf::from);
+        let mounts = read_mounts();
+        let mut dir = dir;
+        let mut required_mount = containing_mount(&dir, &mounts).map(|m| m.point.clone());
+        if uuid.is_none() && from_saved {
+            // an older settings file: learn the drive's UUID now if it is mounted, or find it under its new name if the name changed
+            if let Some(m) = containing_mount(&dir, &mounts).cloned().filter(|m| m.device.starts_with('/')) {
+                (uuid, rel) = (uuid_of(&m.device), dir.strip_prefix(&m.point).ok().map(|r| r.to_path_buf()));
+            } else if let Some(old_root) = removable_root(&dir) {
+                if let Some(m) = renamed_mount(&old_root, &mounts) {
+                    if let (Some(u), Ok(r)) = (uuid_of(&m.device), dir.strip_prefix(&old_root)) {
+                        log::info!("storage: {} is now mounted as {}; following it", old_root.display(), m.point.display());
+                        (uuid, rel) = (Some(u), Some(r.to_path_buf()));
+                        dir = m.point.join(r);
+                        required_mount = Some(m.point);
+                    }
+                }
+            }
+            if let (Some(u), Some(r)) = (&uuid, &rel) {
+                let _ = crate::config::set(&config_file, "data_dir", serde_json::json!(dir));
+                let _ = crate::config::set(&config_file, "data_dir_uuid", serde_json::json!(u));
+                let _ = crate::config::set(&config_file, "data_dir_rel", serde_json::json!(r));
+            }
+        }
         if !dir.exists() && required_mount.is_none() {
             let _ = std::fs::create_dir_all(&dir);
         }
-        Storage { state: Mutex::new(State { dir, required_mount }), config_file }
+        Storage { state: Mutex::new(State { dir, required_mount, uuid, rel, checked: None }), config_file }
     }
 
     pub fn config_file(&self) -> &Path {
@@ -154,11 +219,34 @@ impl Storage {
         self.config_file.parent().map(|p| p.join("logs")).unwrap_or_else(|| PathBuf::from("logs"))
     }
 
+    /// Follows the drive to wherever it is mounted now (checked at most every 2 s). A drive that is not mounted leaves the last
+    /// path in place, which then reports as unavailable.
+    fn follow_drive(&self) {
+        let mut s = self.state.lock().unwrap();
+        let (Some(uuid), Some(rel)) = (s.uuid.clone(), s.rel.clone()) else { return };
+        if s.checked.map_or(false, |t| t.elapsed() < std::time::Duration::from_secs(2)) {
+            return;
+        }
+        s.checked = Some(std::time::Instant::now());
+        if let Some((dir, point)) = resolve_uuid(&uuid, &rel, &read_mounts(), &uuid_of) {
+            if dir != s.dir {
+                log::info!("storage: the drive is mounted at {} now (was {})", point.display(), s.dir.display());
+                s.dir = dir;
+            }
+            s.required_mount = Some(point);
+            let dir = s.dir.clone();
+            drop(s);
+            let _ = crate::config::set(&self.config_file, "data_dir", serde_json::json!(dir));
+        }
+    }
+
     pub fn dir(&self) -> PathBuf {
+        self.follow_drive();
         self.state.lock().unwrap().dir.clone()
     }
 
     pub fn info(&self) -> Info {
+        self.follow_drive();
         let s = self.state.lock().unwrap();
         describe(&s.dir, s.required_mount.as_deref(), &read_mounts())
     }
@@ -251,11 +339,22 @@ impl Storage {
         std::fs::create_dir_all(path).map_err(|e| format!("cannot create {}: {e}{}", path.display(), perm_hint(&e)))?;
         writable(path).map_err(|e| format!("{} is not writable by the Rustflare service: {e}{}", path.display(), perm_hint_str(&e)))?;
         let dir = path.canonicalize().map_err(|e| e.to_string())?;
-        let required_mount = containing_mount(&dir, &mounts).map(|m| m.point.clone());
+        let mount = containing_mount(&dir, &mounts).cloned();
+        let required_mount = mount.as_ref().map(|m| m.point.clone());
+        let (uuid, rel) = match mount.as_ref().filter(|m| m.device.starts_with('/')) {
+            Some(m) => (uuid_of(&m.device), dir.strip_prefix(&m.point).ok().map(|r| r.to_path_buf())),
+            None => (None, None),
+        };
         crate::config::set(&self.config_file, "data_dir", serde_json::json!(dir))?;
+        // the drive is remembered by its UUID, so a different mount name next time does not matter
+        crate::config::set(&self.config_file, "data_dir_uuid", serde_json::json!(uuid))?;
+        crate::config::set(&self.config_file, "data_dir_rel", serde_json::json!(rel))?;
         let mut s = self.state.lock().unwrap();
         s.dir = dir;
         s.required_mount = required_mount;
+        s.uuid = uuid;
+        s.rel = rel;
+        s.checked = Some(std::time::Instant::now());
         Ok(describe(&s.dir, s.required_mount.as_deref(), &mounts))
     }
 }
@@ -348,6 +447,35 @@ mod tests {
         assert!(again.ensure_ready().is_ok());
         assert!(st.select(Path::new("relative/path")).is_err());
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    fn mount(dev: &str, point: &str) -> Mount { Mount { device: dev.into(), point: point.into(), fstype: "vfat".into() } }
+
+    #[test]
+    fn a_drive_is_found_again_by_its_uuid_whatever_its_mount_name() {
+        let uuids = |d: &str| match d { "/dev/sda1" => Some("ABCD-1234".to_string()), "/dev/sdb1" => Some("FFFF-0000".to_string()), _ => None };
+        let rel = Path::new("rustflare");
+        // mounted as ASTRODRIVE
+        let m1 = [mount("/dev/mmcblk0p2", "/"), mount("/dev/sda1", "/media/astropi/ASTRODRIVE")];
+        assert_eq!(resolve_uuid("ABCD-1234", rel, &m1, &uuids), Some((PathBuf::from("/media/astropi/ASTRODRIVE/rustflare"), PathBuf::from("/media/astropi/ASTRODRIVE"))));
+        // the same drive, now mounted as ASTRODRIVE1, and another drive that must not be confused with it
+        let m2 = [mount("/dev/sdb1", "/media/astropi/ASTRODRIVE"), mount("/dev/sda1", "/media/astropi/ASTRODRIVE1")];
+        assert_eq!(resolve_uuid("ABCD-1234", rel, &m2, &uuids).unwrap().0, PathBuf::from("/media/astropi/ASTRODRIVE1/rustflare"));
+        // not mounted at all
+        assert_eq!(resolve_uuid("ABCD-1234", rel, &[mount("/dev/mmcblk0p2", "/")], &uuids), None);
+    }
+
+    #[test]
+    fn an_old_setting_follows_a_renamed_mount_only_when_it_is_unambiguous() {
+        let old = removable_root(Path::new("/media/astropi/ASTRODRIVE/rustflare")).unwrap();
+        assert_eq!(old, PathBuf::from("/media/astropi/ASTRODRIVE"));
+        assert_eq!(removable_root(Path::new("/run/media/pi/DISK/x/y")).unwrap(), PathBuf::from("/run/media/pi/DISK"));
+        assert_eq!(removable_root(Path::new("/var/lib/rustflare/captures")), None);
+        let one = [mount("/dev/sda1", "/media/astropi/ASTRODRIVE1"), mount("/dev/sdc1", "/media/astropi/OTHER")];
+        assert_eq!(renamed_mount(&old, &one).unwrap().point, PathBuf::from("/media/astropi/ASTRODRIVE1"));
+        let two = [mount("/dev/sda1", "/media/astropi/ASTRODRIVE1"), mount("/dev/sdb1", "/media/astropi/ASTRODRIVE2")];
+        assert!(renamed_mount(&old, &two).is_none(), "two candidates: do not guess");
+        assert!(renamed_mount(&old, &[mount("/dev/sda1", "/media/astropi/ASTRODRIVEX")]).is_none(), "only digits may follow the old name");
     }
 
     #[test]

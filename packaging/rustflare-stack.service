@@ -4,11 +4,11 @@ Documentation=https://github.com/ddompe/rustflare
 After=rustflare.service
 
 [Service]
-# Off by default: `sudo systemctl enable --now rustflare-stack`. Settings: /var/lib/rustflare/stack.json
+# Enabled by the package. It waits for recordings the recorder has marked finished (<file>.ready). Settings: /var/lib/rustflare/stack.json, or More > Stacking.
 # Same account as the recorder (see `rustflare-user`), or it cannot read the drive.
 User=rustflare
 Group=rustflare
-StateDirectory=rustflare
+# (no StateDirectory=: that would make systemd re-own the folder it shares with the recorder every time this service starts)
 WorkingDirectory=/var/lib/rustflare
 ExecStart=/usr/bin/rustflare-stack watch --state-dir /var/lib/rustflare
 Restart=on-failure

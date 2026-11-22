@@ -89,7 +89,7 @@ pub async fn stack_config_put(State(st): State<AppState>, Json(patch): Json<Valu
     let path = state_dir(&st).join("stack.json");
     let mut cur: serde_json::Map<String, Value> = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
     let Some(p) = patch.as_object() else { return (StatusCode::BAD_REQUEST, Json(json!({ "error": "send an object" }))).into_response() };
-    for key in ["enabled", "policy", "min_gap_s", "keep_percent", "multipoint", "threads", "float", "flat", "darks"] {
+    for key in ["enabled", "policy", "min_gap_s", "keep_percent", "multipoint", "threads", "float", "flat", "darks", "include_unmarked"] {
         if let Some(v) = p.get(key) {
             cur.insert(key.into(), v.clone());
         }

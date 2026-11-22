@@ -15,14 +15,22 @@ configure)
        && [ "$SUDO_USER" != root ] && [ "$(id -u "$SUDO_USER" 2>/dev/null || echo 0)" -ge 1000 ]; then
         /usr/bin/rustflare-user --no-restart "$SUDO_USER" || true
     fi
+    # the stacker runs as the same account as the recorder (it reads and writes the same folders)
+    if [ -r /etc/systemd/system/rustflare.service.d/user.conf ]; then
+        install -d /etc/systemd/system/rustflare-stack.service.d
+        cp /etc/systemd/system/rustflare.service.d/user.conf /etc/systemd/system/rustflare-stack.service.d/user.conf
+    fi
     if command -v udevadm >/dev/null 2>&1; then
         udevadm control --reload-rules 2>/dev/null || true
         udevadm trigger --subsystem-match=usb 2>/dev/null || true
     fi
     systemctl daemon-reload || true
     systemctl enable rustflare.service >/dev/null 2>&1 || true
+    # the stacker is always ready: it waits at the lowest priority and only touches recordings the recorder has marked finished
+    systemctl enable rustflare-stack.service >/dev/null 2>&1 || true
     # restart (not start) so an upgrade runs the new binary
     systemctl restart rustflare.service || true
+    systemctl restart rustflare-stack.service || true
     ;;
 esac
 exit 0

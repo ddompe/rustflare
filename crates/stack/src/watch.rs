@@ -39,11 +39,14 @@ pub struct Config {
     /// Raw flat and dark recordings (SER), absolute or relative to the recorder's storage folder.
     pub flat: Option<String>,
     pub darks: Vec<String>,
+    /// Also stack finished recordings that have no `.ready` marker (made before the marker existed, or by other programs). Off by
+    /// default, so that switching the service on does not start on every old recording on the drive.
+    pub include_unmarked: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { enabled: true, policy: Policy::BetweenBursts, min_gap_s: 15.0, keep_percent: 25.0, multipoint: true, threads: 2, float: true, flat: None, darks: Vec::new() }
+        Config { enabled: true, policy: Policy::BetweenBursts, min_gap_s: 15.0, keep_percent: 25.0, multipoint: true, threads: 2, float: true, flat: None, darks: Vec::new(), include_unmarked: false }
     }
 }
 
@@ -110,15 +113,18 @@ fn write_status(dir: &Path, st: &Status) {
     let _ = std::fs::write(&tmp, serde_json::to_vec_pretty(st).unwrap_or_default()).and_then(|_| std::fs::rename(&tmp, &path));
 }
 
-/// Recordings that are finished and not stacked yet: those with a `.ready` marker, or (from older recorders or other programs) a
-/// complete SER that has not been touched for ten minutes.
-pub fn pending(root: &Path, out: &Path, failed: &HashSet<PathBuf>) -> Vec<PathBuf> {
+/// Recordings that are finished and not stacked yet: those with a `.ready` marker, and, if `include_unmarked`, complete SER files
+/// (from older recorders or other programs) that have not been touched for ten minutes.
+pub fn pending(root: &Path, out: &Path, failed: &HashSet<PathBuf>, include_unmarked: bool) -> Vec<PathBuf> {
     session::find_recordings(root)
         .into_iter()
         .filter(|p| !failed.contains(p) && !session::is_stacked(root, out, p))
         .filter(|p| {
             if rustflare_ready_marker(p).exists() {
                 return true;
+            }
+            if !include_unmarked {
+                return false;
             }
             let old = std::fs::metadata(p).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).map_or(false, |a| a > Duration::from_secs(600));
             old && Ser::open(p).map(|s| s.is_complete()).unwrap_or(false)
@@ -162,7 +168,7 @@ pub fn watch(state_dir: &Path, fallback_root: Option<&Path>, once: bool, log: &d
             }
             Some(root) => {
                 let out = root.join("stacks");
-                let todo = pending(root, &out, &failed);
+                let todo = pending(root, &out, &failed, cfg.include_unmarked);
                 status.pending = todo.len();
                 let (ok, why) = may_work(&cfg, rec.as_ref(), now_unix());
                 if todo.is_empty() {

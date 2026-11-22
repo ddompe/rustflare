@@ -11,7 +11,7 @@ For each recording (a burst of frames), it applies your dark and flat, aligns ev
 
 ## The page: More > Stacking
 
-More > Stacking shows what the stacker is doing (stacking a recording, paused and why, nothing to do), a grid of the finished stacks with thumbnails (tap one to download its FITS), and, under *Settings*, the same options as `stack.json`: on/off, when to stack, frames kept, multi-point, the flat, and which darks to use (it lists the raw flat and dark recordings on the drive, with exposure and gain). If the stacker service is not running, the page says so and shows the command to start it: a web page cannot start a system service, so that stays a `systemctl` command.
+More > Stacking shows what the stacker is doing (stacking a recording, paused and why, nothing to do), a grid of the finished stacks with thumbnails (tap one to download its FITS), and, under *Settings*, the same options as `stack.json`: on/off, when to stack, frames kept, multi-point, the flat, and which darks to use (it lists the raw flat and dark recordings on the drive, with exposure and gain). If the stacker service is not running (unusual: it is enabled with the package), the page says so and shows the command to start it: a web page cannot start a system service.
 
 ## Running it by hand
 
@@ -28,13 +28,11 @@ rustflare-stack session <folder> --flat flat_143838Z.ser --dark dark_142435Z.ser
 
 A dark is applied only if its exposure (within 3 %) and gain match the recording's; otherwise it is left out and the manifest says so. Other options: `--keep 10` (percent of frames), `--global` (one shift per frame, faster), `--clip 2.5` (sigma clipping; uses global alignment), `--u16` (16-bit FITS instead of float), `--threads N`. `rustflare-stack` without arguments lists them all.
 
-## Running it on the Pi as it records
+## Running on the Pi as it records
 
-```sh
-sudo systemctl enable --now rustflare-stack
-```
+Nothing to start: the package installs the stacker as a service and **enables it**, so it is always ready. It runs at the lowest CPU and disk priority with a CPU and memory ceiling, as the same account as the recorder, and starts again by itself after a reboot or a crash. (To switch it off, use the switch in More > Stacking; `sudo systemctl disable --now rustflare-stack` stops the service itself.)
 
-The service is **off until you enable it**, runs at the lowest CPU and disk priority with a CPU and memory ceiling, and as the same account as the recorder. The recorder writes a small `capture.state` file and a `.ready` marker beside each finished recording; the stacker reads those and stacks every finished recording, oldest first. Results go to `stacks/` on the same drive (the folder structure is mirrored, with a `manifest.json`).
+It only stacks **recordings made after it was installed**, the ones the recorder has marked finished. Older recordings on the drive are left alone unless you turn on *Also stack older recordings* in More > Stacking (or `"include_unmarked": true` in `stack.json`), or run `rustflare-stack session <folder>` by hand. The recorder writes a small `capture.state` file and a `.ready` marker beside each finished recording; the stacker reads those and stacks every finished recording, oldest first. Results go to `stacks/` on the same drive (the folder structure is mirrored, with a `manifest.json`).
 
 Settings are in `/var/lib/rustflare/stack.json` (all optional):
 
@@ -46,6 +44,7 @@ Settings are in `/var/lib/rustflare/stack.json` (all optional):
 | `multipoint` | true | Alignment points; false is faster and a little less sharp. |
 | `threads` | 2 | |
 | `flat`, `darks` | none | Raw SER recordings, absolute or relative to the storage folder. |
+| `include_unmarked` | false | Also stack older recordings that have no finished-marker. |
 | `enabled` | true | |
 
 Progress is in `/var/lib/rustflare/stack-status.json` (state, what it is working on, how many are waiting). If the Pi is turned off, the stacker carries on with whatever is not stacked yet the next time it runs.
