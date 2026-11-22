@@ -3,11 +3,12 @@
 use rustflare_stack::{calib::Calibration, fits, stack::{stack_ser, Options, Rank}};
 use std::path::PathBuf;
 
-const USAGE: &str = "usage: rustflare-stack stack <file.ser>... [--keep 25] [--out DIR] [--flat master.png] [--dark master.png]
-       [--no-align] [--rank reference|laplacian|order|worst] [--float] [--threads N] [--bin N] [--whiten 0..1] [--exposure-us N --gain N] [--json]
+const USAGE: &str = "usage: rustflare-stack stack <file.ser>... [--keep 25] [--out DIR] [--flat flat.ser] [--dark dark.ser]
+       [--no-align] [--u16] [--rank reference|laplacian|order|worst] [--float] [--threads N] [--bin N] [--whiten 0..1] [--exposure-us N --gain N] [--json]
   --keep      percent of the frames to keep, the sharpest first (default 25)
   --out       directory for the stacks (default: next to each recording, in stacks/)
-  --float     32-bit float FITS instead of unsigned 16-bit
+  --flat, --dark  the raw flat-field and dark recordings (SER); the masters are built from them
+  --u16       unsigned 16-bit FITS instead of the default 32-bit float
   --json      print each report as JSON";
 
 fn main() {
@@ -17,7 +18,7 @@ fn main() {
         std::process::exit(2);
     }
     let (mut files, mut out, mut flat, mut dark) = (Vec::<PathBuf>::new(), None::<PathBuf>, None::<PathBuf>, None::<PathBuf>);
-    let (mut opts, mut float, mut json, mut print_shifts) = (Options::default(), false, false, false);
+    let (mut opts, mut float, mut json, mut print_shifts) = (Options::default(), true, false, false);
     let (mut exposure, mut gain) = (None::<f64>, None::<f64>);
     let mut i = 1;
     let val = |i: &mut usize| -> String {
@@ -31,6 +32,7 @@ fn main() {
             "--flat" => flat = Some(val(&mut i).into()),
             "--dark" => dark = Some(val(&mut i).into()),
             "--no-align" => opts.align = false,
+            "--u16" => float = false,
             "--float" => float = true,
             "--integer-shifts" => opts.integer_shifts = true,
             "--shifts" => print_shifts = true,

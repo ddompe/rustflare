@@ -11,8 +11,8 @@ How recordings are stored and what is in them. For the controls, see the [Record
 | `frame_…` | `.png` | 8 or 16-bit grayscale |
 | `seq_…` | `.ser` *or* a folder of `frame_000001.png…` | one sequence; stop by frame count and/or duration |
 | `burst_…_b001` | same | one per burst of a schedule |
-| `flat_…` | `.ser`, `_master.png` | N flat frames and their 16-bit mean |
-| `dark_…` | `.ser`, `_master.png` | dark frames and their mean |
+| `flat_…` | `.ser`, `_master.png` | the raw flat frames, and their 16-bit mean (a display convenience; stackers should build their own master from the SER) |
+| `dark_…` | `.ser`, `_master.png` | the raw dark frames (kept since 0.4.1; earlier darks have only the master), and their 16-bit mean |
 | `*.fits` | one file per frame in a folder | header has time, exposure, gain, instrument |
 
 Download from the **Captures** panel (see [Record](../guide/record.md#captures-file-manager)) or `/files/<date>/<name>`.

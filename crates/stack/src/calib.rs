@@ -1,5 +1,7 @@
-//! Master dark and flat frames (the 16-bit grey PNGs the recorder writes) applied to every frame before it is judged or stacked.
+//! Master dark and flat frames, built here from the raw dark and flat recordings (SER) and applied to every frame before it is
+//! judged or stacked. Nothing is read from derived files such as the recorder's PNG masters: the raw frames are the product.
 
+use crate::ser::Ser;
 use std::path::Path;
 
 #[derive(Default, Clone)]
@@ -11,33 +13,40 @@ pub struct Calibration {
     pub flat: Option<Vec<f32>>,
 }
 
-fn read_png(path: &Path) -> Result<(usize, usize, Vec<f32>), String> {
-    let dec = png::Decoder::new(std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?);
-    let mut r = dec.read_info().map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut buf = vec![0u8; r.output_buffer_size()];
-    let info = r.next_frame(&mut buf).map_err(|e| format!("{}: {e}", path.display()))?;
-    if info.color_type != png::ColorType::Grayscale {
-        return Err(format!("{}: expected a grey image", path.display()));
+/// The mean of all the frames of a raw SER recording, in float (no rounding, no intermediate file format).
+fn mean_of(path: &Path) -> Result<(usize, usize, Vec<f32>), String> {
+    let mut ser = Ser::open(path).map_err(|e| e.to_string())?;
+    let (w, h, n) = (ser.width, ser.height, ser.frames());
+    if n == 0 {
+        return Err(format!("{}: no frames", path.display()));
     }
-    let data: Vec<f32> = match info.bit_depth {
-        png::BitDepth::Sixteen => buf[..info.buffer_size()].chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]]) as f32).collect(),
-        png::BitDepth::Eight => buf[..info.buffer_size()].iter().map(|&b| b as f32 * 257.0).collect(),
-        _ => return Err(format!("{}: only 8 and 16-bit images are supported", path.display())),
-    };
-    Ok((info.width as usize, info.height as usize, data))
+    let mut sum = vec![0f64; w * h];
+    for i in 0..n {
+        for (s, v) in sum.iter_mut().zip(ser.read_frame(i).map_err(|e| e.to_string())?) {
+            *s += v as f64;
+        }
+    }
+    Ok((w, h, sum.into_iter().map(|v| (v / n as f64) as f32).collect()))
 }
 
 impl Calibration {
+    /// `dark` and `flat` are raw recordings (SER) of dark frames (cap on) and of a flat field. The flat has the dark taken off
+    /// (when a dark is given) before it is normalised to a mean of 1.
     pub fn load(dark: Option<&Path>, flat: Option<&Path>) -> Result<Calibration, String> {
         let mut c = Calibration::default();
         if let Some(p) = dark {
-            let (w, h, d) = read_png(p)?;
+            let (w, h, d) = mean_of(p)?;
             (c.width, c.height, c.dark) = (w, h, Some(d));
         }
         if let Some(p) = flat {
-            let (w, h, mut f) = read_png(p)?;
-            if c.dark.is_some() && (c.width, c.height) != (w, h) {
-                return Err("the dark and the flat differ in size".into());
+            let (w, h, mut f) = mean_of(p)?;
+            if let Some(d) = &c.dark {
+                if (c.width, c.height) != (w, h) {
+                    return Err("the dark and the flat differ in size".into());
+                }
+                for (v, d) in f.iter_mut().zip(d) {
+                    *v = (*v - d).max(0.0);
+                }
             }
             (c.width, c.height) = (w, h);
             let mean = f.iter().map(|&v| v as f64).sum::<f64>() / f.len() as f64;

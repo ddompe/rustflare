@@ -82,3 +82,7 @@ Decisions by the owner: **prominence lanes first, FITS stills as the product, Ma
 - **Known gaps:** integer or bilinear shifts only (no Lanczos/drizzle), one global shift per frame (no multi-point alignment yet: the limb and prominences will show seeing distortion), no sigma clipping, colour (mosaic) recordings refused, no dark scaling for a different exposure (the prominence lane's 59 ms exposure has no matching dark), no watcher, no service.
 
 Next: check the stacks on more bursts of the day, then M1 (the `.ready` marker, watcher, queue, resource limits).
+
+### Raw in, float out (owner's rule, 2026-11-22)
+
+The stacker reads **only raw data**: SER recordings, and dark and flat masters it builds itself from the raw dark and flat SER files (mean in float, flat minus dark, normalised). It does not read the recorder's `_master.png` files, which are derived, rounded convenience copies for the live view. To make that possible the recorder now keeps the **raw dark frames** as a SER next to the master (flats already did). The output is a **32-bit float FITS** by default (`--u16` for unsigned 16-bit).

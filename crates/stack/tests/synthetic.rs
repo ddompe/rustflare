@@ -156,3 +156,28 @@ fn split_files_read_as_one_recording_and_cut_files_report_what_they_hold() {
     assert!(c.timestamp(0).is_none()); // the trailer is gone
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn masters_are_built_from_the_raw_recordings() {
+    let dir = std::env::temp_dir().join(format!("rf-stack-cal-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut r = Rng(5);
+    let dark: Vec<Vec<f32>> = (0..8).map(|_| (0..W * H).map(|_| 200.0 + 4.0 * r.gauss()).collect()).collect();
+    // a flat with vignetting, on top of the same dark level
+    let vig = |x: usize, y: usize| 1.0 - 0.4 * ((((x as f32 - 160.0).powi(2) + (y as f32 - 120.0).powi(2)).sqrt()) / 200.0).powi(2);
+    let flat: Vec<Vec<f32>> = (0..8).map(|_| (0..W * H).map(|i| 200.0 + 30000.0 * vig(i % W, i / W) + 20.0 * r.gauss()).collect()).collect();
+    write_ser(&dir.join("dark.ser"), &dark);
+    write_ser(&dir.join("flat.ser"), &flat);
+    let cal = Calibration::load(Some(&dir.join("dark.ser")), Some(&dir.join("flat.ser"))).unwrap();
+    let d = cal.dark.as_ref().unwrap();
+    assert!((d.iter().sum::<f32>() / d.len() as f32 - 200.0).abs() < 1.0); // the test frames are truncated to integers
+    let f = cal.flat.as_ref().unwrap();
+    assert!((f.iter().sum::<f32>() / f.len() as f32 - 1.0).abs() < 0.01, "the flat is normalised to a mean of 1");
+    assert!(f[120 * W + 160] > 1.1 && f[5 * W + 5] < 0.8, "vignetting is in the flat: centre {} corner {}", f[120 * W + 160], f[5 * W + 5]);
+    // a frame of a flat sky, calibrated, is flat
+    let sky: Vec<u16> = (0..W * H).map(|i| (200.0 + 20000.0 * vig(i % W, i / W)) as u16).collect();
+    let out = cal.apply(&sky);
+    let (c, e) = (out[120 * W + 160], out[5 * W + 5]);
+    assert!((c - e).abs() / c < 0.05, "centre {c} corner {e}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

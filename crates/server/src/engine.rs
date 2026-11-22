@@ -310,6 +310,8 @@ struct Darks {
     exposure_us: f64,
     gain: f64,
     skip: u32,
+    /// The raw dark frames, kept next to the master so any stacker can build its own (raw data is the product).
+    raw: Option<SerWriter>,
 }
 
 /// Two-exposure prominence capture: the disc at the current exposure, then a much longer one.
@@ -1554,7 +1556,7 @@ impl Engine {
                 let (w, h) = (cam.width, cam.height);
                 let exposure_us = self.exposure();
                 self.stop_guiding_quietly();
-                self.job = Job::Darks(Box::new(Darks { stem: self.new_stem("dark", name.as_deref()), frames, acc: FlatAccumulator::new(w, h, fmt), exposure_us, gain, skip: 2 }));
+                self.job = Job::Darks(Box::new(Darks { stem: self.new_stem("dark", name.as_deref()), frames, acc: FlatAccumulator::new(w, h, fmt), exposure_us, gain, skip: 2, raw: None }));
                 self.set_capture("flats", "dark frames: keep the cap on", Some(frames));
                 Ok(json!({}))
             }
@@ -3092,6 +3094,20 @@ impl Engine {
             d.skip -= 1;
             return Job::Darks(d);
         }
+        if d.raw.is_none() {
+            let path = d.stem.with_extension("ser");
+            let cam = self.status.camera.as_ref().map(|c| c.name.clone()).unwrap_or_default();
+            match std::fs::create_dir_all(path.parent().unwrap()).map_err(s).and_then(|_| SerWriter::create_color(&path, frame.width, frame.height, frame.format, frame.bayer, &cam, "Rustflare darks").map_err(s)) {
+                Ok(w) => d.raw = Some(w),
+                Err(e) => log::warn!("the raw dark frames are not kept: {e}"), // the master is still made
+            }
+        }
+        if let Some(w) = d.raw.as_mut() {
+            if let Err(e) = w.write_frame(&frame) {
+                log::warn!("writing a raw dark frame failed: {e}");
+                d.raw = None;
+            }
+        }
         if let Err(e) = d.acc.add(&frame) {
             self.status.error = Some(format!("darks: {e}"));
             self.finish_capture(None, "failed");
@@ -3101,6 +3117,9 @@ impl Engine {
         self.status.capture.phase = "dark frames: keep the cap on".into();
         if d.acc.count() < d.frames {
             return Job::Darks(d);
+        }
+        if let Some(w) = d.raw.take() {
+            let _ = w.finalize();
         }
         let master = d.stem.with_file_name(format!("{}_master", d.stem.file_name().unwrap().to_string_lossy())).with_extension("png");
         let res = std::fs::create_dir_all(master.parent().unwrap()).map_err(s).and_then(|_| d.acc.master().map_err(s)).and_then(|m| write_png(&master, &m).map_err(s).map(|_| m));
