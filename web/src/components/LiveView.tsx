@@ -69,7 +69,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
       </svg>
       <div ref={inner} className="zoomed" style={{ transform: `translate(${d.panX}px, ${d.panY}px) scale(${d.zoom})` }}>
         <img src={`/stream.mjpg?fps=${d.fps}`} alt="live view" draggable={false} style={{ filter: cssFilter(d) }} onLoad={() => force((n) => n + 1)} />
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={d.overlays ? undefined : { display: 'none' }}>
           <g fill="none" strokeWidth={stroke}>
             {d.grid && <path stroke="#ff3b30" opacity={0.4} d={`M${W / 3} 0V${H}M${(2 * W) / 3} 0V${H}M0 ${H / 3}H${W}M0 ${(2 * H) / 3}H${W}`} />}
             {d.rings > 0 && (
@@ -78,11 +78,11 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
               </g>
             )}
             {d.crosshair && <path stroke="#ff3b30" opacity={0.7} d={`M0 ${cy}H${W}M${cx} 0V${H}`} />}
-            {d.sunOutline && sun && (
+            {(d.sunOutline || d.sunCentre) && sun && (
               <g stroke="#22d3ee" strokeWidth={stroke * 1.6}>
-                <circle cx={sun.pos.x} cy={sun.pos.y} r={sun.radius} strokeDasharray={sun.partial ? `${stroke * 4} ${stroke * 4}` : undefined} />
-                <circle cx={sun.pos.x} cy={sun.pos.y} r={stroke * 3} fill="#22d3ee" />
-                {Math.hypot(sun.pos.x - cx, sun.pos.y - cy) > H * 0.02 && (
+                {d.sunOutline && <circle cx={sun.pos.x} cy={sun.pos.y} r={sun.radius} strokeDasharray={sun.partial ? `${stroke * 4} ${stroke * 4}` : undefined} />}
+                {d.sunCentre && <circle cx={sun.pos.x} cy={sun.pos.y} r={stroke * 3} fill="#22d3ee" />}
+                {d.sunCentre && Math.hypot(sun.pos.x - cx, sun.pos.y - cy) > H * 0.02 && (
                   <>
                     <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#fb923c" /></marker></defs>
                     <line x1={sun.pos.x} y1={sun.pos.y} x2={cx} y2={cy} stroke="#fb923c" strokeWidth={stroke * 2} markerEnd="url(#arrow)" />
@@ -115,11 +115,20 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
         <button type="button" aria-label="Prominence view" aria-pressed={!!status?.coronagraph?.enabled} className={status?.coronagraph?.enabled ? 'tool-on' : ''} disabled={!status?.sun && !status?.coronagraph?.enabled} title="Black out the Sun's disc to judge the exposure for prominences" onClick={() => api('PUT', '/coronagraph', { enabled: !status?.coronagraph?.enabled, scale: status?.coronagraph?.scale ?? 1.03 }).catch(() => {})}>
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="10" cy="10" r="4.5" fill="currentColor" /></svg>
         </button>
+        <button type="button" aria-label={d.overlays ? 'Hide overlays' : 'Show overlays'} aria-pressed={!d.overlays} className={d.overlays ? '' : 'tool-on'} title="Hide the crosshair, rings and Sun marks to see the bare image" onClick={() => setDisplay({ overlays: !d.overlays })}>
+          <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M1.5 10S5 4.5 10 4.5 18.5 10 18.5 10 15 15.5 10 15.5 1.5 10 1.5 10z" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="10" cy="10" r="2.5" fill="currentColor" />{d.overlays && <path d="M3 17L17 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0" />}{!d.overlays && <path d="M3 17L17 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}</svg>
+        </button>
         <HudMenu api={hud} />
         <button type="button" aria-label="Display settings" onClick={onDisplay}>
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h8M15 15h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /><circle cx="13" cy="5" r="2" fill="currentColor" /><circle cx="7" cy="10" r="2" fill="currentColor" /><circle cx="13" cy="15" r="2" fill="currentColor" /></svg>
         </button>
       </div>
+      {status?.coronagraph?.enabled && (
+        <label className="corona-size" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+          <span>Mask {Math.round(status.coronagraph.scale * 100)}%</span>
+          <input type="range" aria-label="Prominence mask size" min={0.9} max={1.2} step={0.005} value={status.coronagraph.scale} onChange={(e) => api('PUT', '/coronagraph', { enabled: true, scale: parseFloat(e.target.value) }).catch(() => {})} />
+        </label>
+      )}
       <div className="hud">{W}×{H}{hint && ` · ${hint}`}</div>
       {anchorPick && <div className="hint" role="status">Tap a feature (sunspot, filament, plage) to track it</div>}
     </div>

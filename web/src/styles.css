@@ -490,3 +490,7 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
   .app:not([data-tab='camera']) .live-tools { flex-wrap: nowrap; gap: .2rem; }
   .app:not([data-tab='camera']) .live-tools button { width: 32px; height: 32px; font-size: 1rem; }
 }
+
+/* Prominence mask size, right on the live view so it can be tuned while looking at the limb. */
+.corona-size { position: absolute; left: .5rem; right: 4.2rem; bottom: .3rem; display: flex; align-items: center; gap: .6rem; background: #000b; padding: .25rem .6rem; border-radius: 8px; color: #e2e8f0; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.corona-size input { flex: 1; min-width: 0; }

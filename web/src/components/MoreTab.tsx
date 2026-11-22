@@ -50,7 +50,7 @@ function DisplaySettings({ d, set, reset, status }: { d: Display; set: (p: Parti
       <h3>Image</h3>
       <Switch label="Auto-stretch" checked={stretch} onChange={(on) => { setStretch(on); api('PUT', '/preview', { stretch: on }).catch(() => {}) }} hint="Brightens dim 16-bit frames (everyone's preview)." />
       <Switch label="Prominence view (software coronagraph)" checked={!!status?.coronagraph?.enabled} disabled={!status?.sun} onChange={(on) => api('PUT', '/coronagraph', { enabled: on, scale: status?.coronagraph?.scale ?? 1.03 }).catch(() => {})} hint={status?.sun ? 'Blacks out the Sun disc in the live view so the faint prominences and limb show. Viewing only: recordings are untouched.' : 'Needs the Sun in view.'} />
-      {status?.coronagraph?.enabled && <RangeField label="Mask size" value={status.coronagraph.scale} min={0.95} max={1.15} step={0.01} show={`${Math.round(status.coronagraph.scale * 100)}% of the disc`} onChange={(v) => api('PUT', '/coronagraph', { enabled: true, scale: v }).catch(() => {})} />}
+      {status?.coronagraph?.enabled && <RangeField label="Mask size" value={status.coronagraph.scale} min={0.9} max={1.2} step={0.005} show={`${Math.round(status.coronagraph.scale * 100)}% of the disc`} onChange={(v) => api('PUT', '/coronagraph', { enabled: true, scale: v }).catch(() => {})} />}
       <RangeField label="Brightness" value={d.brightness} min={0.3} max={4} step={0.05} show={d.brightness.toFixed(2)} onChange={(v) => set({ brightness: v })} />
       <RangeField label="Contrast" value={d.contrast} min={0.3} max={4} step={0.05} show={d.contrast.toFixed(2)} onChange={(v) => set({ contrast: v })} />
       <RangeField label="Gamma" value={d.gamma} min={0.3} max={3} step={0.05} show={d.gamma.toFixed(2)} onChange={(v) => set({ gamma: v })} />
@@ -65,7 +65,9 @@ function DisplaySettings({ d, set, reset, status }: { d: Display; set: (p: Parti
       <h3>Overlays</h3>
       <Switch label="Crosshair" checked={d.crosshair} onChange={(on) => set({ crosshair: on })} />
       <Switch label="Rule-of-thirds grid" checked={d.grid} onChange={(on) => set({ grid: on })} />
-      <Switch label="Sun outline" checked={d.sunOutline} onChange={(on) => set({ sunOutline: on })} />
+      <Switch label="Show overlays" checked={d.overlays} onChange={(on) => set({ overlays: on })} hint="Off shows the bare image (also the eye button on the live view)." />
+      <Switch label="Sun edge circle" checked={d.sunOutline} onChange={(on) => set({ sunOutline: on })} />
+      <Switch label="Sun centre dot and arrow" checked={d.sunCentre} onChange={(on) => set({ sunCentre: on })} />
       <RangeField label="Bullseye rings" value={d.rings} min={0} max={8} step={1} show={d.rings ? String(d.rings) : 'off'} onChange={(v) => set({ rings: Math.round(v) })} />
       <RangeField label="Ring size" value={d.ringSize} min={3} max={50} step={1} show={`${d.ringSize}%`} onChange={(v) => set({ ringSize: Math.round(v) })} />
       <h3>Stream</h3>

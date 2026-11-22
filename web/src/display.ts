@@ -13,7 +13,9 @@ export interface Display {
   rings: number // concentric "bullseye" rings, 0 = none
   ringSize: number // radius of the outermost ring, % of the frame height
   grid: boolean // rule-of-thirds
-  sunOutline: boolean
+  sunOutline: boolean // the cyan edge circle
+  sunCentre: boolean // the centre dot and the arrow to the frame centre
+  overlays: boolean // master switch: false hides every drawn overlay so the bare image shows
   zoom: number
   panX: number
   panY: number
@@ -21,7 +23,7 @@ export interface Display {
 
 export const DEFAULT_DISPLAY: Display = {
   invert: false, tint: 'none', brightness: 1, contrast: 1, gamma: 1, fps: 15,
-  crosshair: true, rings: 3, ringSize: 15, grid: false, sunOutline: true, zoom: 1, panX: 0, panY: 0,
+  crosshair: true, rings: 3, ringSize: 15, grid: false, sunOutline: true, sunCentre: true, overlays: true, zoom: 1, panX: 0, panY: 0,
 }
 
 type Prefs = Omit<Display, 'zoom' | 'panX' | 'panY'>
