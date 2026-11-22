@@ -30,6 +30,7 @@ export function App() {
   const [tab, setTabState] = useState<TabId>(TABS.some((x) => x.id === savedTab) ? savedTab : 'camera')
   const setTab = (t: TabId) => { setTabState(t); setSavedTab(t) }
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null)
+  const [full, setFull] = useState(false)
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const panelRef = useRef<HTMLElement>(null)
   useEffect(() => { panelRef.current?.scrollTo(0, 0) }, [tab])
@@ -61,7 +62,7 @@ export function App() {
   }
 
   return (
-    <div className="app" data-tab={tab}>
+    <div className="app" data-tab={tab} data-full={full ? '1' : undefined}>
       <a className="skip" href="#panel">Skip to controls</a>
       <header className="top">
         <img className="mark" src="/logo-mark.svg" alt="" width="26" height="26" />
@@ -109,6 +110,7 @@ export function App() {
         {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={() => setFilesOpen(true)} />}
         {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} />}
       </main>
+      <button type="button" className="fullbtn" aria-pressed={full} onClick={() => setFull((v) => !v)}>{full ? 'Show controls' : 'Hide controls'}</button>
       {filesOpen && <FileManagerScreen status={status} onClose={() => setFilesOpen(false)} />}
     </div>
   )
