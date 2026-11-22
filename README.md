@@ -13,6 +13,11 @@
   <a href="https://ddompe.github.io/rustflare/manual/"><img src="https://img.shields.io/badge/docs-user%20manual-blue" alt="User manual"></a>
 </p>
 
+<p align="center">
+  <img src="docs/img/real/disc-and-prominence.jpg" alt="An H-alpha solar disc and the prominence lane of the same cycle, with the disc masked" width="900"><br>
+  <sub>One cycle of a prominence recording, straight from a RustFlare session in H-alpha (colour added for display): the disc lane (left) and the long-exposure lane with the coronagraph mask (right).</sub>
+</p>
+
 Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi next to the telescope, open a web page from your phone or laptop (an iPhone Home Screen app works well), and take the Sun from "where is it?" to a saved recording without a keyboard.
 
 ## Features

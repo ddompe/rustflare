@@ -1,5 +1,9 @@
 # RustFlare
 
+![The disc lane and the prominence lane of one recording cycle](img/real/disc-and-prominence.jpg)
+
+*One cycle of a prominence recording, straight from a RustFlare session in H-alpha (colour added for display): the disc lane (left) and the long-exposure lane with the coronagraph mask (right).*
+
 RustFlare is headless solar capture for a Raspberry Pi. It runs next to your telescope and you control it from the web browser on your phone: live view, Go to Sun, tracking and guiding, and recording in SER, FITS or PNG.
 
 This site has three parts.
