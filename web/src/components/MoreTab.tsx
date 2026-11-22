@@ -3,6 +3,7 @@ import { api, Optics, Status } from '../api'
 import { Display } from '../display'
 import { Disclosure, ErrorLine, Field, Switch, useAction } from './ui'
 import { StorageSettings } from './Storage'
+import { SessionLog } from './SessionLog'
 import { useSetting } from '../settings'
 
 const arcmin = (s: number) => `${Math.floor(s / 60)}′ ${(s % 60).toFixed(0)}″`
@@ -207,6 +208,7 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus }: { 
       {item('site', 'Site', status?.site ? `${status.site.latitude.toFixed(2)}°, ${status.site.longitude.toFixed(2)}°` : 'not set', <SiteSettings status={status} />)}
       {item('storage', 'Storage', 'drive for captures', <StorageSettings status={status} />)}
       {item('buffer', 'RAM buffer', status?.capture ? `${status.capture.buffer_mb} MB` : '', <BufferSettings status={status} />)}
+      {item('sessionlog', 'Session log', status?.session_log?.enabled ? 'recording' : 'off', <SessionLog status={status} />)}
       {item('startup', 'Startup', status?.startup.enabled ? 'reconnects' : 'manual', <Startup status={status} />)}
     </>
   )

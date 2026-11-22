@@ -6,6 +6,7 @@ mod engine;
 mod files;
 mod preview;
 mod security;
+mod sessionlog;
 mod status;
 mod storage;
 

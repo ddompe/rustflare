@@ -55,3 +55,15 @@ Test the update flow without GitHub: `scripts/mock-github-release.py --deb <deb>
 ## Building on a machine with a small system disk
 
 The toolchain can live anywhere: set `RUSTUP_HOME` / `CARGO_HOME` (and `npm_config_cache`) to a folder on a large disk before installing. Zig and the Chrome profile (if you take headless screenshots) can live there too.
+
+## Real-data regression fixtures (session log)
+
+*More > Session log* records, once a second, what the software saw and did (camera level, detected Sun, tracking and guiding state, guide pulses) plus a small grayscale picture every N seconds, into `<capture drive>/logs/<date>/session_<time>.jsonl` and `..._f00001.png`. Nothing identifying is logged and it stops at 200 MB.
+
+To use a real session as a regression test: copy the `logs` folder off the drive and run
+
+```
+RUSTFLARE_FIXTURES=/absolute/path/to/logs cargo test -p rustflare-server replay_real -- --nocapture
+```
+
+It runs the Sun detector over every logged picture (at its thumbnail scale) and fails if a Sun that was found during the session is lost now or its centre moved by more than 12 full-resolution pixels. Keep real recordings out of the repository (they show your site and equipment); commit only synthetic or deliberately anonymised, small fixtures.

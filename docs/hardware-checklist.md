@@ -24,6 +24,8 @@ Everything below was built and tested on the simulators; each item needs the rea
 | new | Buffer reuse | With the phone tab closed and then open, `top -H -p $(pgrep -x rustflare-serve)`: compare CPU with the ~55 % measured before (docs/performance.md) |
 | #72 | HTTPS on the iPhone | The Pi already serves HTTPS: install and trust the CA (docs/https.md), open https://astropi.local:8443, Home Screen, location button |
 
+| new | Session log | More > Session log on during a tracking/guiding session (20+ min on the Sun): the log appears under `<drive>/logs/`; copy it off and run the replay test (docs/development.md); it should pass |
+
 ## M2: UI
 
 | Issue | Check |

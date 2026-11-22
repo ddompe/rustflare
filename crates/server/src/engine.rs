@@ -79,6 +79,8 @@ pub enum Command {
     MountGotoSun { allow_unsynced_clock: bool },
     /// Observer site (decimal degrees, east-positive longitude).
     SetSite { latitude: f64, longitude: f64 },
+    /// Opt-in session log (JSON lines plus small frames) for regression fixtures.
+    SetSessionLog { enabled: bool, frame_every_s: Option<f64> },
     /// Disc frame plus a `factor` times longer exposure for prominences, and their composite.
     CaptureProminence { name: Option<String>, factor: f64 },
     /// Master dark from `frames` frames at the current exposure and gain.
@@ -259,6 +261,7 @@ pub struct Engine {
     flat: rustflare_capture::SharedFlat,
     corona: preview::SharedCorona,
     demand: Arc<preview::Demand>,
+    slog: crate::sessionlog::SessionLog,
     last_preview: Instant,
     last_publish: Instant,
     last_temp: Instant,
@@ -329,6 +332,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         flat,
         corona,
         demand,
+        slog: Default::default(),
         last_preview: Instant::now(),
         last_publish: Instant::now(),
         last_temp: Instant::now(),
@@ -583,6 +587,7 @@ impl Engine {
             let c = self.corona.lock().unwrap();
             self.status.coronagraph = CoronagraphStatus { enabled: c.enabled, scale: c.scale };
         }
+        self.status.session_log = SessionLogStatus { enabled: self.slog.enabled(), lines: self.slog.lines, frames: self.slog.frames, bytes: self.slog.bytes, file: self.slog.file_name() };
         self.status.clock = ClockStatus { ntp_synchronized: self.ntp_sync };
         self.status.site = self.site.map(|s| SiteStatus { latitude: s.latitude, longitude: s.longitude });
         self.status.sky_sun = self.site.map(|s| {
@@ -776,6 +781,15 @@ impl Engine {
                     c.scale = scale;
                 }
                 crate::config::set(self.storage.config_file(), "coronagraph", json!({ "enabled": enabled, "scale": scale }))?;
+                Ok(json!({}))
+            }
+            Command::SetSessionLog { enabled, frame_every_s } => {
+                if enabled {
+                    let dir = self.storage.dir().join("logs");
+                    self.slog.start(&dir, frame_every_s)?;
+                } else {
+                    self.slog.stop();
+                }
                 Ok(json!({}))
             }
             Command::SetSite { latitude, longitude } => {
@@ -1352,6 +1366,7 @@ impl Engine {
             self.corona.lock().unwrap().sun = sun.as_ref().map(|s| (s.pos.x, s.pos.y, s.radius));
             self.status.sun = sun;
             self.step_tracking(&frame, now);
+            self.log_session(&frame, now);
             self.last_frame = Some(frame.clone());
         }
         if let Some(c) = self.status.camera.as_mut() {
@@ -1391,6 +1406,27 @@ impl Engine {
         }
     }
 
+    /// One line per second into the session log (when it is on). Only technical state: no site, no device names.
+    fn log_session(&mut self, frame: &Frame, now: Instant) {
+        if !self.slog.due(now) {
+            return;
+        }
+        let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
+        let rec = json!({
+            "cam": { "fps": self.fps_ema, "mean": frame.mean_fraction(), "sat": frame.saturated_fraction(), "w": frame.width, "h": frame.height, "exposure_us": ctl(CTRL_EXPOSURE_US), "gain": ctl("gain") },
+            "sun": self.status.sun.as_ref().map(|s| json!({ "x": s.pos.x, "y": s.pos.y, "r": s.radius, "partial": s.partial, "fit_rms": s.fit_rms })),
+            "track": self.status.tracking.as_ref().map(|t| json!({ "mode": t.mode, "x": t.x, "y": t.y, "lost": t.lost })),
+            "guide": { "state": match &self.guide { GuideState::Off => "off", GuideState::Calibrating(_) => "calibrating", GuideState::Guiding(_) => "guiding" }, "error_px": self.status.guiding.error_px },
+            "mount": self.status.mount.as_ref().map(|m| json!({ "tracking": m.tracking, "slewing": m.slewing })),
+            "capture": self.status.capture.state,
+        });
+        self.slog.write(now, rec, frame);
+        if self.slog.capped {
+            self.slog.capped = false;
+            self.status.error = Some("session log stopped: it reached its 200 MB size cap".into());
+        }
+    }
+
     fn step_guide(&mut self, now: Instant, pos: Vec2) {
         let mut cmd = None;
         let mut failure = None;
@@ -1417,6 +1453,7 @@ impl Engine {
             },
         }
         if let Some(c) = cmd {
+            self.slog.note_pulse(c.primary, c.secondary);
             let r = match self.mount.as_mut() {
                 Some(m) => m.guide(RadPerSec(c.primary * SIDEREAL_RATE.0), RadPerSec(c.secondary * SIDEREAL_RATE.0)).map_err(s),
                 None => Err("mount disconnected".to_string()),
