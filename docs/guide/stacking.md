@@ -45,9 +45,21 @@ Settings are in `/var/lib/rustflare/stack.json` (all optional):
 | `threads` | 2 | |
 | `flat`, `darks` | none | Raw SER recordings, absolute or relative to the storage folder. |
 | `include_unmarked` | false | Also stack older recordings that have no finished-marker. |
+| `telemetry` | true | Keep the behaviour log described above. |
 | `enabled` | true | |
 
 Progress is in `/var/lib/rustflare/stack-status.json` (state, what it is working on, how many are waiting). If the Pi is turned off, the stacker carries on with whatever is not stacked yet the next time it runs.
+
+## Telemetry: how it behaves next to a recording
+
+The stacker keeps a record of its own behaviour so you can review later how it coexisted with a real recording. It is on by default (`"telemetry": false` in `stack.json` turns it off) and written as JSON lines to `/var/lib/rustflare/logs/<date>/stack.jsonl`, next to the recorder's logs (same size and age limits; the debug API serves them: *More > Session log* and [Debugging](../reference/debugging.md)):
+
+- **start:** the limits it was given (cgroup `cpu.max`, `cpu.weight`, memory limit, the cores it may run on, nice value, systemd's CPU quota, I/O class and weight), and the config.
+- **state:** every change between idle, working and paused, with the reason and what the recorder was doing at that moment.
+- **job:** per recording: wall time, CPU seconds (user and system) and how many cores that is on average, CPU throttling by its quota (periods and seconds), busy percentage of every core, memory and I/O pressure stalls, the time in each phase, and a summary of 2-second samples during the job (temperature, clock, firmware throttle flags, memory, which cores its threads ran on, and whether the recorder was writing frames).
+- **sample** every 2 s during a job, **idle** once a minute between jobs.
+
+`scripts/analysis/stack_telemetry.py /var/lib/rustflare/logs` (or `http://<pi>:8080`) prints the limits, a table of jobs, the pauses and anything that looks like interference (throttling, high temperature, an I/O stall, a job that ran while the recorder was writing). A first run is in [the telemetry run of 2026-11-22](../project/stacker-telemetry-run-2026-11-22.md).
 
 ## What to expect
 

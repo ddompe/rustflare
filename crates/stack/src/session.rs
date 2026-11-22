@@ -25,6 +25,8 @@ pub struct Entry {
     pub flat_applied: bool,
     pub notes: Vec<String>,
     pub seconds: f64,
+    #[serde(default)]
+    pub phases: Vec<(String, f64)>,
 }
 
 /// Recordings under `root`, oldest name first. Calibration recordings, `_partN` continuations and the output folder are left out.
@@ -87,6 +89,7 @@ pub fn stack_one(root: &Path, out: &Path, src: &Path, opts: &Options, cals: &Cal
         flat_applied: r.flat_applied,
         notes,
         seconds: t0.elapsed().as_secs_f64(),
+        phases: r.phases.clone(),
     })
 }
 

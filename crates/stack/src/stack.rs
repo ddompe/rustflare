@@ -89,6 +89,8 @@ pub struct Report {
     pub aps: usize,
     pub local_shift_rms_px: f64,
     pub multipoint_seconds: f64,
+    /// Seconds spent in each phase of the pipeline, in order.
+    pub phases: Vec<(String, f64)>,
     pub first_timestamp: Option<f64>,
     pub rank_seconds: f64,
     pub stack_seconds: f64,
@@ -167,7 +169,9 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     }
     let t0 = Instant::now();
     let trace = std::env::var_os("RF_STACK_TRACE").is_some();
+    let phase_log = std::cell::RefCell::new(Vec::<(String, f64)>::new());
     let lap_t = |what: &str, since: &mut Instant| {
+        phase_log.borrow_mut().push((what.to_string(), (since.elapsed().as_secs_f64() * 1000.0).round() / 1000.0));
         if trace {
             eprintln!("  {what}: {:.2} s", since.elapsed().as_secs_f64());
         }
@@ -569,6 +573,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         aps: aps_n,
         local_shift_rms_px: mp_rms,
         multipoint_seconds: mp_seconds,
+        phases: phase_log.into_inner(),
         first_timestamp: ser.timestamp(0),
         rank_seconds,
         stack_seconds: t1.elapsed().as_secs_f64(),

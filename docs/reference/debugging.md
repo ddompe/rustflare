@@ -27,3 +27,5 @@ RUSTFLARE_FIXTURES=<logs folder> cargo test -p rustflare-server replay_real -- -
 ```
 
 Nothing identifying is logged: no site, device names or file paths. The mount log holds only mount commands, which include the latitude and longitude only when a Go to Sun or a flip sends them to the mount.
+
+The stacker's own log, `stack.jsonl`, is in the same day folders (limits it was given, every job with CPU, throttling, temperature and what the recorder was doing, state changes with reasons). Summarise it with `scripts/analysis/stack_telemetry.py`; see [Stacking](../guide/stacking.md#telemetry-how-it-behaves-next-to-a-recording).

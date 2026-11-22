@@ -8,6 +8,8 @@ use crate::calib::CalSet;
 use crate::ser::Ser;
 use crate::session::{self, Entry};
 use crate::stack::Options;
+use crate::telemetry::{self, Counters, Log, Sampler};
+use serde_json::json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -42,11 +44,13 @@ pub struct Config {
     /// Also stack finished recordings that have no `.ready` marker (made before the marker existed, or by other programs). Off by
     /// default, so that switching the service on does not start on every old recording on the drive.
     pub include_unmarked: bool,
+    /// Keep telemetry (CPU, priority, throttling, temperature, what the recorder was doing) in `logs/<date>/stack.jsonl`.
+    pub telemetry: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { enabled: true, policy: Policy::BetweenBursts, min_gap_s: 15.0, keep_percent: 25.0, multipoint: true, threads: 2, float: true, flat: None, darks: Vec::new(), include_unmarked: false }
+        Config { enabled: true, policy: Policy::BetweenBursts, min_gap_s: 15.0, keep_percent: 25.0, multipoint: true, threads: 2, float: true, flat: None, darks: Vec::new(), include_unmarked: false, telemetry: true }
     }
 }
 
@@ -150,8 +154,12 @@ pub fn watch(state_dir: &Path, fallback_root: Option<&Path>, once: bool, log: &d
     let mut failed: HashSet<PathBuf> = HashSet::new();
     let mut status = Status::default();
     let mut cals: Option<(String, CalSet)> = None; // keyed by the calibration settings, rebuilt when they change
+    let mut tlog = Log::new(state_dir, Config::load(state_dir).telemetry);
+    tlog.event("start", json!({ "version": env!("CARGO_PKG_VERSION"), "environment": telemetry::environment(), "unit": telemetry::unit_properties("rustflare-stack"), "config": Config::load(state_dir), "sample": telemetry::sample(state_dir) }));
+    let (mut last_key, mut last_idle_beat) = (String::new(), Instant::now());
     loop {
         let cfg = Config::load(state_dir);
+        tlog.enabled = cfg.telemetry;
         let rec = read_recorder(state_dir);
         let root = rec.as_ref().filter(|r| now_unix() - r.updated <= STALE_S).map(|r| PathBuf::from(&r.dir)).or_else(|| fallback_root.map(|p| p.to_path_buf()));
         status.root = root.as_ref().map(|r| r.to_string_lossy().to_string()).unwrap_or_default();
@@ -177,6 +185,7 @@ pub fn watch(state_dir: &Path, fallback_root: Option<&Path>, once: bool, log: &d
                     status.current = None;
                     if once {
                         write_status(state_dir, &status);
+                        tlog.event("state", json!({ "state": status.state, "reason": status.reason, "pending": status.pending, "policy": cfg.policy, "recorder": telemetry::recorder(state_dir) }));
                         return;
                     }
                 } else if !ok {
@@ -185,6 +194,7 @@ pub fn watch(state_dir: &Path, fallback_root: Option<&Path>, once: bool, log: &d
                     status.current = None;
                     if once {
                         write_status(state_dir, &status);
+                        tlog.event("state", json!({ "state": status.state, "reason": status.reason, "pending": status.pending, "policy": cfg.policy, "recorder": telemetry::recorder(state_dir) }));
                         return;
                     }
                     sleep = Duration::from_secs(3);
@@ -208,7 +218,30 @@ pub fn watch(state_dir: &Path, fallback_root: Option<&Path>, once: bool, log: &d
                     status.current = Some(rel.clone());
                     write_status(state_dir, &status);
                     let t = Instant::now();
-                    match session::stack_one(root, &out, &src, &cfg.options(), &cals.as_ref().unwrap().1, cfg.float).and_then(|e| session::record(&out, &e).map(|_| e)) {
+                    let (before, sampler) = (Counters::take(), Sampler::start(state_dir, &tlog, Duration::from_secs(2)));
+                    let rec_before = telemetry::recorder(state_dir);
+                    let result = session::stack_one(root, &out, &src, &cfg.options(), &cals.as_ref().unwrap().1, cfg.float).and_then(|e| session::record(&out, &e).map(|_| e));
+                    let (samples, after) = (sampler.stop(), Counters::take());
+                    let mut job = before.delta(&after);
+                    job["source"] = json!(rel);
+                    job["ok"] = json!(result.is_ok());
+                    job["error"] = json!(result.as_ref().err());
+                    job["policy"] = json!(cfg.policy);
+                    job["threads_asked"] = json!(cfg.threads);
+                    job["multipoint"] = json!(cfg.multipoint);
+                    job["why_allowed"] = json!(why);
+                    job["recorder_before"] = rec_before;
+                    job["recorder_after"] = telemetry::recorder(state_dir);
+                    job["during"] = telemetry::summarize(&samples);
+                    job["environment"] = telemetry::environment();
+                    if let Ok(e) = &result {
+                        job["frames"] = json!(e.frames);
+                        job["kept"] = json!(e.kept);
+                        job["phases"] = json!(e.phases);
+                        job["signal"] = json!(e.signal);
+                    }
+                    tlog.event("job", job);
+                    match result {
                         Ok(e) => {
                             log(&format!("{rel}: {} of {} frames in {:.1} s", e.kept, e.frames, t.elapsed().as_secs_f64()));
                             status.done += 1;
@@ -227,6 +260,16 @@ pub fn watch(state_dir: &Path, fallback_root: Option<&Path>, once: bool, log: &d
         }
         status.updated = now_unix();
         write_status(state_dir, &status);
+        // every change of what the stacker is doing (and why) is a telemetry event, with what the recorder was doing at that moment
+        let key = format!("{}|{}", status.state, status.reason);
+        if key != last_key {
+            last_key = key;
+            last_idle_beat = Instant::now();
+            tlog.event("state", json!({ "state": status.state, "reason": status.reason, "pending": status.pending, "policy": cfg.policy, "recorder": telemetry::recorder(state_dir) }));
+        } else if status.state != "working" && last_idle_beat.elapsed() >= Duration::from_secs(60) {
+            last_idle_beat = Instant::now();
+            tlog.event("idle", telemetry::sample(state_dir)); // a slow heartbeat: temperature, load and the recorder's state between jobs
+        }
         std::thread::sleep(sleep);
     }
 }

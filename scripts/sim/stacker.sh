@@ -30,4 +30,8 @@ ok "status says idle with nothing left" "$([ "$(js $T/cfg/stack-status.json "d['
 M1=$(stat -f %m $T/data/stacks/manifest.json 2>/dev/null || stat -c %Y $T/data/stacks/manifest.json); sleep 1.2
 "$S" watch --once --state-dir "$T/cfg" >"$T/w3" 2>&1
 ok "a second run does no work" "$([ "$M1" = "$(stat -f %m $T/data/stacks/manifest.json 2>/dev/null || stat -c %Y $T/data/stacks/manifest.json)" ] && echo 1)"
+TL=$(cat $T/cfg/logs/*/stack.jsonl 2>/dev/null)
+ok "telemetry: a start event with the environment" "$(echo "$TL" | grep -q '"kind":"start"' && echo "$TL" | grep -q '"cpus_allowed"' && echo 1)"
+ok "telemetry: the pause is logged with the recorder's state" "$(echo "$TL" | grep '"kind":"state"' | grep -q '"state":"paused"' && echo 1)"
+ok "telemetry: a job event per recording with wall time, CPU, phases" "$([ "$(echo "$TL" | grep -c '"kind":"job"')" -ge 3 ] && echo "$TL" | grep '"kind":"job"' | head -1 | grep -q '"cpu_cores_used"' && echo "$TL" | grep '"kind":"job"' | head -1 | grep -q '"phases"' && echo 1)"
 echo "-- $(basename "$0"): $([ $FAIL = 0 ] && echo passed || echo FAILED)"; exit $FAIL
