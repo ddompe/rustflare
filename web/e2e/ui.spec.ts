@@ -96,3 +96,13 @@ test('Prominence view toggles from the live view tools', async ({ page }) => {
   await btn.click()
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).coronagraph.enabled).toBe(false)
 })
+
+test('frame size (ROI) changes the picture size and restores', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Camera/ }).click()
+  await page.getByText('Frame size').first().click()
+  await page.getByRole('radio', { name: '50 %' }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).camera.width, { timeout: 10_000 }).toBeLessThan(1280)
+  await page.getByRole('radio', { name: 'Full' }).click()
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).camera.width, { timeout: 10_000 }).toBe(1280)
+})

@@ -171,6 +171,16 @@ pub struct SessionLogStatus {
 }
 
 #[derive(Clone, Serialize)]
+pub struct RoiStatus {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub sensor_width: u32,
+    pub sensor_height: u32,
+}
+
+#[derive(Clone, Serialize)]
 pub struct DarksStatus {
     pub available: bool,
     pub applied: bool,
@@ -191,6 +201,8 @@ pub struct CoronagraphStatus {
 pub struct Status {
     pub coronagraph: CoronagraphStatus,
     pub darks: DarksStatus,
+    /// Region of interest of the open camera (None: no camera or not supported).
+    pub roi: Option<RoiStatus>,
     pub session_log: SessionLogStatus,
     pub guide_params: GuideParamsStatus,
     pub flats: FlatsStatus,
@@ -216,6 +228,7 @@ impl Default for Status {
     fn default() -> Self {
         Status {
             session_log: SessionLogStatus { enabled: false, lines: 0, frames: 0, bytes: 0, file: None },
+            roi: None,
             darks: DarksStatus { available: false, applied: false, name: None, exposure_us: None, gain: None, matches_camera: false },
             coronagraph: CoronagraphStatus { enabled: false, scale: 1.03 },
             guide_params: GuideParamsStatus { window_s: 10.0, deadband_px: 3.0, gain: 0.7, speed: 0.2, fast_speed: 0.8, fast_above_px: 20.0 },

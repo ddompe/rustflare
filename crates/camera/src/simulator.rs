@@ -32,7 +32,7 @@ impl CameraDriver for SimulatorDriver {
         if id != "sim0" {
             return Err(Error::NotFound(format!("simulator camera {id}")));
         }
-        Ok(Box::new(SimCamera { sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, zoom: 1.0, rng: 0x9E3779B97F4A7C15 }))
+        Ok(Box::new(SimCamera { sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, roi: None, zoom: 1.0, rng: 0x9E3779B97F4A7C15 }))
     }
 }
 
@@ -43,6 +43,7 @@ struct SimCamera {
     offset: f64,
     high_bit: bool,
     scene: u8,
+    roi: Option<rustflare_core::Roi>,
     /// Disc radius multiplier (1 = 300 px). Above ~1.6 the disc overflows the frame, like an H-alpha scope.
     zoom: f64,
     rng: u64,
@@ -139,7 +140,31 @@ impl Camera for SimCamera {
         if let Some(rest) = frame_time.checked_sub(start.elapsed()) {
             std::thread::sleep(rest);
         }
-        Ok(Frame::new(W, H, if self.high_bit { PixelFormat::Mono16 } else { PixelFormat::Mono8 }, data))
+        let full_frame = Frame::new(W, H, if self.high_bit { PixelFormat::Mono16 } else { PixelFormat::Mono8 }, data);
+        Ok(match self.roi {
+            None => full_frame,
+            Some(r) => {
+                let bpp = full_frame.format.bytes_per_pixel();
+                let mut d = Vec::with_capacity(r.width as usize * r.height as usize * bpp);
+                for y in r.y..r.y + r.height {
+                    let a = (y as usize * W as usize + r.x as usize) * bpp;
+                    d.extend_from_slice(&full_frame.data[a..a + r.width as usize * bpp]);
+                }
+                Frame::new(r.width, r.height, full_frame.format, d)
+            }
+        })
+    }
+
+    fn sensor_size(&self) -> Option<(u32, u32)> { Some((W, H)) }
+
+    fn roi(&self) -> Option<rustflare_core::Roi> { Some(self.roi.unwrap_or(rustflare_core::Roi { x: 0, y: 0, width: W, height: H })) }
+
+    fn set_roi(&mut self, roi: rustflare_core::Roi) -> Result<()> {
+        if roi.width == 0 || roi.height == 0 || roi.x + roi.width > W || roi.y + roi.height > H {
+            return Err(rustflare_core::Error::Invalid("region outside the sensor".into()));
+        }
+        self.roi = if roi.width == W && roi.height == H { None } else { Some(roi) };
+        Ok(())
     }
 
     fn temperature_c(&mut self) -> Option<f64> { Some(24.5) }

@@ -6,6 +6,7 @@ import { Histogram } from './Histogram'
 import { DeviceCard } from './DeviceCard'
 import { Flats } from './Flats'
 import { Darks } from './Darks'
+import { RoiControl } from './RoiControl'
 import { CameraCatalog, useDatasheet } from '../datasheet'
 
 const fmt = (c: Control, v: number) => {
@@ -189,6 +190,9 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
           {rest.map((c) => <Slider key={c.id} c={c} />)}
         </Disclosure>
       )}
+      <Disclosure title="Frame size" summary={status?.roi ? `${status.roi.width}×${status.roi.height}` : ''}>
+        <RoiControl status={status} />
+      </Disclosure>
       <Disclosure title="Flats" summary={status?.flats?.applied ? 'applied' : 'not applied'}>
         <Flats status={status} />
       </Disclosure>

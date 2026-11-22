@@ -79,6 +79,8 @@ pub enum Command {
     MountGotoSun { allow_unsynced_clock: bool },
     /// Observer site (decimal degrees, east-positive longitude).
     SetSite { latitude: f64, longitude: f64 },
+    /// Centred region of interest covering `fraction` of the sensor in each direction (1.0 = full frame).
+    SetRoi { fraction: f64 },
     /// Opt-in session log (JSON lines plus small frames) for regression fixtures.
     SetSessionLog { enabled: bool, frame_every_s: Option<f64> },
     /// Disc frame plus a `factor` times longer exposure for prominences, and their composite.
@@ -792,6 +794,25 @@ impl Engine {
                 }
                 Ok(json!({}))
             }
+            Command::SetRoi { fraction } => {
+                self.require_idle()?;
+                self.require_not_flats()?;
+                if !(0.1..=1.0).contains(&fraction) {
+                    return Err("region must be 10% to 100% of the sensor".into());
+                }
+                let cam = self.camera.as_mut().ok_or("no camera open")?;
+                let sensor = cam.sensor_size().ok_or("this camera cannot report its sensor size, so a region of interest is not available")?;
+                let roi = rustflare_core::centred_roi(sensor, fraction);
+                cam.set_roi(roi).map_err(s)?;
+                // The frame geometry changed: positions, flats and darks no longer line up, so tracking starts over.
+                self.stop_guiding_quietly();
+                self.tracker = None;
+                self.status.tracking = None;
+                self.status.sun = None;
+                self.last_frame = None;
+                self.refresh_roi();
+                Ok(json!({ "width": roi.width, "height": roi.height, "x": roi.x, "y": roi.y }))
+            }
             Command::SetSite { latitude, longitude } => {
                 if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
                     return Err("latitude must be -90..90 and longitude -180..180 (east positive)".into());
@@ -1132,6 +1153,14 @@ impl Engine {
         }
         (budget / frame_bytes.max(1)).clamp(4, 200_000) as usize
     }
+    /// Re-reads the region of interest from the camera into the status.
+    fn refresh_roi(&mut self) {
+        self.status.roi = self.camera.as_ref().and_then(|c| {
+            let (r, (sw, sh)) = (c.roi()?, c.sensor_size()?);
+            Some(RoiStatus { x: r.x, y: r.y, width: r.width, height: r.height, sensor_width: sw, sensor_height: sh })
+        });
+    }
+
     fn require_not_flats(&self) -> Result<(), String> {
         if matches!(self.job, Job::Flats(_)) { Err("not while capturing flats".into()) } else { Ok(()) }
     }
@@ -1190,6 +1219,7 @@ impl Engine {
         self.camera_pixel_um = cam.pixel_size_um();
         self.status.camera = Some(CameraStatus { driver: info.driver, id: info.id, name: info.name, controls, ..Default::default() });
         self.camera = Some(cam);
+        self.refresh_roi();
         Ok(())
     }
 
@@ -1290,6 +1320,7 @@ impl Engine {
 
     fn close_camera(&mut self) {
         self.camera = None;
+        self.status.roi = None;
         self.camera_pixel_um = None;
         self.status.camera = None;
         self.last_frame = None;

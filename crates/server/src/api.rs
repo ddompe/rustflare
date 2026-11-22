@@ -68,6 +68,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/flats/applied", put(flats_applied))
         .route("/api/guiding/params", put(guide_params))
         .route("/api/coronagraph", put(coronagraph))
+        .route("/api/camera/roi", put(camera_roi))
         .route("/api/session-log", put(session_log))
         .route("/api/capture/darks", post(capture_darks))
         .route("/api/darks/applied", put(darks_applied))
@@ -384,6 +385,12 @@ async fn darks_applied(s: State<AppState>, Json(b): Json<FlatApplied>) -> Res {
 struct SessionLogBody { enabled: bool, frame_every_s: Option<f64> }
 async fn session_log(s: State<AppState>, Json(b): Json<SessionLogBody>) -> Res {
     run(s, Command::SetSessionLog { enabled: b.enabled, frame_every_s: b.frame_every_s }).await
+}
+
+#[derive(Deserialize)]
+struct RoiBody { fraction: f64 }
+async fn camera_roi(s: State<AppState>, Json(b): Json<RoiBody>) -> Res {
+    run(s, Command::SetRoi { fraction: b.fraction }).await
 }
 
 #[derive(Deserialize)]

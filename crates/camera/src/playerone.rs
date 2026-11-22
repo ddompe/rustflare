@@ -136,6 +136,32 @@ impl Camera for PoaCam {
 
     fn temperature_c(&mut self) -> Option<f64> { self.cam.temperature().ok() }
 
+    fn sensor_size(&self) -> Option<(u32, u32)> {
+        let p = self.cam.properties();
+        Some((p.max_width, p.max_height))
+    }
+
+    fn roi(&self) -> Option<rustflare_core::Roi> {
+        let (w, h) = self.cam.image_size();
+        let (x, y) = self.cam.image_start_pos().ok()?;
+        Some(rustflare_core::Roi { x, y, width: w, height: h })
+    }
+
+    fn set_roi(&mut self, roi: rustflare_core::Roi) -> Result<()> {
+        let p = self.cam.properties();
+        let (mw, mh) = (p.max_width, p.max_height);
+        // the SDK wants width a multiple of 4, height of 2, and the window inside the sensor
+        let (w, h) = (roi.width / 4 * 4, roi.height / 2 * 2);
+        if w == 0 || h == 0 || roi.x + w > mw || roi.y + h > mh {
+            return Err(Error::Invalid("region outside the sensor".into()));
+        }
+        self.stop_stream();
+        // growing: the start position first would be out of range for the old size, so go through the origin
+        self.cam.set_image_start_pos(0, 0).map_err(err)?;
+        self.cam.set_image_size(w, h).map_err(err)?;
+        self.cam.set_image_start_pos(roi.x / 2 * 2, roi.y / 2 * 2).map_err(err)
+    }
+
     fn pixel_size_um(&self) -> Option<f64> {
         let p = self.cam.properties().pixel_size;
         (p > 0.0).then_some(p)

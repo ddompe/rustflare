@@ -18,6 +18,7 @@ export interface Status {
   guide_params?: { window_s: number; deadband_px: number; gain: number; speed: number; fast_speed: number; fast_above_px: number }
   coronagraph?: { enabled: boolean; scale: number }
   session_log?: { enabled: boolean; lines: number; frames: number; bytes: number; file: string | null }
+  roi?: { x: number; y: number; width: number; height: number; sensor_width: number; sensor_height: number } | null
   darks?: { available: boolean; applied: boolean; name: string | null; exposure_us: number | null; gain: number | null; matches_camera: boolean }
   flats?: { applied: boolean; available: boolean; name: string | null }
   startup: Startup

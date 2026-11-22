@@ -29,6 +29,24 @@ pub struct ControlDesc {
     pub log: bool,
 }
 
+/// Region of interest in sensor pixels (top-left origin).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct Roi {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// A centred region covering `fraction` (0..=1) of the sensor in each direction, rounded down to multiples of 8
+/// (width) and 4 (height) with an even offset, which every camera we know accepts.
+pub fn centred_roi(sensor: (u32, u32), fraction: f64) -> Roi {
+    let f = fraction.clamp(0.05, 1.0);
+    let w = (((sensor.0 as f64 * f) as u32) / 8 * 8).clamp(8, sensor.0 / 8 * 8);
+    let h = (((sensor.1 as f64 * f) as u32) / 4 * 4).clamp(4, sensor.1 / 4 * 4);
+    Roi { x: (sensor.0 - w) / 2 / 2 * 2, y: (sensor.1 - h) / 2 / 2 * 2, width: w, height: h }
+}
+
 /// An opened camera. Drivers are blocking; the server calls them from a dedicated thread.
 pub trait Camera: Send {
     fn info(&self) -> CameraInfo;
@@ -39,10 +57,33 @@ pub trait Camera: Send {
     fn temperature_c(&mut self) -> Option<f64> { None }
     /// Physical pixel size in micrometres, if the driver knows it (used to compute the image scale).
     fn pixel_size_um(&self) -> Option<f64> { None }
+    /// Full sensor size, if the driver can report it (needed for ROI).
+    fn sensor_size(&self) -> Option<(u32, u32)> { None }
+    /// The current region of interest (the whole sensor when none is set).
+    fn roi(&self) -> Option<Roi> { None }
+    /// Reads out only `roi`: smaller frames, higher frame rate. Drivers that cannot do it return `Unsupported`.
+    fn set_roi(&mut self, _roi: Roi) -> Result<()> {
+        Err(crate::Error::Unsupported("region of interest on this camera".into()))
+    }
 }
 
 pub trait CameraDriver: Send + Sync {
     fn name(&self) -> &'static str;
     fn enumerate(&self) -> Result<Vec<CameraInfo>>;
     fn open(&self, id: &str) -> Result<Box<dyn Camera>>;
+}
+
+#[cfg(test)]
+mod roi_tests {
+    use super::*;
+
+    #[test]
+    fn centred_regions_are_aligned_and_inside() {
+        let r = centred_roi((1944, 1472), 0.5);
+        assert_eq!((r.width, r.height), (968, 736));
+        assert!(r.x % 2 == 0 && r.y % 2 == 0 && r.x + r.width <= 1944 && r.y + r.height <= 1472);
+        assert_eq!(centred_roi((1944, 1472), 1.0), Roi { x: 0, y: 0, width: 1944, height: 1472 });
+        let q = centred_roi((1944, 1472), 0.25);
+        assert_eq!((q.width % 8, q.height % 4), (0, 0));
+    }
 }
