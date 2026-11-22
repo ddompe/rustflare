@@ -341,6 +341,7 @@ button, .live, .live *, .pad, .tabs { -webkit-user-select: none; user-select: no
 .tag { padding: .25rem .7rem; border-radius: 999px; border: 1.5px solid var(--line); font-size: .85rem; font-weight: 700; color: var(--muted); }
 .tag.ok { border-color: var(--ok); color: var(--ok); } .tag.warn { border-color: var(--warn); color: var(--warn); } .tag.info { border-color: #3a8794; color: var(--info); }
 .home { margin: 0 0 1rem; }
+.home .goto-target { width: 100%; margin-bottom: .5rem; }
 .confirm { background: var(--surface); border: 1.5px solid var(--bad); border-radius: var(--radius); padding: .75rem; }
 .confirm p { margin: 0 0 .75rem; font-weight: 600; }
 .pad-btn:disabled { opacity: .35; }

@@ -67,6 +67,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | | body |
 |---|---|
 | `PUT /api/site` | `{"latitude","longitude"}` degrees, east-positive longitude; saved in the settings file |
+| `POST /api/mount/goto` | `{"target":"sun"|"moon"|"mars"|"jupiter"|"saturn","confirm":true,"allow_unsynced_clock"?,"allow_below_horizon"?}`: like goto-sun for any target; tracks at the solar, lunar or sidereal rate on arrival. Planets and the Moon below the horizon need `allow_below_horizon`; the Sun never goes. `status.sky_targets` lists each one's altitude, azimuth, RA and Dec |
 | `POST /api/mount/goto-sun` | `{"confirm":true,"allow_unsynced_clock"?}`: sends site and time to the mount, slews to the Sun, then switches solar tracking on; refused without a site, below the horizon, with a capture running, or (unless overridden) when the Pi's clock is not NTP-synchronised. `status.goto` shows progress |
 | `POST /api/mount/home` | `{"confirm":true}` |
 | `POST /api/mount/stop` | also cancels a GoTo |

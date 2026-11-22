@@ -46,6 +46,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/mount/stop", post(|s| run(s, Command::MountStop)))
         .route("/api/mount/home", post(|s, b| mount_motion(s, b, Command::MountHome)))
         .route("/api/mount/goto-sun", post(goto_sun))
+        .route("/api/mount/goto", post(goto_target))
         .route("/api/mount/flip", post(mount_flip))
         .route("/api/site", put(site_put))
         .route("/api/tracking/start", post(tracking_start))
@@ -713,20 +714,32 @@ mod ble_tests {
 }
 
 #[derive(Deserialize)]
-struct GotoSunBody {
+struct GotoBody {
+    /// "sun" (default) or moon, mars, jupiter, saturn.
+    target: Option<String>,
     #[serde(default)]
     confirm: bool,
     #[serde(default)]
     allow_unsynced_clock: bool,
+    /// Planets and the Moon only: the Sun is never approached below the horizon.
+    #[serde(default)]
+    allow_below_horizon: bool,
 }
 
-/// Go to the Sun MOVES the mount (and then switches solar tracking on): explicit confirmation required.
-async fn goto_sun(s: State<AppState>, body: Option<Json<GotoSunBody>>) -> Res {
-    let b = body.map(|b| b.0).unwrap_or(GotoSunBody { confirm: false, allow_unsynced_clock: false });
+/// Go to MOVES the mount (and then switches tracking on at the target's rate): explicit confirmation required.
+async fn goto_target(s: State<AppState>, body: Option<Json<GotoBody>>) -> Res {
+    let b = body.map(|b| b.0).unwrap_or(GotoBody { target: None, confirm: false, allow_unsynced_clock: false, allow_below_horizon: false });
     if !b.confirm {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "this moves the mount: send {\"confirm\": true}" }))).into_response();
     }
-    run(s, Command::MountGotoSun { allow_unsynced_clock: b.allow_unsynced_clock }).await
+    run(s, Command::MountGoto { target: b.target.unwrap_or_else(|| "sun".into()), allow_unsynced_clock: b.allow_unsynced_clock, allow_below_horizon: b.allow_below_horizon }).await
+}
+
+/// The original endpoint, kept: Go to the Sun.
+async fn goto_sun(s: State<AppState>, body: Option<Json<GotoBody>>) -> Res {
+    let mut b = body.map(|b| b.0).unwrap_or(GotoBody { target: None, confirm: false, allow_unsynced_clock: false, allow_below_horizon: false });
+    b.target = Some("sun".into());
+    goto_target(s, Some(Json(b))).await
 }
 
 #[derive(Deserialize)]

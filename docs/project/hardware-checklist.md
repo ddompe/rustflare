@@ -60,6 +60,15 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 
 | new | Focus assist | In bright sun with tracking on: switch Focus assist on, turn the focuser through focus and back: the score should rise to a clear peak and the best line should match what you judge as sharp; check that it is not fooled by seeing or by drift of the Sun, and whether 1 s bursts are the right length |
 
+## ZWO camera night (mono ASI174MM Mini and a colour ASI)
+
+| Issue | Check |
+|---|---|
+| #30 | Mono ASI: open, exposure and gain, fps at full frame; USB 3 cable and blue port; ROI 50 % and 25 % (#76) |
+| #56 | Colour ASI: header says colour with the pattern; the live view colours are plausible; a SER opens in Siril/AutoStakkert with the right Bayer pattern |
+| new | Aim > Go to: pick Moon, Jupiter, Saturn, Mars in turn (the selector shows altitude; one below the horizon should warn and offer *Go anyway*). Check the mount arrives within a degree or two, tracking starts (lunar rate for the Moon), and how far the target is from the frame centre (note it: the planets use approximate elements) |
+| new | Record a short planetary video (SER, short exposure, high gain) and check it plays; try *Home when finished* at the end of a counted recording |
+
 ## M2: UI
 
 | Issue | Check |

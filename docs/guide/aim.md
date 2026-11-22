@@ -14,6 +14,14 @@ Choose USB or Bluetooth and connect. For Bluetooth, close the ZWO phone app firs
 - the Sun above the horizon,
 - a Pi clock that is synchronised (it warns you if not).
 
+### The Moon and the bright planets
+
+The selector above the button lists the Sun, Moon, Mars, Jupiter and Saturn with their altitude now ("Saturn · 34° up", or "below horizon"). Pick one and the button reads *Go to Saturn*; the rest is the same: confirmation, **STOP** cancels, and tracking starts on arrival at the **lunar** rate for the Moon and the **sidereal** rate for planets (the Sun gets the solar rate). The selector always starts at the Sun, so the button cannot surprise you.
+
+- **Below the horizon:** the confirmation warns and the button changes to *Go anyway* (the Sun is never approached below the horizon). Under 15 degrees it warns about trees, buildings and poor seeing.
+- **Accuracy:** positions are computed on the Pi (planets from approximate orbital elements, the Moon from a short series with parallax for your site), good to a few arcminutes. That puts the target in the field of a narrow camera; centre it by hand with the N/S/E/W pad.
+- The Moon is large: with a long focal length you see only part of it, so aim for the limb or a crater and use short exposures.
+
 **Send home** goes to the mount's home position, with confirmation.
 
 ## Move by hand

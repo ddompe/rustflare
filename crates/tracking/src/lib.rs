@@ -4,6 +4,7 @@
 //! from Vidoxide (MIT). Everything here is pure logic with injected time, so it
 //! is unit-testable without hardware (ADR 0008).
 
+pub mod bodies;
 pub mod flip;
 pub mod focus;
 pub mod guiding;

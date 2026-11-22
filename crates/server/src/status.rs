@@ -146,6 +146,17 @@ pub struct SkySun {
     pub minutes_to_meridian: f64,
 }
 
+/// The Moon and bright planets for the saved site (the targets of Go to besides the Sun).
+#[derive(Clone, Serialize)]
+pub struct SkyTarget {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub altitude_deg: f64,
+    pub azimuth_deg: f64,
+    pub ra_hours: f64,
+    pub dec_deg: f64,
+}
+
 /// The Pi's clock decides the Sun's computed position and what the mount is told the time is.
 #[derive(Clone, Serialize, Default)]
 pub struct ClockStatus {
@@ -291,6 +302,7 @@ pub struct Status {
     pub flats: FlatsStatus,
     pub site: Option<SiteStatus>,
     pub sky_sun: Option<SkySun>,
+    pub sky_targets: Vec<SkyTarget>,
     pub clock: ClockStatus,
     pub goto: Option<GotoStatus>,
     pub flip: Option<FlipStatus>,
@@ -325,6 +337,7 @@ impl Default for Status {
             flats: FlatsStatus { available: false, applied: false, name: None },
             site: None,
             sky_sun: None,
+            sky_targets: Vec::new(),
             clock: ClockStatus::default(),
             goto: None,
             flip: None,

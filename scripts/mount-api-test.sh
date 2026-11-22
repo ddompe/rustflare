@@ -40,6 +40,7 @@ LON=$(python3 -c "import datetime as d; n=d.datetime.utcnow(); h=n.hour+n.minute
 BODY="{\"latitude\":0,\"longitude\":$LON}"
 expect "site is saved" "$(curl -s -X PUT -H 'content-type: application/json' --data "$BODY" $A/site)" "{}"
 expect "Go to Sun needs explicit confirmation" "$(call POST /mount/goto-sun)" "confirm"
+expect "Go to rejects an unknown target" "$(call POST /mount/goto '{"target":"pluto","confirm":true}')" "unknown target"
 expect "Go to Sun is accepted and reports the Sun's position" "$(call POST /mount/goto-sun '{"confirm":true}')" "altitude_deg"
 sleep 1.5
 expect "status shows the GoTo while slewing" "$(curl -s $A/status | python3 -c 'import sys,json; print(json.load(sys.stdin)["goto"])')" "sun"

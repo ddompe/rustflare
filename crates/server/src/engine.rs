@@ -93,6 +93,9 @@ struct GotoState {
     /// The mount has been seen slewing.
     moved: bool,
     last_check: Instant,
+    /// What it is going to, and the tracking rate to start on arrival (solar, lunar or sidereal).
+    target: &'static str,
+    rate: TrackingRate,
 }
 
 /// Optical setup, persisted in the settings file; gives the expected solar radius in pixels.
@@ -124,8 +127,9 @@ pub enum Command {
     MountStop,
     /// Moves the mount to its home (zero) position; the API asks for explicit confirmation.
     MountHome,
-    /// Sync site and time, slew to the Sun's current position, then switch solar tracking on. Moves the mount.
-    MountGotoSun { allow_unsynced_clock: bool },
+    /// Sync site and time, slew to the target's current position, then switch tracking on at the target's rate. Moves the mount.
+    /// `target`: "sun" (the default) or a body id (moon, mars, jupiter, saturn). Below the horizon only with `allow_below_horizon`.
+    MountGoto { target: String, allow_unsynced_clock: bool, allow_below_horizon: bool },
     /// Observer site (decimal degrees, east-positive longitude).
     SetSite { latitude: f64, longitude: f64 },
     /// Meridian flip assist. `record_only`: just remember the pointing and Sun position. `restore`: the flip was done by
@@ -756,10 +760,10 @@ impl Engine {
 
     /// Follows a GoTo: once the mount has slewed and stopped, switch solar tracking on (the point of "Go to Sun").
     fn step_goto(&mut self) {
-        let (started, moved) = match self.goto.as_mut() {
+        let (started, moved, rate, target) = match self.goto.as_mut() {
             Some(g) if g.last_check.elapsed() >= Duration::from_secs(1) => {
                 g.last_check = Instant::now();
-                (g.started, g.moved)
+                (g.started, g.moved, g.rate, g.target)
             }
             _ => return,
         };
@@ -779,13 +783,13 @@ impl Engine {
         }
         if st.slewing == Some(false) && (moved || started.elapsed() > Duration::from_secs(8)) {
             self.goto = None;
-            let r = m.set_tracking_rate(TrackingRate::Solar).and_then(|_| m.set_tracking(true));
+            let r = m.set_tracking_rate(rate).and_then(|_| m.set_tracking(true));
             match r {
                 Ok(()) => {
                     self.mount_tracking = true;
-                    log::info!("GoTo Sun finished; solar tracking is on");
+                    log::info!("GoTo {target} finished; tracking is on");
                 }
-                Err(e) => self.status.error = Some(format!("the mount arrived, but solar tracking could not be switched on: {e}")),
+                Err(e) => self.status.error = Some(format!("the mount arrived, but tracking could not be switched on: {e}")),
             }
             self.publish();
         }
@@ -1136,7 +1140,14 @@ impl Engine {
             let (ha, mins) = rustflare_tracking::flip::meridian_timing(ra, rustflare_tracking::solar::local_sidereal_hours(now, s.longitude));
             SkySun { altitude_deg: alt, azimuth_deg: az, ra_hours: ra, dec_deg: dec, hour_angle_h: ha, minutes_to_meridian: mins }
         });
-        self.status.goto = self.goto.as_ref().map(|g| GotoStatus { target: "sun", phase: if g.moved { "slewing" } else { "starting" } });
+        self.status.sky_targets = self.site.map(|st| {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+            rustflare_tracking::bodies::Body::ALL.iter().map(|&b| {
+                let (ra, dec, alt, az) = rustflare_tracking::bodies::altitude_azimuth(b, now, st.latitude, st.longitude);
+                SkyTarget { id: b.id(), name: b.name(), altitude_deg: alt, azimuth_deg: az, ra_hours: ra, dec_deg: dec }
+            }).collect()
+        }).unwrap_or_default();
+        self.status.goto = self.goto.as_ref().map(|g| GotoStatus { target: g.target, phase: if g.moved { "slewing" } else { "starting" } });
         self.status.startup = StartupStatus {
             enabled: self.startup.enabled,
             camera: self.startup.camera.as_ref().map(|(d, id)| format!("{d} {id}")),
@@ -1447,22 +1458,30 @@ impl Engine {
                 crate::config::set(self.storage.config_file(), "site", json!({ "latitude": latitude, "longitude": longitude }))?;
                 Ok(json!({}))
             }
-            Command::MountGotoSun { allow_unsynced_clock } => {
+            Command::MountGoto { target, allow_unsynced_clock, allow_below_horizon } => {
                 self.require_idle()?;
                 self.require_not_parked()?;
                 if self.mount.is_none() {
                     return Err("no mount connected".into());
                 }
+                let body = if target == "sun" { None } else { Some(rustflare_tracking::bodies::Body::from_id(&target).ok_or(format!("unknown target {target}"))?) };
+                let (name, id, rate) = match body {
+                    None => ("the Sun", "sun", TrackingRate::Solar),
+                    Some(b) => (b.name(), b.id(), if b == rustflare_tracking::bodies::Body::Moon { TrackingRate::Lunar } else { TrackingRate::Sidereal }),
+                };
                 let site = self.site.ok_or("set your site first: More > Site (latitude and longitude)")?;
                 self.refresh_ntp(true);
                 if self.ntp_sync == Some(false) && !allow_unsynced_clock {
-                    return Err("the Pi's clock is not synchronised to a time server, so the Sun's position and the time given to the mount may be off: check the clock, or go anyway".into());
+                    return Err(format!("the Pi's clock is not synchronised to a time server, so the position of {name} and the time given to the mount may be off: check the clock, or go anyway"));
                 }
                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
-                let (ra, dec) = rustflare_tracking::solar::sun_equatorial(now);
+                let (ra, dec) = match body {
+                    None => rustflare_tracking::solar::sun_equatorial(now),
+                    Some(b) => rustflare_tracking::bodies::equatorial(b, now, site.latitude, site.longitude),
+                };
                 let (alt, _az) = rustflare_tracking::solar::alt_az(ra, dec, now, site.latitude, site.longitude);
-                if alt < -1.0 {
-                    return Err(format!("the Sun is below the horizon (altitude {alt:.0} degrees)"));
+                if alt < -1.0 && (body.is_none() || !allow_below_horizon) {
+                    return Err(format!("{name} is below the horizon (altitude {alt:.0} degrees)"));
                 }
                 self.stop_guiding_quietly();
                 let st = SiteTime { latitude_deg: site.latitude, longitude_east_deg: site.longitude, unix_secs: now as i64, utc_offset_minutes: chrono::Local::now().offset().local_minus_utc() / 60 };
@@ -1470,8 +1489,9 @@ impl Engine {
                 m.set_site_time(&st).map_err(s)?;
                 m.goto_equatorial(ra, dec).map_err(s)?;
                 self.mount_tracking = false; // the mount stops for the slew; tracking is switched on at arrival
-                self.goto = Some(GotoState { started: Instant::now(), moved: false, last_check: Instant::now() });
-                Ok(json!({ "ra_hours": ra, "dec_deg": dec, "altitude_deg": alt }))
+                self.goto = Some(GotoState { started: Instant::now(), moved: false, last_check: Instant::now(), target: id, rate });
+                self.event("goto", json!({ "target": id, "ra_hours": ra, "dec_deg": dec, "altitude_deg": alt }));
+                Ok(json!({ "target": id, "ra_hours": ra, "dec_deg": dec, "altitude_deg": alt }))
             }
             Command::StartTracking { mode, x, y, radius } => {
                 self.require_not_flats()?;

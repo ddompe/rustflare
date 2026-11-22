@@ -53,6 +53,46 @@ test('Go to Sun: needs a site, asks for confirmation, ends with solar tracking o
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).mount.tracking, { timeout: 15_000 }).toBe(true)
 })
 
+test('Go to the Moon and planets: one target selector, a warning below the horizon, tracking at the right rate', async ({ page }) => {
+  await put(page, '/site', { latitude: 40, longitude: -105 })
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Aim/ }).click()
+  const status = async () => (await page.request.get('/api/status')).json()
+  await expect.poll(async () => (await status()).sky_targets?.length ?? 0).toBe(4)
+  const targets: { id: string; name: string; altitude_deg: number }[] = (await status()).sky_targets
+  expect(targets.map((t) => t.id)).toEqual(['moon', 'mars', 'jupiter', 'saturn'])
+  const select = page.getByLabel('Go to target')
+  await expect(select.locator('option')).toHaveCount(5)
+  for (const t of targets) {
+    await select.selectOption(t.id)
+    await expect(page.getByRole('button', { name: `Go to ${t.name}` })).toBeEnabled()
+    await page.getByRole('button', { name: `Go to ${t.name}` }).click()
+    const dialog = page.getByRole('alertdialog', { name: `Go to ${t.name}` })
+    await expect(dialog).toBeVisible()
+    // below the horizon: a clear warning, and the button says what it is
+    if (t.altitude_deg < -1) {
+      await expect(dialog.getByText(/below the horizon/)).toBeVisible()
+      await expect(dialog.getByRole('button', { name: 'Go anyway' })).toBeVisible()
+    } else {
+      await expect(dialog.getByRole('button', { name: `Go to ${t.name}` })).toBeVisible()
+    }
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+  }
+  // the API: unknown targets are refused, below the horizon needs the explicit flag, and the mount tracks at the target's rate
+  expect((await post(page, '/mount/goto', { target: 'pluto', confirm: true })).status()).toBe(400)
+  expect((await post(page, '/mount/goto', { target: 'moon' })).status()).toBe(400) // no confirmation
+  const down = targets.find((t) => t.altitude_deg < -1)
+  if (down) {
+    const r = await post(page, '/mount/goto', { target: down.id, confirm: true })
+    expect(await r.text()).toContain('below the horizon')
+  }
+  const up = targets.find((t) => t.altitude_deg > 5) ?? down!
+  const r = await post(page, '/mount/goto', { target: up.id, confirm: true, allow_below_horizon: true })
+  expect(r.ok()).toBe(true)
+  await expect.poll(async () => (await status()).mount.tracking, { timeout: 20_000 }).toBe(true)
+  await select.selectOption('sun')
+})
+
 test('record a short sequence, check it, delete it', async ({ page }) => {
   await page.goto('/')
   // the first frame can still be on its way after the camera was (re)opened
