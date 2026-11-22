@@ -422,3 +422,4 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .app[data-full] .top, .app[data-full] .tabs, .app[data-full] .panel, .app[data-full] .banner, .app[data-full] .strip { display: none; }
 .app[data-full] .view { display: grid; align-content: center; justify-items: center; padding: 0; }
 .app[data-full] .live { --vmax: 100dvh; border: 0; border-radius: 0; }
+.lane { border: 1px solid var(--line-soft); border-radius: 8px; padding: .5rem .6rem; margin: .6rem 0; }

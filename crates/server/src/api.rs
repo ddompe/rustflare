@@ -56,6 +56,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/capture/single", post(capture_single))
         .route("/api/capture/sequence", post(capture_sequence))
         .route("/api/capture/bursts", post(capture_bursts))
+        .route("/api/capture/lanes", post(capture_lanes))
         .route("/api/capture/buffer", put(capture_buffer))
         .route("/api/capture/flats", post(capture_flats))
         .route("/api/capture/prominence", post(capture_prominence))
@@ -206,6 +207,13 @@ async fn capture_single(s: State<AppState>, Json(b): Json<Single>) -> Res {
 struct Sequence { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, format: Option<String>, on_full: Option<String> }
 async fn capture_sequence(s: State<AppState>, Json(b): Json<Sequence>) -> Res {
     run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: None, bursts: None, format: b.format, on_full: b.on_full }).await
+}
+
+#[derive(Deserialize)]
+struct LanesBody { name: Option<String>, lanes: Vec<crate::engine::LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> }
+/// HDR bracketing lanes: each lane has its own exposure and output directory.
+async fn capture_lanes(s: State<AppState>, Json(b): Json<LanesBody>) -> Res {
+    run(s, Command::CaptureLanes { name: b.name, lanes: b.lanes, cycles: b.cycles, format: b.format, on_full: b.on_full }).await
 }
 
 #[derive(Deserialize)]

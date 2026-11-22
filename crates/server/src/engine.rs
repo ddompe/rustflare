@@ -120,6 +120,8 @@ pub enum Command {
     CaptureSingle { name: Option<String>, format: Option<String> },
     /// One burst (`interval_s` = None) or a schedule of bursts, recorded through the RAM buffer.
     /// `frames` / `seconds`: when a burst ends. `interval_s`: start-to-start spacing. `bursts`: None = until stopped.
+    /// HDR bracketing: cycle through lanes (own exposure, own directory); `cycles` None = until stopped.
+    CaptureLanes { name: Option<String>, lanes: Vec<LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String> },
     CaptureBursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String> },
     SetBuffer { mb: u64 },
     /// Reconnect the last camera and mount automatically at startup (and after a camera error).
@@ -163,7 +165,27 @@ enum CapPhase {
 
 /// A sequence (one burst) or a schedule of bursts. Frames go through `sink`: a RAM buffer drained to disk
 /// by a writer thread, so slow storage never throttles the camera (ADR 0012).
+/// One HDR bracket lane: an exposure setting captured into its own directory.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct LaneSpec {
+    pub name: String,
+    pub exposure_us: f64,
+    pub gain: Option<f64>,
+    pub frames: Option<u32>,
+    pub seconds: Option<f64>,
+}
+
+/// Lane cycling state of a capture job: lanes are visited in order, each burst goes to the next lane.
+struct Lanes {
+    specs: Vec<LaneSpec>,
+    dir: PathBuf,
+    original: (f64, Option<f64>),
+    /// Frames to discard after a setting change so the first kept frame has the new exposure.
+    skip: u32,
+}
+
 struct CaptureJob {
+    lanes: Option<Lanes>,
     name: String,
     kind: &'static str,
     format: Format,
@@ -1149,6 +1171,7 @@ impl Engine {
                 self.buffer_cap = cap;
                 let kind = if interval.is_some() { "burst" } else { "seq" };
                 self.job = Job::Capture(Box::new(CaptureJob {
+                    lanes: None,
                     name: name.unwrap_or_default(),
                     kind,
                     format,
@@ -1167,6 +1190,67 @@ impl Engine {
                 self.set_capture(if interval.is_some() { "bursts" } else { "sequence" }, "starting", frames);
                 self.status.capture.bursts_total = total_bursts;
                 Ok(json!({ "buffer_frames": cap, "fits_in_buffer": frames.map_or(true, |f| f as usize <= cap) }))
+            }
+            Command::CaptureLanes { name, lanes, cycles, format, on_full } => {
+                self.require_capture_ready()?;
+                if !(2..=6).contains(&lanes.len()) {
+                    return Err("give 2 to 6 lanes".into());
+                }
+                let mut seen = std::collections::HashSet::new();
+                for l in &lanes {
+                    if sanitize(&l.name).is_empty() || !seen.insert(sanitize(&l.name)) {
+                        return Err("every lane needs its own name".into());
+                    }
+                    if l.exposure_us <= 0.0 || (l.frames.is_none() && l.seconds.is_none()) || l.frames == Some(0) || l.seconds.is_some_and(|s| s <= 0.0) {
+                        return Err(format!("lane {}: give a positive exposure and a frame count and/or duration", l.name));
+                    }
+                }
+                if cycles == Some(0) {
+                    return Err("number of cycles must be positive".into());
+                }
+                let format = match format.as_deref() {
+                    None | Some("ser") => Format::Ser,
+                    Some("png") => Format::Png,
+                    Some("fits") => Format::Fits,
+                    Some(o) => return Err(format!("unknown format {o} (use ser, png or fits)")),
+                };
+                let drop_when_full = match on_full.as_deref() {
+                    None | Some("wait") => false,
+                    Some("drop") => true,
+                    Some(o) => return Err(format!("unknown buffer policy {o} (use wait or drop)")),
+                };
+                let cam = self.status.camera.as_ref().ok_or("no camera open")?;
+                if cam.width == 0 {
+                    return Err("no frame received yet".into());
+                }
+                let frame_bytes = cam.width as u64 * cam.height as u64 * (cam.bits as u64 / 8).max(1);
+                let cap = self.buffer_capacity(frame_bytes);
+                self.buffer_cap = cap;
+                let gain = cam.controls.iter().find(|c| c.id == "gain").map(|c| c.value);
+                let original = (self.exposure(), gain);
+                let dir = self.new_stem("lanes", name.as_deref());
+                let total = cycles.map(|c| c * lanes.len() as u32);
+                let n_lanes = lanes.len();
+                self.job = Job::Capture(Box::new(CaptureJob {
+                    lanes: Some(Lanes { specs: lanes, dir, original, skip: 0 }),
+                    name: name.unwrap_or_default(),
+                    kind: "lane",
+                    format,
+                    burst_frames: None,
+                    burst_seconds: None,
+                    interval: Some(Duration::ZERO),
+                    total_bursts: total,
+                    burst_no: 0,
+                    phase: CapPhase::Waiting { next_at: Instant::now() },
+                    max_file: self.storage.info().max_file_bytes,
+                    last_check: Instant::now(),
+                    sink: FrameSink::new(cap),
+                    drop_when_full,
+                }));
+                self.status.capture.dropped = 0;
+                self.set_capture("bursts", "starting", None);
+                self.status.capture.bursts_total = total;
+                Ok(json!({ "lanes": n_lanes, "buffer_frames": cap }))
             }
             Command::SetBuffer { mb } => {
                 if !(64..=8192).contains(&mb) {
@@ -1722,6 +1806,7 @@ impl Engine {
             Job::Prominence(p) => self.set_exposure(p.original_exposure), // never leave the long exposure on the camera
             Job::Darks(_) => {}
             Job::Capture(job) => {
+                self.restore_lanes(&job);
                 let CaptureJob { sink, phase, kind, name, burst_no, .. } = *job;
                 if let CapPhase::Capturing { stem, taken, started } = phase {
                     sink.end();
@@ -1819,7 +1904,24 @@ impl Engine {
                 return Job::Capture(job);
             }
             job.burst_no += 1;
-            let mut stem = self.new_stem(job.kind, Some(&job.name));
+            let mut lane_label = None;
+            let mut stem = if let Some(l) = job.lanes.as_mut() {
+                let n = l.specs.len() as u32;
+                let spec = l.specs[((job.burst_no - 1) % n) as usize].clone();
+                let cycle = (job.burst_no - 1) / n + 1;
+                job.burst_frames = spec.frames;
+                job.burst_seconds = spec.seconds;
+                l.skip = 2;
+                self.set_exposure(spec.exposure_us);
+                if let (Some(g), Some(cam)) = (spec.gain, self.camera.as_mut()) {
+                    let _ = cam.set_control("gain", g);
+                }
+                lane_label = Some(spec.name.clone());
+                let l = job.lanes.as_ref().unwrap();
+                l.dir.join(format!("lane-{}", sanitize(&spec.name))).join(format!("{}_c{cycle:03}", sanitize(&spec.name)))
+            } else {
+                self.new_stem(job.kind, Some(&job.name))
+            };
             if job.kind == "burst" {
                 stem = stem.with_file_name(format!("{}_b{:03}", stem.file_name().unwrap().to_string_lossy(), job.burst_no));
             }
@@ -1834,10 +1936,19 @@ impl Engine {
             };
             job.sink.begin(BurstSpec { stem: stem.clone(), format: job.format, instrument, max_file_bytes: job.max_file, fits_meta });
             self.status.capture.burst = Some(job.burst_no);
+            if let Some(n) = lane_label {
+                self.status.capture.phase = format!("lane {n}");
+            }
             self.status.capture.next_in_s = None;
             self.status.capture.done = 0;
             self.status.capture.file = Some(rel(&self.data_dir(), &stem));
             job.phase = CapPhase::Capturing { stem, started: now, taken: 0 };
+        }
+        if let Some(l) = job.lanes.as_mut() {
+            if l.skip > 0 {
+                l.skip -= 1; // frames already in flight carry the previous lane's exposure
+                return Job::Capture(job);
+            }
         }
         let CapPhase::Capturing { stem, started, taken } = &mut job.phase else { unreachable!() };
         if job.drop_when_full {
@@ -1882,17 +1993,28 @@ impl Engine {
             self.status.error = Some(format!("recording stopped: {why} ({taken} frames in this burst)"));
             return self.fail_capture_keep(job);
         }
-        let last = job.interval.is_none() || job.total_bursts.is_some_and(|t| job.burst_no >= t);
+        let last = (job.interval.is_none() && job.lanes.is_none()) || job.total_bursts.is_some_and(|t| job.burst_no >= t);
         if last {
+            self.restore_lanes(&job);
             let CaptureJob { sink, .. } = *job;
             sink.close();
             self.draining = Some(sink);
             self.finish_capture(None, "captured; writing buffered frames to disk");
             return Job::Idle;
         }
-        let next_at = (started + job.interval.unwrap()).max(Instant::now());
+        let next_at = if job.lanes.is_some() { Instant::now() } else { (started + job.interval.unwrap()).max(Instant::now()) };
         job.phase = CapPhase::Waiting { next_at };
         Job::Capture(job)
+    }
+
+    /// Puts the exposure and gain back to what they were before the lanes started.
+    fn restore_lanes(&mut self, job: &CaptureJob) {
+        if let Some(l) = &job.lanes {
+            self.set_exposure(l.original.0);
+            if let (Some(g), Some(cam)) = (l.original.1, self.camera.as_mut()) {
+                let _ = cam.set_control("gain", g);
+            }
+        }
     }
 
     /// Ends a capture job after an error, keeping whatever was already written.
@@ -1902,6 +2024,7 @@ impl Engine {
     }
 
     fn fail_capture_keep(&mut self, job: Box<CaptureJob>) -> Job {
+        self.restore_lanes(&job);
         let CaptureJob { sink, .. } = *job;
         sink.close();
         self.draining = Some(sink);

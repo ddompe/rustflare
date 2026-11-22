@@ -48,3 +48,13 @@ The sidecar JSON records the flat exposure and final mean level so lights and fl
 ## Sizes
 
 Roughly `width × height × bytes` per frame: 1280×960 at 16-bit is 2.4 MB, so 1000 frames ≈ 2.4 GB. The Storage panel shows recording time left.
+
+## HDR bracketing lanes
+
+For eclipses and the Moon: Record tab > HDR bracketing lanes (or `POST /api/capture/lanes`). Define 2 to 6 lanes, each with a name, an exposure (and optionally a gain) and a frame count or duration. The engine cycles through them in order, repeating for the number of cycles you give (or until stopped). Each lane records into its own folder, `<session>/lane-<name>/<name>_c001.ser` (one file per cycle) with a notes file, so every bracket can be stacked separately and merged into an HDR image afterwards. The first frames after each exposure change are discarded, and the exposure and gain you had are restored at the end. Presets for partial phase, diamond ring and totality are starting points; choose exposures at the eyepiece. Switching lanes costs a couple of frame times, so lanes are cycled rather than interleaved frame by frame.
+
+```
+curl -X POST localhost:8080/api/capture/lanes -H 'content-type: application/json' -d '{"name":"eclipse","cycles":10,"format":"ser","lanes":[{"name":"short","exposure_us":200,"frames":100},{"name":"long","exposure_us":20000,"frames":50}]}'
+```
+
+Hardware-unverified: exposure-switch latency on the Apollo-M MINI, behaviour at full rate on the stick (see the checklist).

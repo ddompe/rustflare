@@ -35,6 +35,8 @@ Everything below was built and tested on the simulators; each item needs the rea
 
 | new | Meridian flip assist | Near the meridian with the Sun tracked and calibrated: Record position, Flip and re-centre (watch the mount); check the image turns 180 degrees, the Sun returns to its recorded spot, and `:GAST#` pointing is read correctly. Also try the manual path: flip with the ZWO app then Restore |
 
+| new | HDR bracketing lanes | Record 3 lanes for a minute on the Sun: check one folder per lane, the exposure in each file's notes, that the first kept frame of each burst really has the new exposure (no leftover brightness), and that the exposure is restored |
+
 ## M2: UI
 
 | Issue | Check |
