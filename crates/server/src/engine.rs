@@ -325,6 +325,9 @@ pub struct Engine {
     sun_model: crate::sunmodel::SunModel,
     manual_slew_until: Instant,
     sun_held: bool,
+    /// When the tracker started failing (it is only called lost after a couple of seconds: shadows come and go).
+    fail_since: Option<Instant>,
+    fail_saved: bool,
     last_sun_event: Instant,
     /// Guiding that was running when the target was lost: target spot and calibration, resumed when the limb is found again.
     guide_hold: Option<(Vec2, Calibration)>,
@@ -433,6 +436,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         sun_model: Default::default(),
         manual_slew_until: Instant::now(),
         sun_held: false,
+        fail_since: None,
+        fail_saved: false,
         last_sun_event: Instant::now() - Duration::from_secs(60),
         save_lost: crate::config::read(storage.config_file()).get("debug").and_then(|d| d.get("lost_frames")).and_then(|v| v.as_bool()).unwrap_or(true),
         lost_saved: 0,
@@ -2022,6 +2027,8 @@ impl Engine {
         match t.update(frame) {
             Err(_) if settling && !self.lost => {}
             Ok(p) => {
+                self.fail_since = None;
+                self.fail_saved = false;
                 self.status.tracking = Some(TrackingStatus { mode: t.mode(), x: p.pos.x, y: p.pos.y, radius: p.radius, lost: false });
                 let was_lost = self.lost;
                 self.lost = false;
@@ -2038,6 +2045,14 @@ impl Engine {
                 self.step_guide(now, p.pos);
             }
             Err(e) => {
+                let since = *self.fail_since.get_or_insert(now);
+                if !self.fail_saved {
+                    self.fail_saved = true;
+                    self.save_lost_frame(frame, &e.to_string()); // keep the first bad frame even if it turns out to be a blink
+                }
+                if !self.lost && now.duration_since(since) < Duration::from_secs(2) {
+                    return;
+                }
                 let first = !self.lost;
                 self.lost = true;
                 if let Some(ts) = self.status.tracking.as_mut() {
@@ -2047,7 +2062,6 @@ impl Engine {
                     let held = match (&self.guide, self.calibration) { (GuideState::Guiding(g), Some(c)) => Some((g.target, c)), _ => None };
                     log::warn!("tracking lost: {e}");
                     self.event("tracking_lost", json!({ "why": e.to_string(), "was_guiding": held.is_some(), "seconds_since_exposure_change": self.last_exposure_change.elapsed().as_secs_f64() }));
-                    self.save_lost_frame(frame, &e.to_string());
                     self.status.error = Some(format!("tracking lost: {e}"));
                     self.stop_guiding_quietly();
                     self.guide_hold = held; // pulses stop while blind; the mount keeps tracking on its own
