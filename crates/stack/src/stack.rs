@@ -7,7 +7,7 @@
 
 use crate::align::{accumulate_shifted, Aligner};
 use crate::calib::Calibration;
-use crate::image::{bin, sharpness, valid_mask, Img};
+use crate::image::{bin, mask_f32, sharpness_masked, valid_mask, Img};
 use crate::multipoint::{add_box, build_grid, LocalAligner, Patch};
 use crate::ser::Ser;
 use serde::Serialize;
@@ -190,9 +190,10 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         }
     }
     let valid = valid_mask(&bin(&mean, w, h, b), 2.0, opts.erode);
+    let valid_f = mask_f32(&valid);
     let binned_of = |s: &mut Ser, i: usize| -> Result<Img, String> {
         let raw = s.read_frame(i).map_err(|e| e.to_string())?;
-        Ok(bin(&cal.apply(&raw), w, h, b))
+        Ok(cal.bin_calibrated(&raw, w, h, b))
     };
 
     // pass A: read every frame once, bin it, keep it in RAM when it fits, and take the Laplacian score
@@ -200,7 +201,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     let a = run_parallel(n, opts.threads, |i| {
         let mut s = Ser::open(path).map_err(|e| e.to_string())?;
         let img = binned_of(&mut s, i)?;
-        let sh = sharpness(&img, &valid);
+        let sh = sharpness_masked(&img, &valid_f);
         Ok::<_, String>((sh, if cache_ok { Some(img) } else { None }))
     });
     let mut lap = vec![0f64; n];

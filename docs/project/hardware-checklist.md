@@ -75,6 +75,13 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 |---|---|
 | A renamed mount is followed | Eject the stick (More > Storage), replug it; if the desktop mounts it under another name (`...1`), More > Storage still shows it available with the same folder and a recording starts (checked once on 2026-11-22: `ASTRODRIVE` became `ASTRODRIVE1` and the saved choice followed it after the upgrade) |
 
+## Recorder priority and stalls
+
+| Check | How |
+|---|---|
+| Stacker does not disturb the real camera | Record on the Sun with the Apollo at full rate for an hour with the stacker on `between_bursts`, then with `always`; compare `frame_gap` events in `events.jsonl` and the recorder's dropped frames with the job table of `stack_telemetry.py` (the 2026-11-22 run used a simulated camera only) |
+| Priorities took effect | `ps -L -o tid,comm,ni,psr -p $(pgrep -x rustflare-serve)`: nice -5 on the recorder, nice 19 on `logwriter`; the stacker shows `Cpus_allowed_list: 2-3` in `/proc/<pid>/status` |
+
 ## Stacker (rustflare-stack)
 
 | Check | How |

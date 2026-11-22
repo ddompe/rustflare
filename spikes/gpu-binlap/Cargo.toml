@@ -1,0 +1,14 @@
+[package]
+name = "gpu-binlap"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# A throwaway spike (not part of the workspace): can a compute shader do the stacker's first pass faster than the NEON kernels?
+[workspace]
+
+[dependencies]
+wgpu = { version = "24", default-features = false, features = ["wgsl", "metal"] }
+pollster = "0.4"
+bytemuck = "1"
+rustflare-stack = { path = "../../crates/stack" }

@@ -390,6 +390,10 @@ pub struct Engine {
     last_prune: Option<Instant>,
     /// What the capture-state file last said and when (it is rewritten on a change and every 10 s as a heartbeat).
     state_file: Option<(String, Instant)>,
+    /// File writes (event log, state file) happen on a low-priority thread, never on this one.
+    alog: crate::asynclog::AsyncLog,
+    /// Gaps between camera frames much longer than usual, to trace what stalled capture.
+    last_gap_event: Option<Instant>,
     /// The automatic flip has been started (or given up) for this crossing of the meridian.
     auto_done: bool,
     last_auto_check: Instant,
@@ -514,6 +518,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         trace_dir: None,
         last_prune: None,
         state_file: None,
+        alog: crate::asynclog::AsyncLog::new(),
+        last_gap_event: None,
         auto_done: false,
         last_auto_check: Instant::now(),
         last_auto_warn: None,
@@ -860,10 +866,7 @@ impl Engine {
         let path = self.storage.config_file().with_file_name("capture.state");
         let updated = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let body = json!({ "state": c.state, "busy": busy, "next_in_s": c.next_in_s, "dir": self.storage.dir().to_string_lossy(), "updated": updated }).to_string();
-        let tmp = path.with_extension("state.tmp");
-        if std::fs::write(&tmp, body).and_then(|_| std::fs::rename(&tmp, &path)).is_err() {
-            return; // a read-only settings folder: nothing to tell
-        }
+        self.alog.replace(path, body);
         self.state_file = Some((key, Instant::now()));
     }
 
@@ -2208,7 +2211,17 @@ impl Engine {
         let t_frame = now;
         let ema = |old: f64, new: f64| if old == 0.0 { new } else { 0.95 * old + 0.05 * new };
         if let Some(prev) = self.last_frame_at.replace(now) {
-            let inst = 1.0 / now.duration_since(prev).as_secs_f64().max(1e-3);
+            let gap = now.duration_since(prev).as_secs_f64();
+            // a stall: far longer than the frames usually take. Logged with what the machine was doing, so a stall can be traced to
+            // a cause (memory, the disk writer, another program) afterwards; at most once a second
+            if self.fps_ema > 1.0 && gap > (8.0 / self.fps_ema).max(0.25) && self.last_gap_event.map_or(true, |t| t.elapsed() > Duration::from_secs(1)) {
+                self.last_gap_event = Some(now);
+                let load1 = std::fs::read_to_string("/proc/loadavg").ok().and_then(|t| t.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()));
+                let c = &self.status.capture;
+                self.event("frame_gap", json!({ "gap_s": (gap * 1000.0).round() / 1000.0, "usual_s": (1000.0 / self.fps_ema).round() / 1000.0, "capture": c.state, "burst": c.burst,
+                    "buffer_queued": c.buffer_queued, "disk_mb_s": c.disk_mb_s, "ram_available_mb": mem_available_mb(), "load1": load1, "log_lines_dropped": self.alog.dropped() }));
+            }
+            let inst = 1.0 / gap.max(1e-3);
             self.fps_ema = if self.fps_ema == 0.0 { inst } else { 0.9 * self.fps_ema + 0.1 * inst };
         }
         // Analysis (statistics, histogram, Sun location, tracking) runs at ~10 Hz regardless of the camera's
@@ -2543,19 +2556,13 @@ impl Engine {
     /// (small: events, not frames). Explains afterwards what the software did and when. Capped at 20 MB a day.
     fn event(&self, kind: &str, detail: Value) {
         let now = chrono::Utc::now();
-        let dir = self.storage.internal_log_dir().join(now.format("%Y-%m-%d").to_string());
-        let path = dir.join("events.jsonl");
-        if std::fs::metadata(&path).map_or(false, |m| m.len() > 20 * 1024 * 1024) || std::fs::create_dir_all(&dir).is_err() {
-            return;
-        }
+        let path = self.storage.internal_log_dir().join(now.format("%Y-%m-%d").to_string()).join("events.jsonl");
         let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
         let line = json!({ "t": now.to_rfc3339_opts(chrono::SecondsFormat::Millis, true), "event": kind, "detail": detail,
             "exposure_us": ctl(CTRL_EXPOSURE_US), "gain": ctl("gain"), "capture": self.status.capture.state,
             "guide": match &self.guide { GuideState::Off => "off", GuideState::Calibrating(_) => "calibrating", GuideState::Guiding(_) => "guiding" },
             "mount_tracking": self.mount_tracking });
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(f, "{line}");
-        }
+        self.alog.append(path, line.to_string(), Some(20 * 1024 * 1024)); // the writer thread does the disk work
     }
 
     /// Keeps the frame the tracker could not use, with what the software knew at that moment, in

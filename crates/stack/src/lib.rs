@@ -8,6 +8,7 @@ pub mod multipoint;
 pub mod output;
 pub mod ser;
 pub mod session;
+pub mod simd;
 pub mod stack;
 pub mod telemetry;
 pub mod watch;

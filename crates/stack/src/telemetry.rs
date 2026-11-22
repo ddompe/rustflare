@@ -47,6 +47,7 @@ pub fn environment() -> Value {
     let st = stat_fields("/proc/self/stat");
     json!({
         "cgroup": cg,
+        "cgroup_controllers": cgroup_dir().and_then(|d| read(d.join("cgroup.controllers"))).map(|t| t.trim().to_string()),
         "cpus_allowed": field("Cpus_allowed_list:"),
         "nice": st.as_ref().and_then(|f| f.get(16)).and_then(|v| v.parse::<i64>().ok()),
         "cores": std::thread::available_parallelism().map(|n| n.get()).ok(),
@@ -74,6 +75,23 @@ pub struct Counters {
     pub cores: Vec<(f64, f64)>,
     pub cgroup: Map<String, Value>,
     pub psi: Map<String, Value>,
+    /// Interrupts per core for the devices that matter to a recording (USB host controllers, SD card, network, PCIe, RP1).
+    pub irq: Vec<(String, Vec<f64>)>,
+}
+
+/// Interrupt counts per core of the devices that can disturb a recording, from `/proc/interrupts`.
+fn irqs() -> Vec<(String, Vec<f64>)> {
+    let Some(t) = read("/proc/interrupts") else { return Vec::new() };
+    let mut lines = t.lines();
+    let ncpu = lines.next().map_or(0, |h| h.split_whitespace().count());
+    lines.filter_map(|l| {
+        let mut it = l.split_whitespace();
+        let id = it.next()?.trim_end_matches(':').to_string();
+        let counts: Vec<f64> = it.by_ref().take(ncpu).filter_map(|v| v.parse().ok()).collect();
+        let name = it.last()?.to_string();
+        let wanted = ["xhci", "mmc", "eth", "pcie", "rp1", "dwc", "nvme", "brcm", "usb"].iter().any(|k| name.contains(k));
+        (counts.len() == ncpu && wanted).then(|| (format!("{id}:{name}"), counts))
+    }).collect()
 }
 
 fn psi() -> Map<String, Value> {
@@ -102,7 +120,7 @@ impl Counters {
             (total - idle, total)
         }).collect()).unwrap_or_default();
         let cgroup = cgroup_dir().and_then(|d| read(d.join("cpu.stat"))).map(|t| kv_lines(&t)).unwrap_or_default();
-        Counters { at: Some(Instant::now()), user_s: g(11), sys_s: g(12), cores, cgroup, psi: psi() }
+        Counters { at: Some(Instant::now()), user_s: g(11), sys_s: g(12), cores, cgroup, psi: psi(), irq: irqs() }
     }
 
     /// What happened between `self` (earlier) and `later`.
@@ -113,6 +131,12 @@ impl Counters {
         let psi_d: Map<String, Value> = later.psi.iter().filter_map(|(k, v)| {
             let (now, then) = (v.get("total")?.as_f64()?, self.psi.get(k).and_then(|o| o.get("total")).and_then(|t| t.as_f64()).unwrap_or(0.0));
             Some((k.clone(), json!(((now - then) / 1000.0).round() / 1000.0))) // microseconds of stall -> seconds
+        }).collect();
+        // interrupts that fired during the interval, per core, only for the devices that fired
+        let irq_d: Map<String, Value> = later.irq.iter().filter_map(|(name, now)| {
+            let then = self.irq.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone()).unwrap_or_else(|| vec![0.0; now.len()]);
+            let d: Vec<f64> = now.iter().zip(&then).map(|(a, b)| a - b).collect();
+            (d.iter().sum::<f64>() > 0.0).then(|| (name.clone(), json!(d)))
         }).collect();
         let cpu = (later.user_s - self.user_s) + (later.sys_s - self.sys_s);
         json!({
@@ -127,6 +151,7 @@ impl Counters {
             "core_busy_pct": core_busy,
             "system_busy_pct": if core_busy.is_empty() { 0.0 } else { (core_busy.iter().sum::<f64>() / core_busy.len() as f64 * 10.0).round() / 10.0 },
             "psi_stall_s": psi_d,
+            "irq_per_core": irq_d,
         })
     }
 }

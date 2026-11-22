@@ -14,11 +14,17 @@ ExecStart=/usr/bin/rustflare-stack watch --state-dir /var/lib/rustflare
 Restart=on-failure
 RestartSec=10
 # It must never get in the way of a recording: lowest CPU and disk priority, a CPU and memory ceiling.
+# Cores 2 and 3 only: on the Pi 5 the USB and SD-card interrupts are served by core 0, and the recorder's threads should have 0 and 1
+# to themselves. (AllowedCPUs= would need the cpuset controller, which the Pi's kernel does not enable for services; this does not.)
+CPUAffinity=2 3
+OOMScoreAdjust=500
 Nice=19
 CPUWeight=10
 CPUQuota=200%
 IOSchedulingClass=idle
 IOWeight=10
+# MemoryMax is only enforced where the kernel has the memory cgroup controller (on Raspberry Pi OS: add `cgroup_enable=memory
+# cgroup_memory=1` to /boot/firmware/cmdline.txt and reboot); the telemetry says whether it is.
 MemoryMax=2G
 
 [Install]

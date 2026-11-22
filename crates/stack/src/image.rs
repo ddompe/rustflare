@@ -75,28 +75,22 @@ pub fn valid_mask(reference: &Img, floor: f32, erode: usize) -> Vec<bool> {
 
 /// Sharpness of an image: the variance of the Laplacian over the valid pixels, divided by the squared mean brightness so
 /// frames of a burst stay comparable when the light changes. Higher is sharper.
-pub fn sharpness(img: &Img, valid: &[bool]) -> f64 {
-    let (w, h) = (img.w, img.h);
-    let (mut s, mut s2, mut sm, mut n) = (0.0f64, 0.0f64, 0.0f64, 0usize);
-    for y in 1..h.saturating_sub(1) {
-        for x in 1..w.saturating_sub(1) {
-            let i = y * w + x;
-            if !valid[i] {
-                continue;
-            }
-            let l = (4.0 * img.d[i] - img.d[i - 1] - img.d[i + 1] - img.d[i - w] - img.d[i + w]) as f64;
-            s += l;
-            s2 += l * l;
-            sm += img.d[i] as f64;
-            n += 1;
-        }
-    }
-    if n == 0 {
+pub fn sharpness(img: &Img, valid: &[bool]) -> f64 { sharpness_masked(img, &mask_f32(valid)) }
+
+/// 1.0 where `valid`, else 0.0: the form the vectorised sharpness wants, built once for a whole recording.
+pub fn mask_f32(valid: &[bool]) -> Vec<f32> { valid.iter().map(|&v| if v { 1.0 } else { 0.0 }).collect() }
+
+/// `sharpness` with a precomputed 0/1 mask.
+pub fn sharpness_masked(img: &Img, mask: &[f32]) -> f64 {
+    if img.w < 3 || img.h < 3 {
         return 0.0;
     }
-    let nf = n as f64;
-    let var = s2 / nf - (s / nf) * (s / nf);
-    let mean = sm / nf;
+    let (s, s2, sm, n) = crate::simd::lap_stats(&img.d, mask, img.w, img.h);
+    if n <= 0.0 {
+        return 0.0;
+    }
+    let var = s2 / n - (s / n) * (s / n);
+    let mean = sm / n;
     if mean <= 0.0 { 0.0 } else { var / (mean * mean) }
 }
 

@@ -135,15 +135,5 @@ impl Aligner {
 
 /// Add `src` shifted by (-dx, -dy) (so content displaced by (dx, dy) lands back on the reference) into `acc`, bilinear.
 pub fn accumulate_shifted(acc: &mut [f32], src: &[f32], w: usize, h: usize, dx: f64, dy: f64) {
-    let (ix, iy) = (dx.floor(), dy.floor());
-    let (fx, fy) = ((dx - ix) as f32, (dy - iy) as f32);
-    let (ix, iy) = (ix as isize, iy as isize);
-    let at = |x: isize, y: isize| src[(y.clamp(0, h as isize - 1) as usize) * w + x.clamp(0, w as isize - 1) as usize];
-    for y in 0..h as isize {
-        for x in 0..w as isize {
-            let (sx, sy) = (x + ix, y + iy);
-            let v = at(sx, sy) * (1.0 - fx) * (1.0 - fy) + at(sx + 1, sy) * fx * (1.0 - fy) + at(sx, sy + 1) * (1.0 - fx) * fy + at(sx + 1, sy + 1) * fx * fy;
-            acc[y as usize * w + x as usize] += v;
-        }
-    }
+    crate::simd::accumulate_shifted(acc, src, w, h, dx, dy)
 }

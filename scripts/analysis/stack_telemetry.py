@@ -33,6 +33,7 @@ def main():
         cg = env.get("cgroup", {})
         print(f"stacker {e.get('version')} started {e['iso']}Z")
         print(f"  cpu.max {cg.get('cpu.max')}  cpu.weight {cg.get('cpu.weight')}  io.weight {cg.get('io.weight')}  memory.max {cg.get('memory.max')}")
+        print(f"  cgroup controllers: {env.get('cgroup_controllers')}" + ("   <- no memory controller: MemoryMax is NOT enforced" if 'memory' not in (env.get('cgroup_controllers') or 'memory') else ''))
         print(f"  cpus allowed {env.get('cpus_allowed')} of {env.get('cores')}  nice {env.get('nice')}  user {unit.get('User')}  io class {unit.get('IOSchedulingClass')}  kernel {env.get('kernel')}")
     jobs = [e for e in ev if e["kind"] == "job"]
     print(f"\n{len(jobs)} jobs, {sum(1 for j in jobs if not j.get('ok'))} failed")
@@ -50,6 +51,14 @@ def main():
                 phases.setdefault(name, []).append(s)
         for name, v in phases.items():
             print(f"  {name[:60]:60} median {sorted(v)[len(v)//2]:6.2f} s")
+        irq = {}
+        for j in jobs:
+            for k, v in (j.get('irq_per_core') or {}).items():
+                irq[k] = [a + b for a, b in zip(irq.get(k, [0] * len(v)), v)]
+        if irq:
+            print('\ninterrupts during jobs, per core:')
+            for k, v in sorted(irq.items(), key=lambda kv: -sum(kv[1]))[:5]:
+                print(f'  {k:28} ' + '  '.join(f'cpu{i}:{int(x)}' for i, x in enumerate(v)))
         busy = [j for j in jobs if j.get("during", {}).get("recorder_busy_samples", 0) > 0]
         idle = [j for j in jobs if j.get("during", {}).get("recorder_busy_samples", 0) == 0]
         if busy and idle:

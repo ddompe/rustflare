@@ -57,6 +57,7 @@ The stacker keeps a record of its own behaviour so you can review later how it c
 - **start:** the limits it was given (cgroup `cpu.max`, `cpu.weight`, memory limit, the cores it may run on, nice value, systemd's CPU quota, I/O class and weight), and the config.
 - **state:** every change between idle, working and paused, with the reason and what the recorder was doing at that moment.
 - **job:** per recording: wall time, CPU seconds (user and system) and how many cores that is on average, CPU throttling by its quota (periods and seconds), busy percentage of every core, memory and I/O pressure stalls, the time in each phase, and a summary of 2-second samples during the job (temperature, clock, firmware throttle flags, memory, which cores its threads ran on, and whether the recorder was writing frames).
+- **irq / cores:** how many USB, SD-card and network interrupts fired on each core during the job, next to the busy percentage of each core, so a stacker job on a core that also serves the camera's USB interrupts would show.
 - **sample** every 2 s during a job, **idle** once a minute between jobs.
 
 `scripts/analysis/stack_telemetry.py /var/lib/rustflare/logs` (or `http://<pi>:8080`) prints the limits, a table of jobs, the pauses and anything that looks like interference (throttling, high temperature, an I/O stall, a job that ran while the recorder was writing). A first run is in [the telemetry run of 2026-11-22](../project/stacker-telemetry-run-2026-11-22.md).

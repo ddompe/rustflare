@@ -12,6 +12,8 @@ pub struct Calibration {
     pub dark: Option<Arc<Vec<f32>>>,
     /// Flat normalised to a mean of 1 (never below 0.1, so dust and dead pixels cannot blow the image up).
     pub flat: Option<Arc<Vec<f32>>>,
+    /// 1 / flat, so calibrating a frame is a multiplication.
+    pub inv_flat: Option<Arc<Vec<f32>>>,
 }
 
 /// The mean of all the frames of a raw SER recording, in float (no rounding, no intermediate file format).
@@ -47,7 +49,8 @@ impl Calibration {
         for v in &mut f {
             *v = ((*v as f64 / mean) as f32).max(0.1);
         }
-        Ok(Calibration { width: w, height: h, dark: None, flat: Some(Arc::new(f)) })
+        let inv_flat = Some(Arc::new(f.iter().map(|v| 1.0 / v).collect()));
+        Ok(Calibration { width: w, height: h, dark: None, flat: Some(Arc::new(f)), inv_flat })
     }
 
     /// `dark` and `flat` are raw recordings (SER) of dark frames (cap on) and of a flat field. The flat has the dark taken off
@@ -76,9 +79,21 @@ impl Calibration {
             for v in &mut f {
                 *v = ((*v as f64 / mean) as f32).max(0.1);
             }
+            c.inv_flat = Some(Arc::new(f.iter().map(|v| 1.0 / v).collect()));
             c.flat = Some(Arc::new(f));
         }
         Ok(c)
+    }
+
+    /// Calibrate and bin a raw frame by `n` in one pass; for n = 2 (what ranking and alignment use) it is a vectorised kernel that
+    /// never builds the full-size float frame.
+    pub fn bin_calibrated(&self, raw: &[u16], w: usize, h: usize, n: usize) -> crate::image::Img {
+        if n == 2 && w % 2 == 0 && h % 2 == 0 {
+            let mut img = crate::image::Img::new(w / 2, h / 2);
+            crate::simd::bin2_calibrated(raw, self.dark.as_ref().map(|d| &d[..]), self.inv_flat.as_ref().map(|f| &f[..]), w, h, &mut img.d);
+            return img;
+        }
+        crate::image::bin(&self.apply(raw), w, h, n)
     }
 
     /// A raw frame to calibrated floats: (raw - dark) / flat.

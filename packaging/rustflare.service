@@ -5,6 +5,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# The recorder comes first on this machine: more CPU and disk weight than anything else, and the last to be killed if memory runs out.
+Nice=-5
+CPUWeight=500
+IOWeight=500
+OOMScoreAdjust=-500
 # Settings (listen address, data directory) live in /etc/default/rustflare.
 EnvironmentFile=-/etc/default/rustflare
 User=rustflare
