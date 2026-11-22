@@ -95,15 +95,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         set_dir(Some(dir.clone()));
         let t = Instant::now();
-        record(":Mge3000#", Ok("1"), t);
-        record(":GU#", Err("no reply (timed out)"), t);
+        record(":TRACETEST1#", Ok("1"), t);
+        record(":TRACETEST#", Err("no reply (timed out)"), t);
         set_dir(None);
         record(":ignored#", Ok("x"), t);
         let file = std::fs::read_dir(&dir).unwrap().next().unwrap().unwrap().path().join("mount.jsonl");
         let text = std::fs::read_to_string(file).unwrap();
-        let lines: Vec<&str> = text.lines().collect();
+        // other tests in this process may send mount commands while the global trace directory is set
+        let lines: Vec<&str> = text.lines().filter(|l| l.contains(":TRACETEST1#") || l.contains(":TRACETEST#")).collect();
         assert_eq!(lines.len(), 2, "{text}");
-        assert!(lines[0].contains("\"cmd\":\":Mge3000#\"") && lines[0].contains("\"reply\":\"1\""));
+        assert!(lines[0].contains("\"cmd\":\":TRACETEST1#\"") && lines[0].contains("\"reply\":\"1\""));
         assert!(lines[1].contains("\"error\":\"no reply (timed out)\""));
         let _ = std::fs::remove_dir_all(&dir);
     }
