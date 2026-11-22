@@ -427,3 +427,8 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .fm-lanes summary { cursor: pointer; padding: .4rem 0; }
 .fm-lane ul { margin: .2rem 0 .5rem 1rem; padding: 0; list-style: none; }
 .fm-lane li { padding: .35rem 0; }
+
+/* the lost badge must not sit under the fps pill; the range picker is an advanced setting, folded */
+.lost-badge { top: 3.6rem; z-index: 3; }
+.range-more summary { cursor: pointer; padding: .35rem 0; color: var(--muted); font-size: .9rem; }
+button:disabled.danger { background: var(--raised); color: var(--faint); border-color: var(--line); }

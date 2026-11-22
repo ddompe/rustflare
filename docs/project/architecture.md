@@ -24,4 +24,4 @@ Crates:
 
 The engine loop: *apply commands → capture one frame → (at ~10 Hz) statistics, Sun location, tracker, guider/calibrator → preview (throttled) → capture job (the frame is moved into the RAM buffer) → throttled status publish*.
 Anything that needs the hardware goes through the engine, so there is exactly one place where camera, mount and jobs interact.
-Rationale and alternatives: [ADR 0004](adr/0004-engine-actor-and-transport.md), [ADR 0005](adr/0005-hardware-abstraction.md), [ADR 0012](adr/0012-burst-capture-and-ram-buffer.md).
+Rationale and alternatives: [ADR 0004](../adr/0004-engine-actor-and-transport.md), [ADR 0005](../adr/0005-hardware-abstraction.md), [ADR 0012](../adr/0012-burst-capture-and-ram-buffer.md).

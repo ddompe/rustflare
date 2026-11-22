@@ -13,7 +13,7 @@ RUSTFLARE_REPO=ddompe/rustflare
 #RUSTFLARE_GITHUB_TOKEN=
 
 # Password for the web UI and API (HTTP Basic, any user name). Strongly recommended together with HTTPS
-# (`sudo rustflare-tls`, see docs/https.md); over plain HTTP the password travels in the clear.
+# (`sudo rustflare-tls`, see docs/guide/phone-setup.md); over plain HTTP the password travels in the clear.
 #RUSTFLARE_PASSWORD=
 # HTTPS: after `sudo rustflare-tls` the server also listens here. Plain HTTP then only serves the CA and redirects.
 #RUSTFLARE_TLS_BIND=0.0.0.0:8443

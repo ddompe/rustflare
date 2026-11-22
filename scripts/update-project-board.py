@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync the GitHub board with the state recorded in docs/roadmap.md (run after a work session).
+"""Sync the GitHub board with the state recorded in docs/project/roadmap.md (run after a work session).
 Edit the lists below, then run: python3 scripts/update-project-board.py"""
 import json, subprocess, sys
 REPO, OWNER, NUM = "ddompe/rustflare", "ddompe", "1"
@@ -21,7 +21,7 @@ def new_issue(title, body, labels, done=False):
     item = json.loads(gh("project", "item-add", NUM, "--owner", OWNER, "--url", url, "--format", "json"))
     gh("project", "item-edit", "--id", item["id"], "--project-id", proj["id"], "--field-id", st["id"],
        "--single-select-option-id", opt["Done" if done else "Todo"])
-    if done: gh("issue", "close", url, "--repo", REPO, "--comment", "Completed; see docs/roadmap.md.")
+    if done: gh("issue", "close", url, "--repo", REPO, "--comment", "Completed; see docs/project/roadmap.md.")
     print(("done " if done else "todo ") + title)
 
 def comment(n, text, close=False):
@@ -39,7 +39,7 @@ comment(9, "Folded into the UI redesign (side agent in progress); see the UI des
 comment(16, "The guider now has parameters (window, dead band, gain, speed, intervals) with defaults tuned from the real seeing (sigma ~2 px); exposing them in the UI is still open.")
 comment(28, "**Started** (capture is stable enough): a side agent is redesigning the UI with the impeccable skill. Extra requirements given: responsive iPhone web app (Home Screen, safe areas, 44 pt targets), saved settings on the Pi, device cards with datasheets, the RustFlare brand.")
 comment(29, "**Implemented** (unit-tested; not yet run on the real sky): the guider now averages the position over a 10 s window (seeing cancels), ignores offsets under a 3 px dead band, and sends small gentle pulses sized from the calibrated px/s response. Real-data seeing is ~2 px sigma, which supports these defaults. Keep open until verified on the real mount.")
-comment(10, "Plan: the first release is **v0.3.0** (see docs/roadmap.md, Before v0.3.0). Still needs the decision on redistributing Player One's library.")
+comment(10, "Plan: the first release is **v0.3.0** (see docs/project/roadmap.md, Before v0.3.0). Still needs the decision on redistributing Player One's library.")
 
 # ---- new work
 new_issue("Support ZWO ASI cameras (the owner has one to try)",
@@ -62,4 +62,4 @@ new_issue("Persist UI and camera settings across reboots", "Server-side settings
 new_issue("Auto-reconnect camera and mount at startup", "Reconnects the last camera and mount (retrying while USB comes up); never switches mount tracking on by itself. Verified on the real camera and mount.", ["feature"], done=True)
 new_issue("Drift-correcting guider (averaged, dead band, gentle pulses)", "Replaces the fixed 1 s pulse guider that overshot at fine pixel scales. Unit-tested (pure seeing produces zero pulses; drift is held). Real-sky verification is tracked in the guiding issue.", ["tracking"], done=True)
 new_issue("Streaming (continuous) capture for the Player One driver", "57 fps instead of a constant 8.4 fps. Verified on the real camera.", ["feature"], done=True)
-new_issue("RustFlare logo and brand notes", "Mark in the README and UI assets, brand colours in docs/brand.md.", ["docs", "ui"], done=True)
+new_issue("RustFlare logo and brand notes", "Mark in the README and UI assets, brand colours in docs/project/brand.md.", ["docs", "ui"], done=True)

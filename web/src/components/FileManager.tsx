@@ -114,7 +114,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
       </header>
 
       <div className="fm-bar">
-        <button type="button" disabled={checking || busy || !files.some((f) => isSer(f.path))} onClick={checkAll}>{checking ? 'Checking…' : 'Check all'}</button>
+        <button type="button" disabled={checking || busy || !files.some((f) => isSer(f.path))} onClick={checkAll}>{checking ? 'Checking…' : 'Check recordings'}</button>
         <button type="button" onClick={() => setSel(sel.size === files.length ? new Set() : new Set(files.map((f) => f.path)))}>{sel.size === files.length && files.length > 0 ? 'Select none' : 'Select all'}</button>
         {dark.length > 0 && <button type="button" onClick={() => setSel(new Set(dark.map((f) => f.path)))}>Select dark ({dark.length})</button>}
         <label className="fm-sort">Show <select value={show} onChange={(e) => setShow(e.target.value as typeof show)}>
@@ -126,7 +126,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
       </div>
 
       <div className="fm-list">
-        {files.length === 0 && <div className="empty">Nothing captured yet</div>}
+        {files.length === 0 && <div className="empty">Nothing captured yet. Record something in the Record tab and it appears here.</div>}
         {groups.map(([g, items]) => (
           <section key={g}>
             <h3 className="fm-day">{g} <span className="muted">· {items.length} · {size(items.reduce((a, f) => a + f.size, 0))}</span></h3>

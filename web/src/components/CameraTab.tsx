@@ -115,12 +115,15 @@ function Slider({ c, marks }: { c: Control; marks?: { v: number; label: string; 
             <button type="button" onClick={() => send(value * 1.05)} aria-label="Increase exposure by 5 percent">+5%</button>
             <button type="button" onClick={() => send(value * 2)} aria-label="Double exposure">2×</button>
           </div>
+          <details className="range-more">
+            <summary>Slider range: {EXP_RANGES[range]?.label}</summary>
           <div className="range-pick">
             <label htmlFor={`${id}-r`}>Slider range</label>
             <select id={`${id}-r`} value={range} onChange={(e) => setRange(parseInt(e.target.value))} title="A narrower range gives finer control">
               {EXP_RANGES.map((r, i) => <option key={r.label} value={i}>{r.label}</option>)}
             </select>
           </div>
+          </details>
         </>
       ) : (
         <div className="fine fine5">

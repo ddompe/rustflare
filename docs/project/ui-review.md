@@ -124,7 +124,7 @@ What was done for it:
   colour, with dark text on it. The few numbers that matter are large: fps, clipping percent, guiding error in pixels,
   frames recorded, all in the status strip under the picture.
 
-![The new UI on an iPhone 15 Pro profile (WebKit): portrait and landscape](img/ui-after-iphone.webp)
+![The new UI on an iPhone 15 Pro profile (WebKit): portrait and landscape](../img/ui-after-iphone.webp)
 
 ## Mount state and Send home
 
@@ -163,7 +163,7 @@ appear only while there is something to show. On a wide screen the defaults are 
 corners; on a phone nothing is shown until you turn it on. Rendering is cheap: a few small elements, the sparkline gets
 one sample per 700 ms, and dragging updates CSS variables rather than React state.
 
-![Desktop with the default widgets during a recording](img/ui-desktop-widgets.webp)
+![Desktop with the default widgets during a recording](../img/ui-desktop-widgets.webp)
 
 ## Device cards and gain markers
 
@@ -176,7 +176,7 @@ the full card with clearly labelled placeholder values. If the catalog gives `hc
 shows small HCG and Unity ticks. The illustrations in `web/public/devices` are original line art; a catalog `image`
 filename overrides them.
 
-![Gain markers, device card and measured Barlow (demo data and a mocked status)](img/ui-device-cards.webp)
+![Gain markers, device card and measured Barlow (demo data and a mocked status)](../img/ui-device-cards.webp)
 
 ## Measured Barlow or reducer factor
 
@@ -191,7 +191,7 @@ fields may be null. The More row summary says "Barlow measured 3.34x" when they 
 
 The old page on the phone, cut off at the first screen on the left and whole on the right:
 
-![Before, phone](img/ui-before-phone.webp)
+![Before, phone](../img/ui-before-phone.webp)
 
 ## How it was tested
 

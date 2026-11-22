@@ -1,35 +1,57 @@
-site_name: Rustflare
+site_name: RustFlare
 site_description: Headless, web-controlled solar capture for Raspberry Pi
 docs_dir: docs
 nav:
   - Home: index.md
-  - Brand: brand.md
-  - User manual: manual.md
-  - Getting started: getting-started.md
-  - User guide: usage.md
-  - HTTPS and password: https.md
-  - Signed apt repository: apt-repository.md
-  - Hardware: hardware.md
-  - ZWO mount Bluetooth protocol: zwo-ble-protocol.md
-  - Tracking & guiding: tracking-and-guiding.md
-  - Capture & flats: capture.md
-  - Performance: performance.md
-  - UI review: ui-review.md
-  - Architecture: architecture.md
-  - HTTP API: api.md
-  - Development: development.md
-  - Roadmap & status: roadmap.md
-  - Decisions (ADRs):
-      - adr/README.md
-      - adr/0001-record-architecture-decisions.md
-      - adr/0002-rust-workspace-and-vidoxide-reuse.md
-      - adr/0003-web-ui-react-vite.md
-      - adr/0004-engine-actor-and-transport.md
-      - adr/0005-hardware-abstraction.md
-      - adr/0006-playerone-via-vendor-sdk.md
-      - adr/0007-zwo-mount-serial-driver.md
-      - adr/0008-solar-tracking-and-guiding.md
-      - adr/0009-capture-formats-and-flats.md
+  - User guide:
+      - Getting started: guide/getting-started.md
+      - The screen: guide/screen.md
+      - Camera tab: guide/camera.md
+      - Aim tab: guide/aim.md
+      - Track tab: guide/track.md
+      - Record tab: guide/record.md
+      - More tab: guide/more.md
+      - Phone setup: guide/phone-setup.md
+      - Field networking: guide/hotspot.md
+      - Updating: guide/updating.md
+      - Troubleshooting and FAQ: guide/troubleshooting.md
+  - Reference:
+      - Hardware: reference/hardware.md
+      - Capture formats and storage: reference/capture-formats.md
+      - Tracking and guiding: reference/tracking-and-guiding.md
+      - Configuration: reference/configuration.md
+      - HTTP API: reference/api.md
+      - Performance: reference/performance.md
+  - Developer and project:
+      - Architecture: project/architecture.md
+      - Development guide: project/development.md
+      - Decisions (ADRs):
+          - adr/README.md
+          - adr/0001-record-architecture-decisions.md
+          - adr/0002-rust-workspace-and-vidoxide-reuse.md
+          - adr/0003-web-ui-react-vite.md
+          - adr/0004-engine-actor-and-transport.md
+          - adr/0005-hardware-abstraction.md
+          - adr/0006-playerone-via-vendor-sdk.md
+          - adr/0007-zwo-mount-serial-driver.md
+          - adr/0008-solar-tracking-and-guiding.md
+          - adr/0009-capture-formats-and-flats.md
+          - adr/0010-debian-package-and-updates.md
+          - adr/0011-storage-selection-and-safety.md
+          - adr/0012-burst-capture-and-ram-buffer.md
+          - adr/0013-partial-disc-first-tracking-and-optics.md
+          - adr/0014-zwo-asi-cameras.md
+          - adr/0015-ble-mount-transport.md
+          - adr/0016-optional-https-and-password.md
+          - adr/template.md
+      - ZWO mount Bluetooth protocol: project/zwo-ble-protocol.md
+      - Roadmap and status: project/roadmap.md
+      - Next-round plan: project/next-round.md
+      - Hardware verification checklist: project/hardware-checklist.md
+      - Performance audit: project/performance-audit.md
+      - UI review: project/ui-review.md
+      - Apt repository setup: project/apt-repository.md
+      - Brand: project/brand.md
 theme:
   name: readthedocs
 

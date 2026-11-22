@@ -219,7 +219,7 @@ function Pad({ status, locked }: { status: Status; locked: boolean }) {
           {SPEEDS.map((s) => <option key={s} value={s}>{s}× sidereal</option>)}
         </select>
       </div>
-      <div className="hint-text">Hold a direction to move, release to stop. Arrow keys work too.</div>
+      <div className="hint-text">Hold a direction to move, release to stop.</div>
       <ErrorLine error={err} />
     </div>
   )

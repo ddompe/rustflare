@@ -5,7 +5,7 @@
 
 ## Context
 
-Issue #53 asks for wireless mount control. The AM3/AM5 speaks the same ASCII `:...#` protocol over Bluetooth LE as over USB, through one GATT characteristic (write with response in, notifications out) after a session opener; see [ZWO mount Bluetooth protocol](../zwo-ble-protocol.md). The Pi runs BlueZ. RustFlare is cross-compiled from a Mac with `cargo-zigbuild` and no target libraries, so a C library such as `libdbus` or `libbluetooth` is not available at build time.
+Issue #53 asks for wireless mount control. The AM3/AM5 speaks the same ASCII `:...#` protocol over Bluetooth LE as over USB, through one GATT characteristic (write with response in, notifications out) after a session opener; see [ZWO mount Bluetooth protocol](../project/zwo-ble-protocol.md). The Pi runs BlueZ. RustFlare is cross-compiled from a Mac with `cargo-zigbuild` and no target libraries, so a C library such as `libdbus` or `libbluetooth` is not available at build time.
 
 ## Decision
 

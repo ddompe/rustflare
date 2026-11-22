@@ -19,7 +19,7 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 ## Before v0.3.0 (first release)
 
 1. **Open the recorded SER files in an independent tool** (SER Player, AutoStakkert, Siril) to confirm compatibility.
-2. **Test the new drift-correcting guider on the real sky** (it replaced a guider that overshot at 0.88″/px; see [ADR 0008](adr/0008-solar-tracking-and-guiding.md)). Unit tests show it ignores seeing and corrects drift; the real mount has not seen it yet.
+2. **Test the new drift-correcting guider on the real sky** (it replaced a guider that overshot at 0.88″/px; see [ADR 0008](../adr/0008-solar-tracking-and-guiding.md)). Unit tests show it ignores seeing and corrects drift; the real mount has not seen it yet.
 3. **FAT32 4 GB split and unplug behaviour** on the real stick.
 4. **UI redesign** (a side agent is working on a simpler, responsive, iPhone-friendly UI), then deploy and check it on the phone.
 5. **Decide on publishing the release**: the package bundles Player One's proprietary library ([issue #10](https://github.com/ddompe/rustflare/issues/10)).
@@ -35,7 +35,6 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 - **iPhone web app**: responsive layout, Home Screen app (part of the UI redesign); HTTPS later enables a service worker and wake lock.
 - **Field networking**: Pi hotspot / access-point mode for use away from Wi-Fi.
 - **Guided flats** (cap-on, adjust, OK, capture, restore); darks; FITS output.
-- **User guide** for observers (`docs/guide/`), with screenshots from real sessions.
 - **Browser-level UI tests** (Playwright, Chromium and WebKit) in CI, with an opt-in profile for the real Pi.
 - Signed apt repository; authentication and HTTPS; configurable guiding parameters; ROI/binning/cooler controls; colour cameras; more drivers.
 
@@ -48,7 +47,7 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 - Limb fitting needs some limb in view; thresholds assume the sky is darker than the disc.
 - No authentication; keep the Pi on a trusted network.
 - The SER header's local-time field carries UTC.
-- Released packages redistribute Player One's proprietary library (see [ADR 0006](adr/0006-playerone-via-vendor-sdk.md), [0010](adr/0010-debian-package-and-updates.md)).
+- Released packages redistribute Player One's proprietary library (see [ADR 0006](../adr/0006-playerone-via-vendor-sdk.md), [0010](../adr/0010-debian-package-and-updates.md)).
 
 
 ## Milestones (GitHub)

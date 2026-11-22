@@ -1,12 +1,14 @@
 # Hardware
 
+What RustFlare supports. Verification state is given per device; the open checks are in the [hardware checklist](../project/hardware-checklist.md).
+
 ## Player One cameras
 
 Player One cameras are **not** V4L2/UVC devices. RustFlare drives them through Player One's userspace library
 `libPlayerOneCamera`, using the `playerone-sdk` crate, which **bundles the library for Linux x86-64 and arm64** (and macOS).
-No separate vendor SDK install is needed. The package includes the library and depends on `libusb-1.0-0` (installed automatically). When building from source use `--features playerone`; the build copies the library next to the binary, keep them together. See [ADR 0006](adr/0006-playerone-via-vendor-sdk.md).
+No separate vendor SDK install is needed. The package includes the library and depends on `libusb-1.0-0` (installed automatically). When building from source use `--features playerone`; the build copies the library next to the binary, keep them together. See [ADR 0006](../adr/0006-playerone-via-vendor-sdk.md).
 
-Controls exposed: exposure (µs), gain, offset, 8/16-bit output. Colour cameras deliver raw Bayer data, treated as mono.
+Controls exposed: exposure (µs), gain, offset, 8/16-bit output. Colour cameras deliver raw Bayer data, see [Colour cameras](capture-formats.md#colour-cameras).
 
 !!! note "Status: verified on a real Apollo-M MINI (Raspberry Pi 5, USB 3)"
     Verified: USB vendor id `a0a0` (the shipped udev rule matches and grants access), enumeration, opening, controls (exposure 10 µs–2000 s, gain 0–550, offset 0–1000, 8/16-bit), 1944×1472 frames, pixel size 4.5 µm (used by the Optics panel), temperature readout.
@@ -15,7 +17,7 @@ Controls exposed: exposure (µs), gain, offset, 8/16-bit output. Colour cameras 
 
 ## ZWO ASI cameras
 
-ZWO ASI cameras are driven through ZWO's userspace library `libASICamera2`, which RustFlare **loads at run time** (`dlopen`); it is never linked or bundled. On Raspberry Pi OS / Debian install it with `sudo apt install libasi` (the `.deb` lists it as *Recommends*, so apt installs it by default). Without it the ASI driver lists no cameras and opening one reports `install it with: sudo apt install libasi`. Build with `--features asi`; see [ADR 0014](adr/0014-zwo-asi-cameras.md).
+ZWO ASI cameras are driven through ZWO's userspace library `libASICamera2`, which RustFlare **loads at run time** (`dlopen`); it is never linked or bundled. On Raspberry Pi OS / Debian install it with `sudo apt install libasi` (the `.deb` lists it as *Recommends*, so apt installs it by default). Without it the ASI driver lists no cameras and opening one reports `install it with: sudo apt install libasi`. Build with `--features asi`; see [ADR 0014](../adr/0014-zwo-asi-cameras.md).
 
 Controls exposed: exposure (µs), gain, offset, USB bandwidth (%), 8/16-bit output. Mono cameras only for now. The `libasi` package ships its own udev rule (`/usr/lib/udev/rules.d/99-asi.rules`: vendor id `03c3`, mode 0666, and `usbfs_memory_mb=200`), so RustFlare adds none. The same vendor id covers the ZWO AM3/AM5 mount (a serial device), which the rule leaves usable.
 
@@ -26,21 +28,18 @@ Controls exposed: exposure (µs), gain, offset, USB bandwidth (%), 8/16-bit outp
     **Frame rate:** the camera enumerated at **USB 2.0 speed (480 Mbit/s)** on the Pi's USB 2 port, so it measured **8.7 fps at 16-bit and 17.3 fps at 8-bit (full frame)**, independent of exposure from 1 to 10 ms: the USB 2 link (about 40 MB/s) is the limit, not the driver. ZWO's 164 fps needs a USB 3 port and cable (blue Pi port), and was **not measured**.
 
 
+## ZWO AM3 / AM5 mounts
+
 Connected over USB as a serial device (it appears as `/dev/ttyACM0`, and as a stable name under `/dev/serial/by-id/`, which the Mount panel suggests); RustFlare speaks the ZWO serial protocol directly (no ASCOM/INDI).
 The AM3 can run equatorial or alt-az; RustFlare calls the axes *primary/secondary* (RA/Dec in equatorial mode). See [Calibration](tracking-and-guiding.md#calibration) for what that means for guiding. Supported: solar tracking rate (`:TS#`), tracking on/off, manual slewing at the ten speeds the mount offers
 (0.25× … 1440× sidereal), pulse guiding. Guide rate is clamped to the mount's 0.1–0.9× range; the mount has one rate for both axes.
-See [ADR 0007](adr/0007-zwo-mount-serial-driver.md) for the fixes made relative to Vidoxide's driver. The mount can also be connected over **Bluetooth** (Aim tab: Connection > Bluetooth > Scan for mounts; [ADR 0015](adr/0015-ble-mount-transport.md)). Press the mount's pairing button and close the ZWO phone app first; the Pi needs `bluez` (a Recommends of the package). *Implemented but not yet verified on a real mount.* What we know about the link is in [ZWO mount Bluetooth protocol](zwo-ble-protocol.md).
+The mount can also be connected over **Bluetooth** (Aim tab: Connection > Bluetooth > Scan for mounts; [ADR 0015](../adr/0015-ble-mount-transport.md)). Press the mount's pairing button and close the ZWO phone app first; the Pi needs `bluez` (a Recommends of the package). The Bluetooth link is verified on a real AM3 (see Status below). Protocol notes for developers: [ZWO mount Bluetooth protocol](../project/zwo-ble-protocol.md).
 
 !!! note "Status"
-    Unit-tested against a mock port; upstream's version was tested on AM3 and AM5. Verify on first use: model string, solar rate, guide direction (calibration discovers it).
+    Verified on a real ZWO AM3 over USB and Bluetooth: connect, tracking, nudge, Send home and Go to Sun. Other models (AM3N, AM5, AM5N) probably behave the same but have not been tried. Guiding on a real sky and the meridian flip assist are not yet verified.
 
 ## Simulators
 
 `simulator` camera and mount are always available. The simulated Sun drifts, responds to mount motion, and has a *Sim scene* control (0 = Sun, 1 = vignetted flat field) for testing flats.
 
-## Adding a camera or mount
-
-1. Implement `rustflare_core::{CameraDriver, Camera}` (or `Mount`) in a new file under `crates/camera/src/` (or `crates/mount/src/`).
-2. Register it in `rustflare_camera::drivers()` / `rustflare_mount::connect()` — behind a Cargo feature if it needs native libraries.
-3. Report settings as `ControlDesc`s; use the standard ids (`exposure_us`, `gain`, `offset`, `high_bit_depth`) where they apply so flats and the UI work unchanged.
-4. Add a simulator-style or mock-I/O test. The UI needs no change: it renders whatever controls the driver returns.
+To add a driver for another camera or mount, see the [development guide](../project/development.md#adding-a-camera-or-mount).

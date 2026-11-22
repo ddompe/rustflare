@@ -5,7 +5,7 @@
 ```
 crates/     core camera mount tracking capture server
 web/        React + Vite UI (src/, components/)
-docs/       this documentation; docs/adr/ decision records
+docs/       this documentation (guide/, reference/, project/); docs/adr/ decision records
 packaging/  files of the .deb: systemd unit, udev rule, maintainer scripts, rustflare-update, rustflare-user
 scripts/    build-deb.sh, smoke.sh, mock-github-release.py
 .github/    CI (ci.yml) and release (release.yml) workflows
@@ -67,3 +67,18 @@ RUSTFLARE_FIXTURES=/absolute/path/to/logs cargo test -p rustflare-server replay_
 ```
 
 It runs the Sun detector over every logged picture (at its thumbnail scale) and fails if a Sun that was found during the session is lost now or its centre moved by more than 12 full-resolution pixels. Keep real recordings out of the repository (they show your site and equipment); commit only synthetic or deliberately anonymised, small fixtures.
+
+## Adding a camera or mount
+
+1. Implement `rustflare_core::{CameraDriver, Camera}` (or `Mount`) in a new file under `crates/camera/src/` (or `crates/mount/src/`).
+2. Register it in `rustflare_camera::drivers()` / `rustflare_mount::connect()`, behind a Cargo feature if it needs native libraries.
+3. Report settings as `ControlDesc`s; use the standard ids (`exposure_us`, `gain`, `offset`, `high_bit_depth`) where they apply so flats and the UI work unchanged.
+4. Add a simulator-style or mock-I/O test. The UI needs no change: it renders whatever controls the driver returns.
+
+## Documentation
+
+The docs are MkDocs (`mkdocs.yml`, `docs/`), published to GitHub Pages at `/manual/` by `.github/workflows/apt-repo.yml`. The navigation has three parts: user guide (`docs/guide/`), reference (`docs/reference/`) and developer and project material (`docs/project/`, `docs/adr/`). Keep planning, status and process notes out of the first two. Build locally with `python3 -m mkdocs build --strict -d /tmp/site`.
+
+The screenshots in `docs/img/manual/` are produced from the simulator by `web/e2e/manual-shots.mjs` (`node e2e/manual-shots.mjs ../docs/img/manual`).
+
+The signed apt repository is set up by the maintainer once: see [Apt repository setup](apt-repository.md).

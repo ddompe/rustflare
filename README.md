@@ -36,8 +36,8 @@ Headless, web-controlled **solar capture** in Rust. Run it on a Raspberry Pi nex
 
 **Running it**
 - Installs and upgrades as a Debian package (`rustflare-update`, or a signed apt repository); settings (site, flats, guiding, storage, UI layout) survive reboots; auto-reconnect of camera and mount.
-- **User manual** with screenshots: [docs/manual.md](docs/manual.md), published at https://ddompe.github.io/rustflare/manual/.
-- **Field Wi-Fi hotspot** (`rustflare-hotspot`) for use without a network, with an automatic way back to the previous Wi-Fi ([docs/hotspot.md](docs/hotspot.md)).
+- **User guide** with screenshots: [docs/guide/](docs/index.md), published at https://ddompe.github.io/rustflare/manual/. Start with [Getting started](docs/guide/getting-started.md); problems are covered in [Troubleshooting](docs/guide/troubleshooting.md).
+- **Field Wi-Fi hotspot** (`rustflare-hotspot`) for use without a network, with an automatic way back to the previous Wi-Fi ([docs/guide/hotspot.md](docs/guide/hotspot.md)).
 - Opt-in **session log** (what the tracker and guider saw, plus small frames) and a replay test harness for building regression fixtures from real sessions.
 - Optional **password** and **HTTPS** with a private certificate authority you trust once on your phone (`rustflare-tls`).
 - Built-in simulators for the camera and mount, so everything can be tried without hardware; Playwright browser tests run in CI.
@@ -54,7 +54,7 @@ sudo apt install ./rustflare_*_arm64.deb
 sudo rustflare-update          # later: install the newest release
 ```
 
-Or from the signed apt repository (see [docs/apt-repository.md](docs/apt-repository.md)):
+Or from the signed apt repository (see [docs/guide/updating.md](docs/guide/updating.md)):
 
 ```sh
 curl -fsSL https://ddompe.github.io/rustflare/rustflare.gpg | sudo tee /usr/share/keyrings/rustflare.gpg >/dev/null
@@ -62,7 +62,7 @@ echo "deb [signed-by=/usr/share/keyrings/rustflare.gpg arch=arm64] https://ddomp
 sudo apt update && sudo apt install rustflare
 ```
 
-Then open `http://<pi-name>.local:8080/`. For HTTPS and a password see [docs/https.md](docs/https.md). Details in [docs/getting-started.md](docs/getting-started.md); how to use it in [docs/usage.md](docs/usage.md).
+Then open `http://<pi-name>.local:8080/`. For HTTPS and a password see [docs/guide/phone-setup.md](docs/guide/phone-setup.md). Details in [docs/guide/getting-started.md](docs/guide/getting-started.md); how to use it in the [tour of the screen](docs/guide/screen.md).
 
 ## Status
 
@@ -73,10 +73,10 @@ Developed against a Raspberry Pi 5, a Player One Apollo-M MINI and a ZWO AM3.
 | ZWO AM3 over USB and Bluetooth: connect, tracking, nudge, send home, Go to Sun | **Verified on the real mount** |
 | Capture path: camera and USB stick on separate USB 3 controllers (~57 fps at 1944x1472, 3.4 GB sequence) | **Verified on the Pi** |
 | Storage, 4 GB FAT32 split, camera settings restore, package install and upgrade | **Verified on the Pi** |
-| Flats, guider on a real sky, tracking on real H-alpha images, prominence tools, safe eject, USB recovery, iPhone app, HTTPS on the phone | Built and tested on the simulators; **waiting for a real-hardware check** ([checklist](docs/hardware-checklist.md)) |
+| Flats, guider on a real sky, tracking on real H-alpha images, prominence tools, safe eject, USB recovery, iPhone app, HTTPS on the phone | Built and tested on the simulators; **waiting for a real-hardware check** ([checklist](docs/project/hardware-checklist.md)) |
 | ZWO ASI cameras (e.g. ASI174MM Mini) | Driver built into the package (loads `libasi` at run time); **waiting for a real camera on a USB 3 cable** |
 
-See [docs/roadmap.md](docs/roadmap.md) for the plan and milestones.
+See [docs/project/roadmap.md](docs/project/roadmap.md) for the plan and milestones.
 
 ## Quick try (no hardware)
 
@@ -89,8 +89,8 @@ In the UI: open the *simulated camera*, connect the *simulator* mount, enable so
 
 ## Documentation
 
-Start at [docs/index.md](docs/index.md) (`mkdocs serve` renders it). Design decisions are in [docs/adr](docs/adr/README.md).
+Start at [docs/index.md](docs/index.md) (`mkdocs serve` renders it): a user guide, a reference and developer material. Design decisions are in [docs/adr](docs/adr/README.md).
 
 ## Security
 
-By default there is **no password** and the server can slew a mount: use a trusted network, or set a password and enable HTTPS ([docs/https.md](docs/https.md)). It is built for a telescope on a LAN, not for exposure to the internet.
+By default there is **no password** and the server can slew a mount: use a trusted network, or set a password and enable HTTPS ([docs/guide/phone-setup.md](docs/guide/phone-setup.md)). It is built for a telescope on a LAN, not for exposure to the internet.

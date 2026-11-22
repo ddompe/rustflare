@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-off: create the GitHub Project board, labels and issues that mirror docs/roadmap.md.
+"""One-off: create the GitHub Project board, labels and issues that mirror docs/project/roadmap.md.
 
 Needs `gh` logged in with the `project` scope (gh auth refresh -h github.com -s project).
 Re-running creates duplicates; it is meant to be run once.
@@ -33,9 +33,9 @@ LABELS = {
 ITEMS = [
     # ------------------------------------------------------------------ pending
     (False, ["hardware-verification"], "Verify the Player One camera on real hardware",
-     "Enumerate/open, exposure and gain ranges, real frame rate, the udev rule (the USB vendor id `a0a0` is unverified: compare with `lsusb`), colour/mono handling.\n\nSee docs/hardware.md and ADR 0006."),
+     "Enumerate/open, exposure and gain ranges, real frame rate, the udev rule (the USB vendor id `a0a0` is unverified: compare with `lsusb`), colour/mono handling.\n\nSee docs/reference/hardware.md and ADR 0006."),
     (False, ["hardware-verification"], "Verify the ZWO AM3 on real hardware",
-     "Model reply to `:GVP#`, solar rate `:TS#`, slew and guide directions, pulse behaviour, calibration result, guiding quality; equatorial vs alt-az mode.\n\nSee docs/hardware.md, docs/tracking-and-guiding.md and ADR 0007."),
+     "Model reply to `:GVP#`, solar rate `:TS#`, slew and guide directions, pulse behaviour, calibration result, guiding quality; equatorial vs alt-az mode.\n\nSee docs/reference/hardware.md, docs/reference/tracking-and-guiding.md and ADR 0007."),
     (False, ["hardware-verification", "tracking"], "Verify tracking on real H-alpha images",
      "Otsu sky/disc separation, limb fit with a partial disc and the Optics radius, anchor on a sunspot/filament/plage, behaviour with prominences.\n\nSee ADR 0013."),
     (False, ["hardware-verification"], "Verify USB-drive capture on the FAT32 stick",
@@ -51,7 +51,7 @@ ITEMS = [
     (False, ["ui"], "Visual review of the newer UI panels",
      "Display controls, Storage, Optics, bursts/buffer were type-checked and served but not reviewed visually after the first layout. Check layout on desktop and phone, and the slider value labels."),
     (False, ["decision", "infra"], "Publish the first release (v0.2.0): decide on redistributing Player One's library",
-     "The `.deb` bundles Player One's proprietary `libPlayerOneCamera` (via the `playerone-sdk-sys` crate). Confirm Player One's terms (or ask them) before publishing release assets, then `git tag v0.2.0 && git push origin v0.2.0` (see docs/development.md). Alternative: ship a package without the library and download it at install time.\n\nSee ADR 0006 and ADR 0010."),
+     "The `.deb` bundles Player One's proprietary `libPlayerOneCamera` (via the `playerone-sdk-sys` crate). Confirm Player One's terms (or ask them) before publishing release assets, then `git tag v0.2.0 && git push origin v0.2.0` (see docs/project/development.md). Alternative: ship a package without the library and download it at install time.\n\nSee ADR 0006 and ADR 0010."),
     (False, ["infra"], "Signed apt repository (GitHub Pages)",
      "So `apt upgrade` works without `rustflare-update` and updates are signature-verified (SHA-256 alone does not protect against a compromised release). Needs a signing key owned by the maintainer.\n\nSee ADR 0010."),
     (False, ["feature"], "Streaming capture with the SDK's stream mode",
@@ -98,7 +98,7 @@ def main():
     proj = json.loads(gh("project", "create", "--owner", OWNER, "--title", TITLE, "--format", "json"))
     num, pid = str(proj["number"]), proj["id"]
     gh("project", "link", num, "--owner", OWNER, "--repo", REPO)
-    gh("project", "edit", num, "--owner", OWNER, "--description", "Plan and progress for Rustflare. Mirrors docs/roadmap.md.")
+    gh("project", "edit", num, "--owner", OWNER, "--description", "Plan and progress for Rustflare. Mirrors docs/project/roadmap.md.")
 
     fields = json.loads(gh("project", "field-list", num, "--owner", OWNER, "--format", "json"))["fields"]
     status = next(f for f in fields if f["name"] == "Status")
@@ -114,7 +114,7 @@ def main():
         gh("project", "item-edit", "--id", item["id"], "--project-id", pid,
            "--field-id", status["id"], "--single-select-option-id", done if is_done else todo)
         if is_done:
-            gh("issue", "close", url, "--repo", REPO, "--comment", "Completed; see docs/roadmap.md.")
+            gh("issue", "close", url, "--repo", REPO, "--comment", "Completed; see docs/project/roadmap.md.")
         print(("done " if is_done else "todo ") + title)
     print(f"\nBoard: https://github.com/users/{OWNER}/projects/{num}")
 

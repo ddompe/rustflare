@@ -128,4 +128,4 @@ Replies show up as `[CHG] Attribute … Value:` lines followed by a hex dump. Al
 
 - ZWO, *ZWO Mount Serial Communication Protocol* v1.8 (linked from INDIGO's `mount_asi` driver documentation).
 - INDIGO's ZWO mount driver: <https://github.com/indigo-astronomy/indigo/blob/master/indigo_drivers/mount_asi/indigo_mount_asi.c>.
-- RustFlare's USB driver: `crates/mount/src/zwo.rs`; the decision record: [ADR 0007](adr/0007-zwo-mount-serial-driver.md); the tracking issue for a BLE transport is on the project board.
+- RustFlare's USB driver: `crates/mount/src/zwo.rs`; the decision record: [ADR 0007](../adr/0007-zwo-mount-serial-driver.md); the tracking issue for a BLE transport is on the project board.

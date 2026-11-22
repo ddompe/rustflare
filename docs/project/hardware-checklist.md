@@ -21,17 +21,17 @@ Everything below was built and tested on the simulators; each item needs the rea
 
 | new | Darks | Cap on, Camera > Darks > *Capture darks*: hot pixels disappear from the live view, overlay *Dark: applied*; change the exposure and it says *mismatch* |
 | new | FITS and drop policy | Record 100 frames as FITS (open one in a viewer: image upright, EXPTIME and GAIN present); on the USB stick at full rate try *Drop frames* and check the dropped count |
-| new | Buffer reuse | With the phone tab closed and then open, `top -H -p $(pgrep -x rustflare-serve)`: compare CPU with the ~55 % measured before (docs/performance.md) |
-| #72 | HTTPS on the iPhone | The Pi already serves HTTPS: install and trust the CA (docs/https.md), open https://astropi.local:8443, Home Screen, location button |
+| new | Buffer reuse | With the phone tab closed and then open, `top -H -p $(pgrep -x rustflare-serve)`: compare CPU with the ~55 % measured before ([performance audit](performance-audit.md)) |
+| #72 | HTTPS on the iPhone | The Pi already serves HTTPS: install and trust the CA ([phone setup](../guide/phone-setup.md)), open https://<pi-name>.local:8443, Home Screen, location button |
 
-| new | Session log | More > Session log on during a tracking/guiding session (20+ min on the Sun): the log appears under `<drive>/logs/`; copy it off and run the replay test (docs/development.md); it should pass |
+| new | Session log | More > Session log on during a tracking/guiding session (20+ min on the Sun): the log appears under `<drive>/logs/`; copy it off and run the replay test ([development guide](development.md#real-data-regression-fixtures-session-log)); it should pass |
 
 | new | ROI | Camera > Frame size: 50 % and 25 % in the phone UI; fps overlay jumps; tracking restarts; back to Full (measured via the API on 2026-11-21: 57 -> 153 fps) |
 
 | new | Hotspot | At home, in a terminal with an ethernet cable or the Pi's screen if possible: `sudo rustflare-hotspot create`, then `up --yes --minutes 10`; join the Wi-Fi with the iPhone and open http://10.42.0.1:8080; it returns to the home Wi-Fi by itself (tested on the Pi with a 2-minute cycle on 2026-11-21; no phone was available to join it) |
 
 | new | Hotspot with a USB Wi-Fi dongle | Plug a dongle; `sudo rustflare-hotspot status` shows 2 radios; `create` then `up`: the hotspot comes up on the dongle while ssh over the home Wi-Fi keeps working |
-| new | iPhone and HTTPS landing page | Open http://astropi.local:8080 on the phone: the page says whether HTTPS works and lists the three steps; make sure *Certificate Trust Settings* is switched on for RustFlare local CA |
+| new | iPhone and HTTPS landing page | Open http://<pi-name>.local:8080 on the phone: the page says whether HTTPS works and lists the three steps; make sure *Certificate Trust Settings* is switched on for RustFlare local CA |
 
 | new | Meridian flip assist | Near the meridian with the Sun tracked and calibrated: Record position, Flip and re-centre (watch the mount); check the image turns 180 degrees, the Sun returns to its recorded spot, and `:GAST#` pointing is read correctly. Also try the manual path: flip with the ZWO app then Restore |
 

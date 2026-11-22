@@ -1,4 +1,6 @@
-# Performance notes
+# Performance audit
+
+Developer profiling notes. The user-facing figures are in [Performance](../reference/performance.md).
 
 Measured on the target hardware (Raspberry Pi 5, 4 cores, 2026-11-21): Player One Apollo-M MINI, 1944x1472 RAW16 at ~57 fps (~326 MB/s), one viewer on the phone, no recording.
 
@@ -8,7 +10,7 @@ Measured on the target hardware (Raspberry Pi 5, 4 cores, 2026-11-21): Player On
 | `engine` | ~18 % | frame intake, mean/histogram, Sun detection, status |
 | `engine` (second) | ~15 % | tracker / guider work |
 
-Total about 60 % of one core out of four: plenty of headroom while recording (the SER write path is I/O bound: the USB 3 stick writes 75-90 MB/s sustained, see the USB 3 check in the hardware checklist).
+Total about 60 % of one core out of four: plenty of headroom while recording (the SER write path is I/O bound: the USB 3 stick writes 75-90 MB/s sustained, see the USB 3 check in the [hardware checklist](hardware-checklist.md)).
 
 ## What was checked
 

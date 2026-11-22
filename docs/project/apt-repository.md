@@ -1,6 +1,6 @@
-# Signed apt repository
+# Apt repository setup (maintainers)
 
-With the repository, a Pi installs and upgrades RustFlare with plain `apt`, and every package is checked against your signature (the SHA-256 check in `rustflare-update` only protects against corruption, not against a tampered release).
+How the maintainer publishes the signed apt repository. Using it on a Pi is described in [Updating](../guide/updating.md#with-the-signed-apt-repository). With the repository, a Pi installs and upgrades RustFlare with plain `apt`, and every package is checked against your signature (the SHA-256 check in `rustflare-update` only protects against corruption, not against a tampered release).
 
 ## One-time setup (you, about 10 minutes)
 

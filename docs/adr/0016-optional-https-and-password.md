@@ -16,5 +16,5 @@ The server had no access control and only plain HTTP. Browsers (iOS in particula
 ## Consequences
 
 - Default behaviour is unchanged (plain HTTP, no password).
-- The phone must trust the CA once (documented in docs/https.md).
+- The phone must trust the CA once (documented in docs/guide/phone-setup.md).
 - Not an internet-facing design: no rate limiting, one shared password.
