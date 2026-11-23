@@ -59,6 +59,8 @@ assets = [
   ["../../packaging/rustflare.default", "etc/default/rustflare", "644"],
   ["../../packaging/99-rustflare.rules", "lib/udev/rules.d/", "644"],
   ["../../packaging/rustflare-user", "usr/bin/", "755"],
+  ["../../scripts/pi-check.sh", "usr/bin/rustflare-check", "755"],
+  ["../../scripts/pi-enable-memory-cgroup.sh", "usr/bin/rustflare-memcg", "755"],
   ["../../packaging/rustflare-tls", "usr/bin/", "755"],
   ["../../packaging/rustflare-hotspot", "usr/bin/", "755"],
   ["../../LICENSE", "usr/share/doc/rustflare/", "644"],

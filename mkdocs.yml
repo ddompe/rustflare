@@ -13,6 +13,7 @@ nav:
       - More tab: guide/more.md
       - Phone setup: guide/phone-setup.md
       - Field networking: guide/hotspot.md
+      - Setting up the Pi: guide/pi-setup.md
       - Stacking: guide/stacking.md
       - Updating: guide/updating.md
       - Troubleshooting and FAQ: guide/troubleshooting.md

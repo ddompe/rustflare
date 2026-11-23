@@ -1,7 +1,7 @@
 #!/bin/sh
 # Raspberry Pi OS turns the memory cgroup controller off (the firmware adds cgroup_disable=memory), so systemd's MemoryMax= on the stacker
 # is ignored. This adds cgroup_enable=memory cgroup_memory=1 to /boot/firmware/cmdline.txt (a backup is kept) and says to reboot.
-#   sudo scripts/pi-enable-memory-cgroup.sh
+#   sudo rustflare-memcg            (installed with the package; or scripts/pi-enable-memory-cgroup.sh from a checkout)
 set -eu
 F=/boot/firmware/cmdline.txt
 [ "$(id -u)" = 0 ] || { echo "run as root: sudo $0" >&2; exit 1; }

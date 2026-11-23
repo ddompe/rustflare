@@ -16,7 +16,7 @@ Download the package from the [latest release](https://github.com/ddompe/rustfla
 sudo apt install ./rustflare_*_arm64.deb
 ```
 
-That is the whole install. It creates the service, starts it and enables it at boot. To get updates through `apt` instead, set up the [apt repository](updating.md#with-the-signed-apt-repository).
+That is the whole install. For a Pi that will run unattended at the telescope, follow [Setting up the Pi](pi-setup.md) once (about ten minutes) and finish with `rustflare-check`. It creates the service, starts it and enables it at boot. To get updates through `apt` instead, set up the [apt repository](updating.md#with-the-signed-apt-repository).
 
 ## First connection from the phone
 

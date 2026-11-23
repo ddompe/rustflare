@@ -80,7 +80,7 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 | Check | How |
 |---|---|
 | Stacker does not disturb the real camera | Record on the Sun with the Apollo at full rate for an hour with the stacker on `between_bursts`, then with `always`; compare `frame_gap` events in `events.jsonl` and the recorder's dropped frames with the job table of `stack_telemetry.py` (the 2026-11-22 run used a simulated camera only) |
-| Memory limit enforced | After `sudo scripts/pi-enable-memory-cgroup.sh` and a reboot: `cat /sys/fs/cgroup/cgroup.controllers` lists `memory`, `/sys/fs/cgroup/system.slice/rustflare-stack.service/memory.max` is 2147483648 (done on the development Pi 2026-11-22) |
+| Memory limit enforced | After `sudo rustflare-memcg` and a reboot: `cat /sys/fs/cgroup/cgroup.controllers` lists `memory`, `/sys/fs/cgroup/system.slice/rustflare-stack.service/memory.max` is 2147483648 (done on the development Pi 2026-11-22) |
 | Priorities took effect | `ps -L -o tid,comm,ni,psr -p $(pgrep -x rustflare-serve)`: nice -5 on the recorder, nice 19 on `logwriter`; the stacker shows `Cpus_allowed_list: 2-3` in `/proc/<pid>/status` |
 
 ## Stacker (rustflare-stack)
