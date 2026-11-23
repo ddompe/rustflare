@@ -2,7 +2,9 @@
 
 Work is tracked on the [GitHub project board](https://github.com/users/ddompe/projects/1) (one issue per item; closed = done). This page is the narrative summary.
 
-**Where we are:** version 0.3.1. It has captured real H-alpha data with the owner's Player One Apollo-M MINI and ZWO AM3 on a Raspberry Pi 5. The open items under *Before v0.3.0* are the hardware checks the owner still has to run; they are in the [hardware checklist](hardware-checklist.md).
+**Where we are:** version 0.5.0 (2026-11-22). The recorder, mount, tracker and guider have run on the Sun with the owner's Player One Apollo-M MINI, ZWO AM3 and Lunt LS50 on a Raspberry Pi 5; the stacker (`rustflare-stack`) stacks finished recordings from disk and, new in 0.5.0, bursts straight from the recorder's shared frame ring ([After each burst](../guide/recording-modes.md), [ADR 0019](../adr/0019-shared-frame-ring.md)). What still needs real equipment is on the [hardware checklist](hardware-checklist.md) and the issues labelled `hardware-verification`.
+
+**Next, in rough order:** stacking from memory on the Sun for an hour ([#87](https://github.com/ddompe/rustflare/issues/87)); the stacker compared with AutoStakkert and Siril ([#91](https://github.com/ddompe/rustflare/issues/91)); the rest of the UI critique ([#88](https://github.com/ddompe/rustflare/issues/88)); the ZWO ASI camera and colour cameras (#30, #56, #92); the Dec slide (#82) and the stick's stalls (#86).
 
 ## Verified on the real system (first session, 2026-11-21)
 
@@ -16,13 +18,9 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 - **Packaging on the Pi:** install and upgrade of the `.deb`, config and captures preserved.
 - **CI:** tests, simulator smoke test and the arm64 package build pass on GitHub.
 
-## Before v0.3.0 (first release)
+## Since the first release
 
-1. **Open the recorded SER files in an independent tool** (SER Player, AutoStakkert, Siril) to confirm compatibility.
-2. **Test the new drift-correcting guider on the real sky** (it replaced a guider that overshot at 0.88″/px; see [ADR 0008](../adr/0008-solar-tracking-and-guiding.md)). Unit tests show it ignores seeing and corrects drift; the real mount has not seen it yet.
-3. **FAT32 4 GB split and unplug behaviour** on the real stick.
-4. **UI redesign** (a side agent is working on a simpler, responsive, iPhone-friendly UI), then deploy and check it on the phone.
-5. **Decide on publishing the release**: the package bundles Player One's proprietary library ([issue #10](https://github.com/ddompe/rustflare/issues/10)).
+Released: 0.3.0 (first release), 0.3.1, 0.4.0 (field fixes from the first day on the Sun: brightness-invariant detection, one Sun model, GoTo to the Moon and planets, the stacker), 0.5.0 (frame ring, stacking from memory, notices). The first-release checklist (SER files in independent tools, the drift-correcting guider on the real sky, the FAT32 split and unplug behaviour, the redesigned UI on the phone, and the decision to publish) was worked through and closed on the board.
 
 ## Planned
 
@@ -31,7 +29,7 @@ Setup: Raspberry Pi 5 (Debian 13), Player One Apollo-M MINI (USB 3), ZWO AM3, H-
 - **EAF support and seeing-robust autofocus**: drive a ZWO EAF; compute a focus metric on an *average of several frames* (aligned on the limb) so turbulence does not corrupt the metric.
 - **Colour (OSC) cameras**: Bayer frame formats, debayering for preview and stills, raw Bayer SER recording, tracking on a luminance/green image, colour UI (white balance, per-channel histogram).
 - **Device datasheets and inventory**: images and spec sheets (including the HCG point) for ZWO and Player One planetary/solar cameras and the AM3, shown in the Camera and Mount panels.
-- **Software coronagraph for prominences**: a second, longer exposure recorded after the regular one (disc saturated on purpose), with disc masks from the fitted limb, stacked separately and blended in post-processing; plus a live coronagraph preview (disc blacked out, rest stretched).
+- **Software coronagraph for prominences** (built in 0.4.0, see the prominence lanes): a second, longer exposure recorded after the regular one (disc saturated on purpose), with disc masks from the fitted limb, stacked separately and blended in post-processing; plus a live coronagraph preview (disc blacked out, rest stretched).
 - **Send-home button** (`POST /api/mount/home`, implemented; to be verified on the mount) and a UI for the mount's real state. Connecting no longer switches tracking off; to be verified with the mount actually tracking.
 - **iPhone web app**: responsive layout, Home Screen app (part of the UI redesign); HTTPS later enables a service worker and wake lock.
 - **Field networking**: Pi hotspot / access-point mode for use away from Wi-Fi.

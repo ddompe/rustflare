@@ -1,5 +1,8 @@
 # Next round (scheduled for the 8 pm session, 2026-11-21)
 
+!!! note "Historical"
+    This is the plan of 2026-11-21 and every item on it was done (releases 0.3.1 to 0.5.0). What is planned now is on the [roadmap](roadmap.md) and the project board.
+
 Work in this order; commit and push after each item, update the GitHub issue and the board (`python3 .local/board-sync.py` if present, else `gh issue edit/close`), test on the simulators first, deploy to the Pi (it is available; the mount is off, so no mount tests), and add anything that needs the owner to `docs/hardware-checklist.md`.
 
 1. **Package upgrade must restart the service (#75).** Look at `packaging/postinst`. On upgrade, restart the service if it was active (`deb-systemd-invoke try-restart`), with the caveat that the unit already flushes frames on stop. Verify on the Pi: install a newer dev build with `dpkg -i`, confirm the process start time changes. Do this first: it makes every later deploy reliable.
