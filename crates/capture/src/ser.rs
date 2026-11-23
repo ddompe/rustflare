@@ -32,10 +32,16 @@ fn fixed<const N: usize>(s: &str) -> [u8; N] {
     a
 }
 
+/// Written data is handed to the drive in chunks of this size while it is still being written (see `SerWriter::write_behind`).
+const WRITE_BEHIND_BYTES: u64 = 64 << 20;
+
 pub struct SerWriter {
     w: BufWriter<File>,
     format: (u32, u32, PixelFormat),
     stamps: Vec<u64>,
+    /// Write-behind: the file offset up to which writeback has been started, and the chunk before it that is waited for and dropped.
+    started_to: u64,
+    dropped_to: u64,
 }
 
 impl SerWriter {
@@ -63,7 +69,7 @@ impl SerWriter {
         h.extend_from_slice(&now.to_le_bytes()); // UTC
         debug_assert_eq!(h.len(), HEADER_LEN);
         w.write_all(&h)?;
-        Ok(SerWriter { w, format: (width, height, format), stamps: Vec::new() })
+        Ok(SerWriter { w, format: (width, height, format), stamps: Vec::new(), started_to: HEADER_LEN as u64, dropped_to: HEADER_LEN as u64 })
     }
 
     pub fn write_frame(&mut self, f: &Frame) -> Result<()> {
@@ -81,8 +87,37 @@ impl SerWriter {
         self.stamps.push(ticks(captured_at));
         if self.stamps.len() % CHECKPOINT_FRAMES == 0 {
             self.checkpoint()?;
+            self.write_behind();
         }
         Ok(())
+    }
+
+    /// Smooths the drive's workload (issue #86). Left alone, the kernel collects gigabytes of written frames in memory and then
+    /// writes them out in one flood, which on a USB stick on FAT32 starves everything else on the machine for a second or two
+    /// (the camera's USB transfers, the preview). So every 64 MB: start writing that chunk to the drive now (without waiting for
+    /// it), wait for the chunk before it, and drop that one from the page cache, which also keeps memory free for the frame buffer.
+    /// Best effort: a failure here changes nothing about the data, which the ordinary writes still carry.
+    fn write_behind(&mut self) {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            let (w, h, f) = self.format;
+            let end = HEADER_LEN as u64 + self.stamps.len() as u64 * w as u64 * h as u64 * f.bytes_per_pixel() as u64;
+            if end < self.started_to + WRITE_BEHIND_BYTES {
+                return;
+            }
+            let fd = self.w.get_ref().as_raw_fd();
+            let (from, to) = (self.started_to, end);
+            unsafe {
+                libc::sync_file_range(fd, from as i64, (to - from) as i64, libc::SYNC_FILE_RANGE_WRITE);
+                if self.dropped_to < from {
+                    libc::sync_file_range(fd, self.dropped_to as i64, (from - self.dropped_to) as i64, libc::SYNC_FILE_RANGE_WAIT_BEFORE | libc::SYNC_FILE_RANGE_WRITE | libc::SYNC_FILE_RANGE_WAIT_AFTER);
+                    libc::posix_fadvise(fd, self.dropped_to as i64, (from - self.dropped_to) as i64, libc::POSIX_FADV_DONTNEED);
+                }
+            }
+            self.dropped_to = if self.dropped_to < from { from } else { self.dropped_to };
+            self.started_to = to;
+        }
     }
 
     /// Writes the current frame count into the header and returns to the end of the data.
@@ -173,5 +208,28 @@ mod tests {
         assert_eq!(u32::from_le_bytes(b[18..22].try_into().unwrap()), 10);
         std::fs::remove_file(&path).unwrap();
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn a_long_recording_with_write_behind_is_still_a_valid_file() {
+        // more than two write-behind chunks (64 MB each) of 2 MB frames
+        let d = std::env::temp_dir().join(format!("rf-ser-wb-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join("long.ser");
+        let mut w = SerWriter::create(&p, 1024, 1024, PixelFormat::Mono16, "cam", "scope").unwrap();
+        let n = 160u32;
+        for i in 0..n {
+            let f = Frame::new(1024, 1024, PixelFormat::Mono16, vec![(i % 251) as u8; 1024 * 1024 * 2]);
+            w.write_frame(&f).unwrap();
+        }
+        assert_eq!(w.finalize().unwrap(), n);
+        let b = std::fs::read(&p).unwrap();
+        assert_eq!(b.len() as u64, 178 + n as u64 * (2 * 1024 * 1024 + 8));
+        assert_eq!(u32::from_le_bytes(b[38..42].try_into().unwrap()), n);
+        for i in [0u32, 70, 159] {
+            let at = 178 + i as usize * 2 * 1024 * 1024;
+            assert!(b[at..at + 2 * 1024 * 1024].iter().all(|v| *v == (i % 251) as u8), "frame {i}");
+        }
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }

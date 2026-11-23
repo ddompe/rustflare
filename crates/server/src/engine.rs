@@ -414,6 +414,9 @@ pub struct Engine {
     alog: crate::asynclog::AsyncLog,
     /// Gaps between camera frames much longer than usual, to trace what stalled capture.
     last_gap_event: Option<Instant>,
+    /// How long the engine spent on the previous frame (analysis, preview, pushing it to the recorder), to tell a stall in the
+    /// camera's USB transfer from one in our own work (issue #86).
+    last_frame_work: Duration,
     /// The automatic flip has been started (or given up) for this crossing of the meridian.
     auto_done: bool,
     last_auto_check: Instant,
@@ -554,6 +557,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         state_file: None,
         alog: crate::asynclog::AsyncLog::new(),
         last_gap_event: None,
+        last_frame_work: Duration::ZERO,
         auto_done: false,
         last_auto_check: Instant::now(),
         last_auto_warn: None,
@@ -2333,6 +2337,12 @@ impl Engine {
     }
 
     fn on_frame(&mut self, frame: Frame) {
+        let t = Instant::now();
+        self.on_frame_inner(frame);
+        self.last_frame_work = t.elapsed();
+    }
+
+    fn on_frame_inner(&mut self, frame: Frame) {
         self.step_focus(&frame);
         let now = Instant::now();
         let t_frame = now;
@@ -2346,6 +2356,7 @@ impl Engine {
                 let load1 = std::fs::read_to_string("/proc/loadavg").ok().and_then(|t| t.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()));
                 let c = &self.status.capture;
                 self.event("frame_gap", json!({ "gap_s": (gap * 1000.0).round() / 1000.0, "usual_s": (1000.0 / self.fps_ema).round() / 1000.0, "capture": c.state, "burst": c.burst,
+                    "prev_frame_work_ms": (self.last_frame_work.as_secs_f64() * 1000.0).round(), "waiting_for_camera_ms": ((gap - self.last_frame_work.as_secs_f64()).max(0.0) * 1000.0).round(),
                     "buffer_queued": c.buffer_queued, "disk_mb_s": c.disk_mb_s, "ram_available_mb": mem_available_mb(), "load1": load1, "log_lines_dropped": self.alog.dropped() }));
             }
             let inst = 1.0 / gap.max(1e-3);
