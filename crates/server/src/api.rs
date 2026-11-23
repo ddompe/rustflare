@@ -59,6 +59,8 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/capture/bursts", post(capture_bursts))
         .route("/api/capture/lanes", post(capture_lanes))
         .route("/api/capture/buffer", put(capture_buffer))
+        .route("/api/capture/after-burst", put(capture_after_burst))
+        .route("/api/notices/ack", post(notices_ack))
         .route("/api/capture/flats", post(capture_flats))
         .route("/api/capture/prominence", post(capture_prominence))
         .route("/api/capture/stop", post(|s| run(s, Command::CaptureStop)))
@@ -190,8 +192,6 @@ async fn mount_scan() -> Res {
 }
 
 #[derive(Deserialize)]
-struct Enabled { enabled: bool }
-#[derive(Deserialize)]
 struct TrackBody { enabled: bool, rate: Option<rustflare_core::TrackingRate> }
 async fn mount_tracking(s: State<AppState>, Json(b): Json<TrackBody>) -> Res {
     run(s, Command::MountTracking { enabled: b.enabled, rate: b.rate }).await
@@ -238,6 +238,16 @@ async fn capture_lanes(s: State<AppState>, Json(b): Json<LanesBody>) -> Res {
 struct Bursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: f64, bursts: Option<u32>, format: Option<String>, on_full: Option<String>, #[serde(default)] home_when_done: bool }
 async fn capture_bursts(s: State<AppState>, Json(b): Json<Bursts>) -> Res {
     run(s, Command::CaptureBursts { name: b.name, frames: b.frames, seconds: b.seconds, interval_s: Some(b.interval_s), bursts: b.bursts, format: b.format, on_full: b.on_full, home_when_done: b.home_when_done }).await
+}
+
+async fn capture_after_burst(s: State<AppState>, Json(b): Json<serde_json::Value>) -> Res {
+    run(s, Command::SetAfterBurst { patch: b }).await
+}
+
+#[derive(Deserialize)]
+struct AckBody { id: Option<u64> }
+async fn notices_ack(s: State<AppState>, Json(b): Json<AckBody>) -> Res {
+    run(s, Command::AckNotices { id: b.id }).await
 }
 
 #[derive(Deserialize)]

@@ -39,6 +39,34 @@ pub struct MountStatus {
     pub link_up: bool,
 }
 
+/// Something the user should know about that stays on screen until they dismiss it: a fallback, a lost frame, a failed stack.
+#[derive(Clone, Serialize)]
+pub struct Notice {
+    pub id: u64,
+    /// `error` (data may be lost) or `warning` (something did not go as asked, nothing is lost).
+    pub level: &'static str,
+    pub text: String,
+    pub at: String,
+    pub acked: bool,
+}
+
+/// What happens after each burst (docs/guide/recording-modes.md), and whether the stacker is there to do it.
+#[derive(Clone, Serialize, Default)]
+pub struct AfterBurstStatus {
+    pub mode: String,
+    pub stack_keep_percent: f64,
+    pub raw_keep_percent: f64,
+    pub margin: f64,
+    pub stacker_connected: bool,
+    /// Bursts handed to the stacker that have no answer yet.
+    pub stacking: usize,
+    /// Stacks made from memory since the program started, and the latest one.
+    pub stacked: u32,
+    pub last: Option<String>,
+    /// Seconds the stacker needs per frame (measured), to plan with.
+    pub stack_s_per_frame: f64,
+}
+
 #[derive(Clone, Serialize)]
 pub struct TrackingStatus {
     pub mode: &'static str,
@@ -322,6 +350,8 @@ pub struct Status {
     pub tracking: Option<TrackingStatus>,
     pub guiding: GuidingStatus,
     pub capture: CaptureStatus,
+    pub after_burst: AfterBurstStatus,
+    pub notices: Vec<Notice>,
     /// Last asynchronous error, shown by the UI until a new action succeeds.
     pub error: Option<String>,
     pub seq: u64,
@@ -355,6 +385,8 @@ impl Default for Status {
             tracking: None,
             guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None, held: false, dead_reckoning: false },
             capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0, paused: false, paused_reason: None, stopped_early: None, frames_lost: None, eta_s: None },
+            after_burst: AfterBurstStatus::default(),
+            notices: Vec::new(),
             error: None,
             seq: 0,
         }

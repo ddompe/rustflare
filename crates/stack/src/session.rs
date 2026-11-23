@@ -4,7 +4,7 @@
 
 use crate::calib::{CalSet, Settings};
 use crate::output::write_fits;
-use crate::stack::{stack_ser, Options};
+use crate::stack::Options;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -66,15 +66,24 @@ fn newer(a: &Path, b: &Path) -> bool {
 
 /// Stack one recording: write its FITS under `out` (mirroring the folder structure below `root`) and return the manifest entry.
 pub fn stack_one(root: &Path, out: &Path, src: &Path, opts: &Options, cals: &CalSet, float: bool) -> Result<Entry, String> {
-    let target = output_path(root, out, src);
-    let rel = src.strip_prefix(root).unwrap_or(src).to_string_lossy().to_string();
-    let settings = Settings::from_sidecar(src);
+    let ser = crate::ser::Ser::open(src).map_err(|e| e.to_string())?;
+    let result = stack_source(root, out, src, &ser, Settings::from_sidecar(src), opts, cals, float).map(|(e, _)| e);
+    crate::source::FrameSource::release(&ser);
+    result
+}
+
+/// Stack frames from any source (a SER file, a burst in the frame ring). `name` is where the recording is or would be: it names the
+/// output and goes into the FITS header and the manifest. Returns the entry and the ranking score of every frame (higher is better),
+/// which tells a recorder which frames are worth keeping.
+pub fn stack_source(root: &Path, out: &Path, name: &Path, src: &dyn crate::source::FrameSource, settings: Settings, opts: &Options, cals: &CalSet, float: bool) -> Result<(Entry, Vec<f64>), String> {
+    let target = output_path(root, out, name);
+    let rel = name.strip_prefix(root).unwrap_or(name).to_string_lossy().to_string();
     let (cal, notes) = cals.for_settings(settings);
     let t0 = std::time::Instant::now();
-    let stacked = stack_ser(src, opts, &cal)?;
-    write_fits(&target, &stacked, src, opts, float, settings).map_err(|e| format!("{}: {e}", target.display()))?;
+    let stacked = crate::stack::stack_frames(src, opts, &cal)?;
+    write_fits(&target, &stacked, name, opts, float, settings).map_err(|e| format!("{}: {e}", target.display()))?;
     let r = &stacked.report;
-    Ok(Entry {
+    let entry = Entry {
         source: rel,
         output: target.strip_prefix(out).unwrap_or(&target).to_string_lossy().to_string(),
         frames: r.frames,
@@ -90,7 +99,8 @@ pub fn stack_one(root: &Path, out: &Path, src: &Path, opts: &Options, cals: &Cal
         notes,
         seconds: t0.elapsed().as_secs_f64(),
         phases: r.phases.clone(),
-    })
+    };
+    Ok((entry, stacked.report.score.clone()))
 }
 
 /// Add `entry` to the manifest in `out` (replacing an older entry for the same source), written atomically.

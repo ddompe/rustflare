@@ -1576,6 +1576,7 @@ dependencies = [
  "rustflare-capture",
  "rustflare-core",
  "rustflare-mount",
+ "rustflare-ring",
  "rustflare-stack",
  "rustflare-tracking",
  "rustls",

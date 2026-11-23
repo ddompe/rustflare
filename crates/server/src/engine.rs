@@ -8,6 +8,9 @@ use rustflare_camera as cams;
 use rustflare_capture::{read_png, write_png, BurstSpec, FlatAccumulator, FlatDecision, FlatTarget, Format, FrameSink, SerWriter};
 use rustflare_core::camera::CTRL_EXPOSURE_US;
 use rustflare_core::sim::SimSky;
+use crate::stackbridge::{Bridge, Event as BridgeEvent};
+use crate::status::AfterBurstStatus;
+use rustflare_capture::Resolution;
 use rustflare_core::{Axis, Camera, CameraDriver, Error, Frame, Mount, MountState, ParkState, RadPerSec, SiteTime, SlewSpeed, TrackingRate, Vec2, SIDEREAL_RATE};
 use rustflare_tracking::*;
 use serde_json::{json, Value};
@@ -174,6 +177,8 @@ pub enum Command {
     CaptureLanes { name: Option<String>, kind: Option<String>, cycle_interval_s: Option<f64>, lanes: Vec<LaneSpec>, cycles: Option<u32>, format: Option<String>, on_full: Option<String>, home_when_done: bool },
     CaptureBursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String>, home_when_done: bool },
     SetBuffer { mb: u64 },
+    SetAfterBurst { patch: Value },
+    AckNotices { id: Option<u64> },
     /// Reconnect the last camera and mount automatically at startup (and after a camera error).
     SetStartup { enabled: bool },
     CaptureFlats { name: Option<String>, frames: u32, level: Option<f64> },
@@ -271,6 +276,12 @@ struct CaptureJob {
     sink: FrameSink,
     /// RAM buffer full: drop the new frame (keeps the camera at full speed) instead of waiting for the disk.
     drop_when_full: bool,
+    /// Which sink this is, so a stack job can find the ring it belongs to.
+    sink_no: u64,
+    /// The burst being captured is handed to the stacker (set at its start, taken at its end).
+    cur: Option<CurStack>,
+    /// The "stacker is not available" warning has been shown for this recording.
+    warned_no_stacker: bool,
     /// Send the mount home when this recording finishes by itself (not when stopped, paused or failed).
     home_when_done: bool,
     /// Bursts finished so far and their total time, to estimate when the recording will end.
@@ -410,6 +421,19 @@ pub struct Engine {
     job: Job,
     /// Sink of a finished/aborted capture that is still writing its buffered frames to disk.
     draining: Option<FrameSink>,
+    draining_no: u64,
+    /// The finished recording's sink stays open until the bursts waiting for a stack are answered.
+    close_when_stacked: bool,
+    bridge: Bridge,
+    after: AfterBurst,
+    stack_jobs: std::collections::HashMap<u64, StackJob>,
+    job_no: u64,
+    sink_counter: u64,
+    ring_sent: Option<u64>,
+    stack_s_per_frame: f64,
+    stacked_count: u32,
+    last_stack_note: Option<String>,
+    notice_id: u64,
     buffer_mb: u64,
     buffer_cap: usize,
     /// Real write speed of the most recent finished capture (MB/s), kept after the writer is gone.
@@ -536,6 +560,18 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         calibration: None,
         job: Job::Idle,
         draining: None,
+        draining_no: 0,
+        close_when_stacked: false,
+        bridge: Bridge::start(&storage.config_file().with_file_name("stack.sock")),
+        after: AfterBurst::load(&crate::config::read(storage.config_file()).get("after_burst").cloned().unwrap_or(Value::Null)),
+        stack_jobs: Default::default(),
+        job_no: 0,
+        sink_counter: 0,
+        ring_sent: None,
+        stack_s_per_frame: 0.06,
+        stacked_count: 0,
+        last_stack_note: None,
+        notice_id: 0,
         buffer_mb: crate::config::read(storage.config_file()).get("capture").and_then(|c| c["buffer_mb"].as_u64()).unwrap_or(1024).clamp(64, 8192),
         buffer_cap: 0,
         last_disk_mb_s: 0.0,
@@ -638,6 +674,7 @@ impl Engine {
         self.publish();
         loop {
             self.poll_sink();
+            self.poll_stack();
             self.auto_connect_tick();
             self.poll_mount();
             self.step_goto();
@@ -1216,6 +1253,20 @@ impl Engine {
             c.state = "flushing";
             c.phase = if queued > 0 { format!("writing {queued} buffered frames to disk") } else { "flushing to the storage medium (safe to unplug when done)".into() };
         }
+        self.status.after_burst = AfterBurstStatus {
+            mode: self.after.mode.id().into(),
+            stack_keep_percent: self.after.stack_keep_percent,
+            raw_keep_percent: self.after.raw_keep_percent,
+            margin: self.after.margin,
+            stacker_connected: self.bridge.connected(),
+            stacking: self.stack_jobs.len(),
+            stacked: self.stacked_count,
+            last: self.last_stack_note.clone(),
+            stack_s_per_frame: self.stack_s_per_frame,
+        };
+        if matches!(self.job, Job::Idle) && self.draining.is_some() && self.close_when_stacked {
+            self.status.capture.phase = format!("stacking {} burst(s) from memory", self.stack_jobs.len());
+        }
         self.status.seq += 1;
         self.last_publish = Instant::now();
         let ms = self.mount_state;
@@ -1646,6 +1697,7 @@ impl Engine {
             Command::CaptureBursts { name, frames, seconds, interval_s, bursts, format, on_full, home_when_done } => {
                 let rs = ResumeSpec::Bursts { name: name.clone(), frames, seconds, interval_s, bursts, format: format.clone(), on_full: on_full.clone(), home_when_done };
                 self.require_capture_ready()?;
+                self.require_after_burst_ready()?;
                 if frames.is_none() && seconds.is_none() {
                     return Err("give a frame count and/or a duration per burst".into());
                 }
@@ -1699,6 +1751,9 @@ impl Engine {
                     last_check: Instant::now(),
                     sink: FrameSink::with_policy(cap, drop_when_full),
                     drop_when_full,
+                    sink_no: self.next_sink_no(),
+                    cur: None,
+                    warned_no_stacker: false,
                     home_when_done,
                     bursts_done: 0,
                     burst_time_sum: 0.0,
@@ -1719,6 +1774,7 @@ impl Engine {
                     Some(o) => return Err(format!("unknown lane kind {o} (use hdr or prominence)")),
                 };
                 self.require_capture_ready()?;
+                self.require_after_burst_ready()?;
                 if !(2..=6).contains(&lanes.len()) {
                     return Err("give 2 to 6 lanes".into());
                 }
@@ -1779,6 +1835,9 @@ impl Engine {
                     last_check: Instant::now(),
                     sink: FrameSink::with_policy(cap, drop_when_full),
                     drop_when_full,
+                    sink_no: self.next_sink_no(),
+                    cur: None,
+                    warned_no_stacker: false,
                     home_when_done,
                     bursts_done: 0,
                     burst_time_sum: 0.0,
@@ -1787,6 +1846,33 @@ impl Engine {
                 self.set_capture("bursts", "starting", None);
                 self.status.capture.bursts_total = total;
                 Ok(json!({ "lanes": n_lanes, "buffer_frames": cap }))
+            }
+            Command::SetAfterBurst { patch } => {
+                let mut a = self.after.clone();
+                if let Some(m) = patch["mode"].as_str() {
+                    a.mode = AfterMode::from_id(m).ok_or("mode must be video, video_stack, stack_only or best_frames")?;
+                }
+                for (key, field, lo, hi) in [("stack_keep_percent", &mut a.stack_keep_percent, 1.0, 100.0), ("raw_keep_percent", &mut a.raw_keep_percent, 1.0, 100.0), ("margin", &mut a.margin, 1.0, 5.0)] {
+                    if let Some(x) = patch[key].as_f64() {
+                        if !(lo..=hi).contains(&x) {
+                            return Err(format!("{key} must be between {lo} and {hi}"));
+                        }
+                        *field = x;
+                    }
+                }
+                if matches!(a.mode, AfterMode::StackOnly | AfterMode::BestFrames) && !self.bridge.connected() {
+                    return Err(NO_STACKER.into());
+                }
+                crate::config::set(self.storage.config_file(), "after_burst", a.to_json())?;
+                self.after = a;
+                self.event("after_burst_set", self.after.to_json());
+                Ok(self.after.to_json())
+            }
+            Command::AckNotices { id } => {
+                for n in self.status.notices.iter_mut().filter(|n| id.map_or(true, |i| i == n.id)) {
+                    n.acked = true;
+                }
+                Ok(json!({}))
             }
             Command::SetBuffer { mb } => {
                 if !(64..=8192).contains(&mb) {
@@ -2772,13 +2858,14 @@ impl Engine {
             Job::Darks(_) => {}
             Job::Capture(job) => {
                 self.restore_lanes(&job);
-                let CaptureJob { sink, phase, kind, name, burst_no, .. } = *job;
+                let CaptureJob { sink, sink_no, phase, kind, name, burst_no, .. } = *job;
                 if let CapPhase::Capturing { stem, taken, started } = phase {
                     sink.end();
                     let sc = self.sidecar(if kind == "burst" { "burst" } else { "sequence" }, json!({ "name": name, "burst": burst_no, "frames": taken, "duration_s": started.elapsed().as_secs_f64(), "stopped_early": why }));
                     self.write_sidecar(&stem, &sc);
                 }
                 sink.close();
+                self.draining_no = sink_no;
                 self.draining = Some(sink);
             }
             Job::Flats(f) => {
@@ -2918,7 +3005,12 @@ impl Engine {
                 object: Some("Sun".into()),
                 comments: vec![format!("flat applied to preview only: {}", if self.status.flats.applied { "yes" } else { "no" }), "frames are raw".into()],
             };
-            job.sink.begin(BurstSpec { stem: stem.clone(), format: job.format, instrument, max_file_bytes: job.max_file, fits_meta });
+            let spec = BurstSpec { stem: stem.clone(), format: job.format, instrument, max_file_bytes: job.max_file, fits_meta };
+            if self.plan_burst(&mut job) {
+                job.sink.begin_deferred(spec);
+            } else {
+                job.sink.begin(spec);
+            }
             self.status.capture.burst = Some(job.burst_no);
             if let Some(n) = lane_label {
                 self.status.capture.phase = format!("lane {n}");
@@ -2973,7 +3065,17 @@ impl Engine {
 
         let (stem, taken, started) = (stem.clone(), *taken, *started);
         let in_ram = job.sink.queued(); // frames still waiting for the disk: gone if the drive is
-        job.sink.end();
+        let (end_id, end_first, end_last) = job.sink.end();
+        if let Some(cur) = job.cur.take() {
+            if stop.is_some() || taken == 0 {
+                // a burst that ended badly: its video is written, never held back for a stack
+                if cur.deferred {
+                    job.sink.resolve(end_id, Resolution::WriteAll);
+                }
+            } else {
+                self.submit_stack(&job, end_id, end_first, end_last, &stem, cur);
+            }
+        }
         let sc = self.sidecar(
             if job.kind == "burst" { "burst" } else { "sequence" },
             json!({ "name": job.name, "burst": job.burst_no, "of": job.total_bursts, "frames": taken,
@@ -2985,6 +3087,7 @@ impl Engine {
         if let Some(why) = stop {
             let note = format!("The recording stopped on its own: {why}. {taken} frames were captured, and about {in_ram} that were still in memory may not have reached the drive.");
             self.event("capture_stopped_early", json!({ "why": why, "frames": taken, "frames_in_ram": in_ram }));
+            self.notice("error", note.clone());
             self.status.capture.stopped_early = Some(note);
             self.status.error = Some(format!("recording stopped: {why} ({taken} frames in this burst)"));
             return self.fail_capture_keep(job);
@@ -2995,8 +3098,13 @@ impl Engine {
         if last {
             self.restore_lanes(&job);
             let home = job.home_when_done;
-            let CaptureJob { sink, .. } = *job;
-            sink.close();
+            let CaptureJob { sink, sink_no, .. } = *job;
+            self.draining_no = sink_no;
+            if self.stack_jobs.values().any(|j| j.sink_no == sink_no) {
+                self.close_when_stacked = true; // bursts are still being stacked from memory: the sink stays open for them
+            } else {
+                sink.close();
+            }
             self.draining = Some(sink);
             self.finish_capture(None, "captured; writing buffered frames to disk");
             if home {
@@ -3033,8 +3141,9 @@ impl Engine {
 
     fn fail_capture_keep(&mut self, job: Box<CaptureJob>) -> Job {
         self.restore_lanes(&job);
-        let CaptureJob { sink, .. } = *job;
+        let CaptureJob { sink, sink_no, .. } = *job;
         sink.close();
+        self.draining_no = sink_no;
         self.draining = Some(sink);
         self.finish_capture(None, "stopped");
         Job::Idle
@@ -3074,6 +3183,7 @@ impl Engine {
                 };
                 self.event("frames_dropped", json!({ "file": file, "dropped": f.dropped, "written": f.frames }));
                 self.status.error = Some(note.clone());
+                self.notice("error", note.clone());
                 self.status.capture.frames_lost = Some(note);
                 let side = f.path.with_extension("json");
                 if let Some(mut v) = std::fs::read_to_string(&side).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
@@ -3331,4 +3441,299 @@ fn mem_available_mb() -> Option<u64> {
 
 fn rel(base: &std::path::Path, p: &std::path::Path) -> String {
     p.strip_prefix(base).unwrap_or(p).to_string_lossy().to_string()
+}
+
+
+// ---------------------------------------------------------------- after each burst: stacking from memory (ADR 0019)
+
+const NO_STACKER: &str = "this recording is set to make stacks and not keep all the video, but the stacker is not running (systemctl status rustflare-stack). Start it, or choose \"Keep the video\" under Record > After each burst.";
+
+/// What the recorder does with a burst once it is captured.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum AfterMode {
+    /// 1: write the video; stacking, if wanted, happens later from the file.
+    Video,
+    /// 2: write the video and stack the burst from memory.
+    VideoStack,
+    /// 3: stack from memory and write no video.
+    StackOnly,
+    /// 4: stack from memory and write only the best frames.
+    BestFrames,
+}
+
+impl AfterMode {
+    fn id(self) -> &'static str {
+        match self {
+            AfterMode::Video => "video",
+            AfterMode::VideoStack => "video_stack",
+            AfterMode::StackOnly => "stack_only",
+            AfterMode::BestFrames => "best_frames",
+        }
+    }
+    fn from_id(s: &str) -> Option<AfterMode> {
+        Some(match s {
+            "video" => AfterMode::Video,
+            "video_stack" => AfterMode::VideoStack,
+            "stack_only" => AfterMode::StackOnly,
+            "best_frames" => AfterMode::BestFrames,
+            _ => return None,
+        })
+    }
+    /// The burst's frames wait in the ring until the stack says what to write.
+    fn defers(self) -> bool { matches!(self, AfterMode::StackOnly | AfterMode::BestFrames) }
+}
+
+#[derive(Clone, Debug)]
+struct AfterBurst {
+    mode: AfterMode,
+    /// Percentage of the frames of a burst that go into its stack.
+    stack_keep_percent: f64,
+    /// Percentage of the frames written to disk in mode 4.
+    raw_keep_percent: f64,
+    /// A stack is planned to take this many times its measured time: the safety margin against the camera overwriting the burst.
+    margin: f64,
+}
+
+impl AfterBurst {
+    fn load(v: &Value) -> AfterBurst {
+        let num = |k: &str, d: f64, lo: f64, hi: f64| v[k].as_f64().unwrap_or(d).clamp(lo, hi);
+        AfterBurst {
+            mode: v["mode"].as_str().and_then(AfterMode::from_id).unwrap_or(AfterMode::Video),
+            stack_keep_percent: num("stack_keep_percent", 25.0, 1.0, 100.0),
+            raw_keep_percent: num("raw_keep_percent", 25.0, 1.0, 100.0),
+            margin: num("margin", 2.0, 1.0, 5.0),
+        }
+    }
+    fn to_json(&self) -> Value {
+        json!({ "mode": self.mode.id(), "stack_keep_percent": self.stack_keep_percent, "raw_keep_percent": self.raw_keep_percent, "margin": self.margin })
+    }
+}
+
+/// The burst being captured has been planned for the stacker.
+#[derive(Copy, Clone, Debug)]
+struct CurStack {
+    deferred: bool,
+    mode: AfterMode,
+}
+
+/// A burst handed to the stacker that has not been answered yet.
+struct StackJob {
+    sink_no: u64,
+    burst_id: u64,
+    first: u64,
+    count: usize,
+    stem: PathBuf,
+    rel: String,
+    mode: AfterMode,
+    deferred: bool,
+    sent: Instant,
+    est_s: f64,
+}
+
+impl Engine {
+    fn next_sink_no(&mut self) -> u64 {
+        self.sink_counter += 1;
+        self.sink_counter
+    }
+
+    /// Something the user must see, and that stays until they dismiss it. Also an event in the log.
+    fn notice(&mut self, level: &'static str, text: String) {
+        self.notice_id += 1;
+        self.event("notice", json!({ "level": level, "text": text }));
+        log::warn!("{text}");
+        let at = chrono::Local::now().format("%H:%M:%S").to_string();
+        self.status.notices.push(crate::status::Notice { id: self.notice_id, level, text, at, acked: false });
+        let n = self.status.notices.len();
+        if n > 50 {
+            self.status.notices.drain(..n - 50);
+        }
+    }
+
+    fn require_after_burst_ready(&self) -> Result<(), String> {
+        if self.after.mode.defers() && !self.bridge.connected() {
+            return Err(NO_STACKER.into());
+        }
+        Ok(())
+    }
+
+    fn sink_by_no(&self, no: u64) -> Option<&FrameSink> {
+        match &self.job {
+            Job::Capture(j) if j.sink_no == no => Some(&j.sink),
+            _ => self.draining.as_ref().filter(|_| self.draining_no == no),
+        }
+    }
+
+    /// Decides what happens to the burst that is about to start: handed to the stacker (and whether its video waits for the result) or
+    /// plain video. Whenever it is not what was asked for, says so. Returns whether the burst's frames are deferred.
+    fn plan_burst(&mut self, job: &mut CaptureJob) -> bool {
+        job.cur = None;
+        let mode = self.after.mode;
+        if mode == AfterMode::Video {
+            return false;
+        }
+        let fps = self.status.camera.as_ref().map_or(30.0, |c| c.fps.max(1.0));
+        let expected = job.burst_frames.map(|f| f as f64).or(job.burst_seconds.map(|s| s * fps)).unwrap_or(0.0);
+        let mut why: Option<String> = None;
+        if !self.bridge.connected() {
+            why = Some("the stacker is not connected".into());
+        } else if expected + 8.0 > self.buffer_cap as f64 {
+            why = Some(format!("a burst of about {expected:.0} frames does not fit in the RAM buffer ({} frames): raise the buffer in More > RAM buffer", self.buffer_cap));
+        }
+        if why.is_none() {
+            self.guard_outstanding(&job.sink, job.sink_no, expected, fps);
+        }
+        match why {
+            None => {
+                job.cur = Some(CurStack { deferred: mode.defers(), mode });
+                mode.defers()
+            }
+            Some(w) => {
+                if !job.warned_no_stacker {
+                    job.warned_no_stacker = true;
+                    self.notice("warning", format!("Bursts are being recorded as video and not stacked from memory: {w}."));
+                }
+                false
+            }
+        }
+    }
+
+    /// Before a burst starts: any earlier burst still waiting for its stack that this one would overwrite before the stack is done is
+    /// written as video instead (the stacker keeps going; the stack is still made if the frames survive).
+    fn guard_outstanding(&mut self, sink: &FrameSink, sink_no: u64, next_frames: f64, fps: f64) {
+        let Some(ring) = sink.ring() else { return };
+        let margin = self.after.margin;
+        let mut late: Vec<u64> = vec![];
+        for (no, j) in self.stack_jobs.iter().filter(|(_, j)| j.sink_no == sink_no && j.deferred) {
+            let budget = ring.frames_until_overwritten(j.first) as f64;
+            if next_frames <= budget {
+                continue; // the next burst leaves it alone
+            }
+            let remaining = (j.est_s - j.sent.elapsed().as_secs_f64()).max(0.25 * j.est_s);
+            if remaining * margin <= budget / fps {
+                continue; // it will be done before the camera gets there, with the margin
+            }
+            late.push(*no);
+        }
+        for no in late {
+            self.fallback(no, "it would not be finished before the next burst overwrote it", Some(sink));
+        }
+    }
+
+    /// A burst that was waiting for its stack is written as video instead.
+    fn fallback(&mut self, no: u64, why: &str, sink: Option<&FrameSink>) {
+        let Some(j) = self.stack_jobs.remove(&no) else { return };
+        if j.deferred {
+            match sink.or_else(|| self.sink_by_no(j.sink_no)) {
+                Some(s) => s.resolve(j.burst_id, Resolution::WriteAll),
+                None => {}
+            }
+        }
+        let what = if j.deferred { "Its video is being written instead." } else { "Its video is safe." };
+        self.notice("warning", format!("The stack of {} was not made: {why}. {what}", j.rel));
+    }
+
+    /// The burst has ended: hand it to the stacker.
+    fn submit_stack(&mut self, job: &CaptureJob, id: u64, first: u64, last: u64, stem: &std::path::Path, cur: CurStack) {
+        let count = (last + 1).saturating_sub(first) as usize;
+        let rel_name = format!("{}.ser", rel(&self.data_dir(), stem));
+        let ctl = |c: &str| self.status.camera.as_ref().and_then(|cam| cam.controls.iter().find(|x| x.id == c)).map(|x| x.value);
+        let (exposure, gain) = (ctl(CTRL_EXPOSURE_US), ctl("gain"));
+        self.job_no += 1;
+        let no = self.job_no;
+        let est_s = count as f64 * self.stack_s_per_frame;
+        self.stack_jobs.insert(no, StackJob { sink_no: job.sink_no, burst_id: id, first, count, stem: stem.to_path_buf(), rel: rel_name.clone(), mode: cur.mode, deferred: cur.deferred, sent: Instant::now(), est_s });
+        let sent = count >= 4
+            && self.bridge.connected()
+            && (self.ring_sent == Some(job.sink_no) || job.sink.ring_fd().is_some_and(|fd| {
+                use std::os::fd::AsRawFd;
+                let ok = self.bridge.send_ring(job.sink_no, fd.as_raw_fd());
+                if ok {
+                    self.ring_sent = Some(job.sink_no);
+                }
+                ok
+            }))
+            && self.bridge.send_burst(&json!({ "t": "burst", "ring": job.sink_no, "id": no, "first": first, "count": count, "stem": rel_name,
+                "keep_percent": self.after.stack_keep_percent, "exposure_us": exposure, "gain": gain }));
+        if !sent {
+            self.fallback(no, if count < 4 { "the burst has too few frames" } else { "the stacker could not be reached" }, Some(&job.sink));
+        }
+    }
+
+    /// Answers from the stacker, a lost connection, and closing a recording that was waiting for its stacks.
+    fn poll_stack(&mut self) {
+        for ev in self.bridge.drain() {
+            match ev {
+                BridgeEvent::Connected => {
+                    self.ring_sent = None;
+                    self.event("stacker_connected", json!({}));
+                }
+                BridgeEvent::Disconnected => {
+                    self.ring_sent = None;
+                    self.event("stacker_disconnected", json!({ "waiting": self.stack_jobs.len() }));
+                    let nos: Vec<u64> = self.stack_jobs.keys().copied().collect();
+                    for no in nos {
+                        self.fallback(no, "the stacker stopped or lost its connection", None);
+                    }
+                    if self.after.mode != AfterMode::Video && !matches!(self.job, Job::Idle) {
+                        self.notice("warning", "The stacker stopped during a recording: the rest of it is recorded as video.".into());
+                    }
+                }
+                BridgeEvent::Done(v) => self.stack_done(v),
+            }
+        }
+        if self.close_when_stacked && self.stack_jobs.values().all(|j| j.sink_no != self.draining_no) {
+            self.close_when_stacked = false;
+            if let Some(d) = &self.draining {
+                d.close();
+            }
+        }
+    }
+
+    fn stack_done(&mut self, v: Value) {
+        let Some(j) = v["id"].as_u64().and_then(|no| self.stack_jobs.remove(&no)) else { return };
+        let ok = v["ok"].as_bool() == Some(true);
+        let resolution = if !j.deferred {
+            None
+        } else if !ok {
+            Some(Resolution::WriteAll)
+        } else if j.mode == AfterMode::StackOnly {
+            Some(Resolution::SkipRaw)
+        } else {
+            let scores: Vec<f64> = v["scores"].as_array().map(|a| a.iter().filter_map(|x| x.as_f64()).collect()).unwrap_or_default();
+            if scores.len() != j.count {
+                Some(Resolution::WriteAll)
+            } else {
+                let keep = ((self.after.raw_keep_percent / 100.0 * j.count as f64).ceil() as usize).clamp(1, j.count);
+                let mut order: Vec<usize> = (0..j.count).collect();
+                order.sort_by(|&a, &b| scores[b].partial_cmp(&scores[a]).unwrap_or(std::cmp::Ordering::Equal));
+                let mut best: Vec<u32> = order.into_iter().take(keep).map(|i| i as u32).collect();
+                best.sort_unstable();
+                Some(Resolution::WriteSelected(best))
+            }
+        };
+        if let Some(r) = resolution {
+            if let Some(s) = self.sink_by_no(j.sink_no) {
+                s.resolve(j.burst_id, r);
+            }
+        }
+        if ok {
+            let secs = v["seconds"].as_f64().unwrap_or(0.0);
+            if j.count > 0 && secs > 0.0 {
+                self.stack_s_per_frame = (0.5 * self.stack_s_per_frame + 0.5 * secs / j.count as f64).clamp(0.005, 2.0);
+            }
+            self.stacked_count += 1;
+            let output = v["output"].as_str().unwrap_or("").to_string();
+            self.last_stack_note = Some(format!("{output} ({} of {} frames, {secs:.1} s)", v["kept"], v["frames"]));
+            self.event("stack_done", json!({ "burst": j.rel, "output": output, "seconds": secs, "frames": j.count, "mode": j.mode.id() }));
+            let side = j.stem.with_extension("json");
+            if let Some(mut sc) = std::fs::read_to_string(&side).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
+                sc["details"]["stack"] = json!({ "output": output, "kept": v["kept"], "seconds": secs, "video": match j.mode { AfterMode::StackOnly => "not written", AfterMode::BestFrames => "best frames only", _ => "written" } });
+                self.alog.replace(side, serde_json::to_string_pretty(&sc).unwrap_or_default());
+            }
+        } else {
+            let err = v["error"].as_str().unwrap_or("unknown error").to_string();
+            let what = if j.deferred { "Its video is being written instead." } else { "Its video is safe." };
+            self.notice("warning", format!("The stack of {} was not made: {err}. {what}", j.rel));
+        }
+    }
 }

@@ -19,6 +19,7 @@ rustflare-mount.workspace = true
 rustflare-tracking.workspace = true
 rustflare-capture.workspace = true
 rustflare-stack.workspace = true
+rustflare-ring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true

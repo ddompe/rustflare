@@ -8,6 +8,7 @@ pub mod image;
 pub mod multipoint;
 pub mod output;
 pub mod ser;
+pub mod serve;
 pub mod session;
 pub mod simd;
 pub mod source;

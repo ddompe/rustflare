@@ -76,6 +76,7 @@ impl FrameSource for RingFrames {
             return Err(format!("frame {i} is past the end ({} frames)", self.count));
         }
         let seq = self.first_seq + i as u64;
+        self.consumer.heartbeat(); // a long job is not a dead consumer
         let f = self.consumer.frame_at(seq).ok_or_else(|| format!("frame {i} (sequence {seq}) was overwritten in the ring before it could be read"))?;
         // copied out and then checked: a frame the camera started to overwrite while we read it is never used
         let v: Vec<u16> = if self.consumer.ring().geometry().bits > 8 {

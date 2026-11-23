@@ -59,7 +59,7 @@ impl Config {
         std::fs::read_to_string(dir.join("stack.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
     }
 
-    fn options(&self) -> Options {
+    pub fn options(&self) -> Options {
         Options { keep: (self.keep_percent / 100.0).clamp(0.01, 1.0), multipoint: self.multipoint, threads: self.threads.max(1), ..Options::default() }
     }
 }
@@ -120,9 +120,11 @@ fn write_status(dir: &Path, st: &Status) {
 /// Recordings that are finished and not stacked yet: those with a `.ready` marker, and, if `include_unmarked`, complete SER files
 /// (from older recorders or other programs) that have not been touched for ten minutes.
 pub fn pending(root: &Path, out: &Path, failed: &HashSet<PathBuf>, include_unmarked: bool) -> Vec<PathBuf> {
+    // bursts the recorder stacked from memory are in the manifest already: their video, if it was kept, is not stacked a second time
+    let done: HashSet<String> = std::fs::read_to_string(out.join("manifest.json")).ok().and_then(|t| serde_json::from_str::<Vec<Entry>>(&t).ok()).unwrap_or_default().into_iter().map(|e| e.source).collect();
     session::find_recordings(root)
         .into_iter()
-        .filter(|p| !failed.contains(p) && !session::is_stacked(root, out, p))
+        .filter(|p| !failed.contains(p) && !session::is_stacked(root, out, p) && !done.contains(&*p.strip_prefix(root).unwrap_or(p).to_string_lossy()))
         .filter(|p| {
             if rustflare_ready_marker(p).exists() {
                 return true;
@@ -157,6 +159,10 @@ pub fn watch(state_dir: &Path, fallback_root: Option<&Path>, once: bool, log: &d
     let mut tlog = Log::new(state_dir, Config::load(state_dir).telemetry);
     tlog.event("start", json!({ "version": env!("CARGO_PKG_VERSION"), "environment": telemetry::environment(), "unit": telemetry::unit_properties("rustflare-stack"), "config": Config::load(state_dir), "sample": telemetry::sample(state_dir) }));
     let (mut last_key, mut last_idle_beat) = (String::new(), Instant::now());
+    if !once {
+        let dir = state_dir.to_path_buf();
+        std::thread::spawn(move || crate::serve::run(&dir, &|m| println!("{m}")));
+    }
     loop {
         let cfg = Config::load(state_dir);
         tlog.enabled = cfg.telemetry;
@@ -188,9 +194,9 @@ pub fn watch(state_dir: &Path, fallback_root: Option<&Path>, once: bool, log: &d
                         tlog.event("state", json!({ "state": status.state, "reason": status.reason, "pending": status.pending, "policy": cfg.policy, "recorder": telemetry::recorder(state_dir) }));
                         return;
                     }
-                } else if !ok {
+                } else if !ok || (crate::serve::CONNECTED.load(std::sync::atomic::Ordering::Relaxed) && rec.as_ref().map_or(false, |r| r.state != "idle")) {
                     status.state = "paused".into();
-                    status.reason = why.into();
+                    status.reason = if ok { "stacking from memory while a recording is under way" } else { why }.into();
                     status.current = None;
                     if once {
                         write_status(state_dir, &status);
@@ -220,7 +226,9 @@ pub fn watch(state_dir: &Path, fallback_root: Option<&Path>, once: bool, log: &d
                     let t = Instant::now();
                     let (before, sampler) = (Counters::take(), Sampler::start(state_dir, &tlog, Duration::from_secs(2)));
                     let rec_before = telemetry::recorder(state_dir);
+                    let _one_at_a_time = crate::serve::WORK.lock().unwrap();
                     let result = session::stack_one(root, &out, &src, &cfg.options(), &cals.as_ref().unwrap().1, cfg.float).and_then(|e| session::record(&out, &e).map(|_| e));
+                    drop(_one_at_a_time);
                     let (samples, after) = (sampler.stop(), Counters::take());
                     let mut job = before.delta(&after);
                     job["source"] = json!(rel);

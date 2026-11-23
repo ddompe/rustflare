@@ -10,6 +10,7 @@ mod preview;
 mod security;
 mod sessionlog;
 mod stack_api;
+mod stackbridge;
 mod status;
 mod storage;
 mod sunmodel;
