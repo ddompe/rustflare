@@ -158,7 +158,7 @@ mod tests {
     fn frame(w: usize, h: usize, k: usize) -> Vec<u8> {
         // a bright disc with texture and a little noise, shifted a pixel per frame
         let mut out = Vec::with_capacity(w * h * 2);
-        let mut seed = (k as u32 + 1) * 2654435761;
+        let mut seed = (k as u32 + 1).wrapping_mul(2654435761);
         for y in 0..h {
             for x in 0..w {
                 let (dx, dy) = (x as f64 - 64.0 - (k % 3) as f64, y as f64 - 64.0);
