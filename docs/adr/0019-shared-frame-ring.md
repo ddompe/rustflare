@@ -1,6 +1,6 @@
 # 0019. One shared frame ring for capture, raw writing and stacking
 
-- Status: Proposed (design 2026-11-22, building in stages)
+- Status: Accepted (built and verified on a Pi 5 with the real camera on a dark scene, 2026-11-22; stacking from memory on the Sun is still to be confirmed, see the hardware checklist)
 - Date: 2026-11-22
 
 ## Context

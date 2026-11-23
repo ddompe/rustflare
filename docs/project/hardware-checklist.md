@@ -1,6 +1,6 @@
 # Hardware verification checklist
 
-Everything below was built and tested on the simulators; each item needs the real device. The build on the Pi at the time of writing is `0.4.0` (see `dpkg -s rustflare`). Tick off an item, then close its GitHub issue.
+Everything below was built and tested on the simulators; each item needs the real device. The build on the Pi at the time of writing is `0.5.0` (see `dpkg -s rustflare`). Tick off an item, then close its GitHub issue.
 
 ## Verified on real hardware
 
@@ -87,9 +87,9 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 
 | Check | How |
 |---|---|
-| Each mode with the real camera | Record 5 bursts at the Sun's exposure in each of the four modes (Record > After each burst): stack-only leaves stacks and no video, best frames leaves 25 % of the frames, video + stack leaves both |
+| Each mode with the real camera | Record 5 bursts at the Sun's exposure in each of the four modes (Record > After each burst): stack-only leaves stacks and no video, best frames leaves 25 % of the frames, video + stack leaves both (done 2026-11-22 on a dark scene, Pi 5 and Apollo-M Mini, 60-frame bursts: 15 of 60 frames kept, stacks in 4.6 s each; on the Sun still to do) |
 | Stack time against the real Sun | The plan line uses the measured seconds per frame; compare with a stack of the same SER from disk (a real disc is slower than the noise a camera sees indoors) |
-| No frame loss with a stack running | `frame_gap` events and `dropped` stay at zero for an hour of 30 s bursts in stack-only mode |
+| No frame loss with a stack running | `frame_gap` events and `dropped` stay at zero for an hour of 30 s bursts in stack-only mode (done for 16 bursts of 100 frames, 8 minutes, plus 8 bursts 6 s apart: zero gaps, zero drops, RAM peak 2 GB with a 4 GB buffer; an hour on the Sun still to do) |
 | Fallbacks are visible | Stop the stacker mid-recording (`sudo systemctl stop rustflare-stack`): the status bar warns and stays until dismissed, and every burst has a video or a stack |
 
 ## Recorder priority and stalls

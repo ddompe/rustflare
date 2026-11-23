@@ -55,9 +55,9 @@ Updated with the stage that changes them: Record (the new section), Stacking (in
 | Stage | Engine | UI and manual in the same stage |
 |---|---|---|
 | 1 (done) | the ring | ADR, reference page |
-| 2 | the stacker reads frames from a ring or a SER, identical results | none (internal) |
-| 3 | the raw writer as a ring consumer, policies and counters preserved | RAM buffer panel and its guide page |
-| 4 | burst table, the stacker as a ring consumer, the overwrite budget, the fallback | the live plan check, the warnings, troubleshooting |
-| 5 | modes 1 to 4 and the percentages through the API | the "After each burst" section, the modes guide, API reference, Playwright tests for every mode, a simulator scenario per mode, the real-camera checklist |
+| 2 (done) | the stacker reads frames from a ring or a SER, identical results | none (internal) |
+| 3 (done) | the raw writer as a ring consumer, policies and counters preserved | RAM buffer panel and its guide page |
+| 4 (done) | the stacker as a ring consumer over a socket, the overwrite budget, the fallback | the live plan check, the warnings, troubleshooting |
+| 5 (done) | modes 1 to 4 and the percentages through the API | the "After each burst" section, the modes guide, API reference, Playwright tests, `scripts/sim/after-burst.sh`, the real-camera checklist |
 
 Stage 3 changes the recorder's core buffer, so it gets the longest soak (simulator, then the stick, then the camera) before anything builds on it.

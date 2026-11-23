@@ -3,7 +3,7 @@
 Raw video is the product, but a night of 4 GB bursts fills a drive quickly, and many people end up deleting the video after stacking it. **Record > After each burst** lets the recorder stack each burst straight from memory, so the video never has to make the round trip through the disk if you do not want it to.
 
 !!! note "Status"
-    Built and tested on the simulators and on a Pi 5 with a real camera for the recording itself. Stacking from memory alongside a real camera on the Sun is still to be verified: see the [hardware checklist](../project/hardware-checklist.md). Until you have compared the stacks with your own, keep the video (mode 1 or 2) for anything you cannot repeat, such as an eclipse.
+    Built, tested on the simulators, and run on a Pi 5 with a real camera on a dark scene: all four modes, 16 bursts of 100 frames every 30 s in stack-only mode with no dropped frame and no gap, and a stacker killed in the middle of a recording. Not yet run on the Sun, where a real disc takes longer to stack than the noise a camera sees indoors: see the [hardware checklist](../project/hardware-checklist.md). Until you have compared the stacks with your own, keep the video (mode 1 or 2) for anything you cannot repeat, such as an eclipse.
 
 ## The four modes
 

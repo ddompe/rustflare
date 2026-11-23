@@ -18,7 +18,7 @@ an accepted record: supersede it with a new one and link both ways.
 | [0010](0010-debian-package-and-updates.md) | Debian package, GitHub Releases (the updater part is superseded by 0017) | Accepted |
 | [0017](0017-no-updater.md) | No updater: debs and the signed apt repository | Accepted |
 | [0018](0018-storage-by-uuid.md) | Remember the capture drive by its UUID | Accepted |
-| [0019](0019-shared-frame-ring.md) | One shared frame ring for capture, raw writing and stacking | Proposed |
+| [0019](0019-shared-frame-ring.md) | One shared frame ring for capture, raw writing and stacking | Accepted |
 | [0011](0011-storage-selection-and-safety.md) | Storage selection and safety (USB drives, FAT32) | Accepted |
 | [0012](0012-burst-capture-and-ram-buffer.md) | Burst capture through a RAM buffer | Accepted |
 | [0013](0013-partial-disc-first-tracking-and-optics.md) | Partial-disc-first tracking, Otsu detection, optics | Accepted |
