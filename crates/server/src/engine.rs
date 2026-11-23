@@ -2357,7 +2357,7 @@ impl Engine {
                 let c = &self.status.capture;
                 self.event("frame_gap", json!({ "gap_s": (gap * 1000.0).round() / 1000.0, "usual_s": (1000.0 / self.fps_ema).round() / 1000.0, "capture": c.state, "burst": c.burst,
                     "prev_frame_work_ms": (self.last_frame_work.as_secs_f64() * 1000.0).round(), "waiting_for_camera_ms": ((gap - self.last_frame_work.as_secs_f64()).max(0.0) * 1000.0).round(),
-                    "buffer_queued": c.buffer_queued, "disk_mb_s": c.disk_mb_s, "ram_available_mb": mem_available_mb(), "load1": load1, "log_lines_dropped": self.alog.dropped() }));
+                    "buffer_queued": c.buffer_queued, "disk_mb_s": c.disk_mb_s, "ram_available_mb": mem_available_mb(), "memory": memory_state(), "load1": load1, "log_lines_dropped": self.alog.dropped() }));
             }
             let inst = 1.0 / gap.max(1e-3);
             self.fps_ema = if self.fps_ema == 0.0 { inst } else { 0.9 * self.fps_ema + 0.1 * inst };
@@ -3479,6 +3479,21 @@ fn mem_available_mb() -> Option<u64> {
     let t = std::fs::read_to_string("/proc/meminfo").ok()?;
     let kb: u64 = t.lines().find(|l| l.starts_with("MemAvailable:"))?.split_whitespace().nth(1)?.parse().ok()?;
     Some(kb / 1024)
+}
+
+/// What the kernel's memory manager was doing, for a `frame_gap` event: pages waiting to be written (`dirty_mb`) and being written
+/// (`writeback_mb`), how long tasks have waited for memory in the last 10 s (`psi_some_avg10`: some task stalled, `psi_full_avg10`:
+/// all of them), and the count of times a task had to free memory itself instead of getting it (`allocstall`, rising during a gap
+/// means direct reclaim, which is a stall inside whatever thread needed the memory). Issue #86.
+fn memory_state() -> serde_json::Value {
+    let kb = |t: &str, key: &str| t.lines().find(|l| l.starts_with(key)).and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok());
+    let info = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    let psi = std::fs::read_to_string("/proc/pressure/memory").unwrap_or_default();
+    let avg10 = |kind: &str| psi.lines().find(|l| l.starts_with(kind)).and_then(|l| l.split_whitespace().find_map(|w| w.strip_prefix("avg10=")?.parse::<f64>().ok()));
+    let vm = std::fs::read_to_string("/proc/vmstat").unwrap_or_default();
+    let allocstall: u64 = vm.lines().filter(|l| l.starts_with("allocstall")).filter_map(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok()).sum();
+    json!({ "dirty_mb": kb(&info, "Dirty:").map(|k| k / 1024), "writeback_mb": kb(&info, "Writeback:").map(|k| k / 1024),
+            "psi_some_avg10": avg10("some"), "psi_full_avg10": avg10("full"), "allocstall": if vm.is_empty() { None } else { Some(allocstall) } })
 }
 
 fn rel(base: &std::path::Path, p: &std::path::Path) -> String {
