@@ -29,6 +29,10 @@ Modes wanted: (1) raw only, (2) raw and stack, (3) stack only, (4) only the best
 - *A slab/free-list allocator instead of a ring:* avoids an old burst being overwritten while still needed, at the cost of fragmentation handling and a free-list protocol shared between processes; the wrap budget and the large headroom (at the camera's full rate 4 GB lasts about 12 s, a stack takes 5 to 10 s) make it unnecessary.
 - *A named file in `/dev/shm`:* any process can attach by name without descriptor passing, but Debian's default cap is 50 % of RAM (exactly the 4 GB), a stale file leaks until reboot, and the size cannot change at run time. memfd avoids all three.
 
+## Visibility of errors
+
+Every failure of the pipeline (a burst falling back to raw, a stack that failed or found its frames overwritten, dropped frames, a consumer or the producer dying or being lapped, a writer error, a refused mode) is shown on the page until acknowledged, written as an event, listed in `status.errors`, and flagged on the burst and in the stack's metadata. Nothing is quiet. The margin of the stack-time check (default 2x) is a setting, not a constant. Details: `docs/project/design-recording-modes.md`.
+
 ## Consequences
 
 - The raw writer becomes a consumer thread reading slots in place; the queue, its per-frame allocation and the stacker's re-read of the file go away.
