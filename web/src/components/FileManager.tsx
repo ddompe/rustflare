@@ -93,6 +93,9 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
   const [rs, setRs] = useState<Entry | null>(null)
   const [rsMsg, setRsMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [treeW, setTreeW] = useState(() => { const n = Number(localStorage.getItem('rf-fm-tree')); return n >= 150 && n <= 520 ? n : 240 })
+  const setW = (n: number) => { const w = Math.max(150, Math.min(520, Math.round(n))); setTreeW(w); localStorage.setItem('rf-fm-tree', String(w)) }
+  const drag = useRef<{ x: number; w: number } | null>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -221,8 +224,17 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
         {cwd !== '' && total > 0 && <a className="btn" href={`/api/files/archive?path=${encodeURIComponent(cwd)}`} download>Download this folder · {size(total)}</a>}
       </div>
 
-      <div className="fm-body">
+      <div className="fm-body" style={{ ['--fm-tree-w' as string]: `${treeW}px` }}>
         <Tree cwd={cwd} go={go} refreshKey={refreshKey} />
+        <div
+          className="fm-divider" role="separator" aria-orientation="vertical" aria-label="Resize the folder tree" aria-valuemin={150} aria-valuemax={520} aria-valuenow={treeW} tabIndex={0}
+          onPointerDown={(e) => { drag.current = { x: e.clientX, w: treeW }; e.currentTarget.setPointerCapture(e.pointerId) }}
+          onPointerMove={(e) => { if (drag.current) setW(drag.current.w + e.clientX - drag.current.x) }}
+          onPointerUp={() => { drag.current = null }}
+          onPointerCancel={() => { drag.current = null }}
+          onDoubleClick={() => setW(240)}
+          onKeyDown={(e) => { if (e.key === 'ArrowLeft') { e.preventDefault(); setW(treeW - 20) } else if (e.key === 'ArrowRight') { e.preventDefault(); setW(treeW + 20) } else if (e.key === 'Home') { e.preventDefault(); setW(240) } }}
+        />
         <div className="fm-list" ref={listRef}>
           {cwd === '' && entries.length === 0 && !loading && <div className="empty">Nothing captured yet. Record something in the Record tab and it appears here.</div>}
           {cwd !== '' && entries.length === 0 && !loading && !error && <div className="empty">This folder is empty.</div>}

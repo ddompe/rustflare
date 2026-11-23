@@ -466,3 +466,23 @@ test('the file manager browses folders: stacks and a folder download are reachab
   await fm.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
   await expect(fm.locator('.fm-row', { hasText: 'fmnav' })).toHaveCount(0)
 })
+
+test('the folder tree divider can be dragged and moved with the keyboard', async ({ page }, info) => {
+  test.skip(info.project.name === 'phone', 'the tree only shows on wide screens')
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Record/ }).click()
+  await page.getByRole('button', { name: /Open file manager/ }).click()
+  const fm = page.getByRole('dialog', { name: 'File manager' })
+  const tree = fm.getByRole('navigation', { name: 'Folders' })
+  const w0 = (await tree.boundingBox())!.width
+  const bar = fm.getByRole('separator', { name: 'Resize the folder tree' })
+  const b = (await bar.boundingBox())!
+  await page.mouse.move(b.x + b.width / 2, b.y + 200)
+  await page.mouse.down(); await page.mouse.move(b.x + 120, b.y + 200, { steps: 5 }); await page.mouse.up()
+  const w1 = (await tree.boundingBox())!.width
+  expect(w1).toBeGreaterThan(w0 + 80)
+  await bar.focus(); await page.keyboard.press('ArrowLeft')
+  expect((await tree.boundingBox())!.width).toBeLessThan(w1)
+  await bar.dblclick()
+  expect(Math.round((await tree.boundingBox())!.width)).toBe(240)
+})
