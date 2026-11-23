@@ -23,5 +23,20 @@ What the recorder and the Pi do during a full-rate recording to the FAT32 USB st
 - **One 0.5 s gap in 0.6.0, none in 0.6.1.** Neither is the 1 to 2.4 s stalls seen on 2026-11-22. That recording ran at about 82 fps with guiding and the mount connected, which this one did not.
 - **Not reproduced yet:** the 1 to 2.4 s stalls. The next attempt needs the mount, guiding and the 82 fps mode (8-bit or a smaller frame). The sampler and the `frame_gap` event (now with kernel memory counters and `waiting_for_camera_ms`) will say which part stalled.
 
+## Variance: four runs of 0.6.1
+Same setup, same stick, four runs (the first is the table above):
+
+| Run | Frames on the drive | Drive writes (mean MB/s) | Seconds under 10 MB/s to the drive | `frame_gap` events | Allocation stalls |
+|---|---|---|---|---|---|
+| 1 | 1500 | 58 | 26 | none | 0 |
+| 2 | 1772 | 77 | 4 | none | 0 |
+| 3 | 1433 | 55 | 38 | 0.47 s, 0.28 s | 1 |
+| 4 | 1528 | 53 | 55 | 0.25 s | 0 |
+
+- Frames on the drive vary by about 10 % (1433 to 1772) and the drive spends anywhere from 4 to 55 seconds nearly idle in a run. Those idle spells come from the stick (its own housekeeping), not from us: the buffer is full and waiting during them. The single 0.6.0 run (1829 frames, 12 idle seconds) is above all four 0.6.1 runs, which may be luck of the stick or may be the cost of write-behind; one run of 0.6.0 cannot tell. A fair comparison needs several runs of each build, alternated.
+- Dirty memory was 265 to 269 MB in every 0.6.1 run, so write-behind does what it should (0.6.0 reached 857 MB).
+- Gaps over 0.25 s still happen in 0.6.1 (in two of four runs, up to 0.47 s, once with an allocation stall), a long way from the 1 to 2.4 s of 2026-11-22.
+- The next measurement is the real one: the mount connected, guiding on, the 82 fps mode, 0.6.1 and 0.6.0 alternated.
+
 ## Direct writes
 Direct writes exist behind a switch (More > Storage). In two runs of each mode (40 s with a 4 GB buffer, 60 s with 6 GB) the files were valid SER files with the same number of frames and the same stalls (none over 0.3 s); the drive's true speed shows as 76 to 99 MB/s instead of the page cache's 700 to 860 MB/s. Nothing so far argues for making it the default.
