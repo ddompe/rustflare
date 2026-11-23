@@ -149,3 +149,19 @@ impl Ser {
         None
     }
 }
+
+/// Tells the kernel to forget the cached pages of a recording (all its parts): the stacker reads each recording a few times and never
+/// again, and its page cache is charged to its memory limit and crowds out the recorder's RAM buffer. Clean pages only, so nothing is lost.
+pub fn drop_page_cache(first: &Path) {
+    #[cfg(target_os = "linux")]
+    for p in part_paths(first) {
+        if let Ok(f) = File::open(&p) {
+            use std::os::fd::AsRawFd;
+            unsafe {
+                libc::posix_fadvise(f.as_raw_fd(), 0, 0, libc::POSIX_FADV_DONTNEED);
+            }
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = first;
+}

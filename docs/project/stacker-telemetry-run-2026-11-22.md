@@ -32,3 +32,22 @@ The first run of the stacker service on the Pi 5 with its telemetry, using the f
 - **This is not the real test.** The simulated camera writes about 17 MB/s at 7 fps; the Apollo-M Mini writes up to 325 MB/s at 57 fps and drives the USB bus and its interrupts hard. Whether the stacker disturbs *that* is exactly what is still open (#86 capture stalls). The telemetry is there to answer it: run the real camera with `between_bursts`, then with `always`, and compare the recorder's stall counters with the job table.
 - Observations to try on the real camera: the stacker's threads wander over all four cores, so they may share a core with the camera's USB interrupt handling. `sudo systemctl edit rustflare-stack` with `[Service]` and `AllowedCPUs=2-3` would keep it off cores 0 and 1; the telemetry (`core_busy_pct`, `cores_seen_running`) shows the effect. Rust sees 2 CPUs under the 200 % quota, so the stacker's own thread count follows the quota.
 - Not covered: a recording of hours, the SD card instead of the stick, and a second Pi load such as the hotspot or the web page streaming at the same time.
+
+## Run 2: disk pressure, after the memory-cgroup reboot (same day)
+
+Before this run the Pi was rebooted with `cgroup_enable=memory cgroup_memory=1` added to `/boot/firmware/cmdline.txt` (the firmware itself adds `cgroup_disable=memory`). It came back in about 30 s with everything as before: recorder and stacker enabled and running, Wi-Fi, the stick found by its UUID, settings kept, no failed units, the recorder's and stacker's priorities and affinity in place, and the stacker's `memory.max` of 2 GiB now enforced. (`scripts/pi-enable-memory-cgroup.sh` does the edit.)
+
+The first run used a simulated camera that writes about 17 MB/s. This run emulates the real camera's disk pressure: a writer doing synced 4 MB writes to the same stick as fast as it can, alone, then with the stacker (policy `always`) working through the 12 real bursts, caches dropped before each phase.
+
+| | Writer alone | Writer + stacker |
+|---|---|---|
+| Write speed | 70.6 MB/s | 59.5 MB/s (**-16 %**) |
+| 4 MB write latency, median / 99th percentile | 51 / 191 ms | 56 / 228 ms |
+| Slowest write, and writes over 500 ms | 1156 ms, 4 | 1136 ms, 2 |
+| Stacker jobs (24) | - | median 8.5 s, slowest 16.5 s, 1.3 cores, **no** I/O or memory pressure stalls (PSI) |
+| Interrupts during the jobs | USB3 host controller: all 182,792 on core 0; SD card: all on core 0 | the stacker was confined to cores 2 and 3 |
+
+- **The stacker costs the writer about a sixth of the stick's throughput while both use it, and no worse latency tail.** Reads and writes share one USB stick. At the planned duty (100 frames every 30 s is about 19 MB/s written plus 19 MB/s read by the stacker) the total is well under what the stick sustains, but a recording at the camera's full rate fills the stick already: the RAM buffer is what absorbs it, and the stacker reading at the same time makes the buffer fill a little faster.
+- **The stick stalls on its own.** With nothing else running a single synced 4 MB write took up to 1.2 s (and 1.6 s in another phase), four times in a minute. These are the stick's own pauses, not CPU or the stacker, and they match the 1 to 2.4 s capture stalls seen on the Sun (#86): the RAM buffer hides them from the camera, so what matters is its size and the *Drop frames* policy. A better stick, or the SD card or an SSD for recording, is the lever.
+- **Memory:** the stacker's anonymous memory peaks at about 0.5 GB, but reading 572 MB recordings filled the *page cache* charged to its limit, which hit the 2 GiB ceiling and made the kernel reclaim 8192 times (no kills). The stacker now tells the kernel to forget each recording's pages when it is done: the same six bursts peak at 1.1 GB with no limit events and 67 MB of cache left behind, so it also stops crowding the recorder's RAM buffer.
+- **Still open:** the real camera, which loads the USB bus, its interrupts and the RAM buffer in a way a file writer cannot. The checklist item and the `frame_gap` events are there for that.

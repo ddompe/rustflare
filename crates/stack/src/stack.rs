@@ -560,6 +560,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
 
     let shifts: Vec<(usize, f64, f64)> = kept.iter().map(|&i| (i, shifts_b[i].0 * b as f64, shifts_b[i].1 * b as f64)).collect();
     let rms = (shifts.iter().map(|s| s.1 * s.1 + s.2 * s.2).sum::<f64>() / shifts.len().max(1) as f64).sqrt();
+    crate::ser::drop_page_cache(path);
     let report = Report {
         frames: n,
         kept: kept_n,
