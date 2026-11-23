@@ -14,3 +14,5 @@ rustflare.json
 .e2e-data
 test-results
 playwright-report
+/capture.state
+/logs
