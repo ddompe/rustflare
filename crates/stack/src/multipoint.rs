@@ -5,10 +5,7 @@
 //! The pieces here are the grid, the local correlation and the blend; `stack.rs` runs the passes.
 
 use crate::image::Img;
-use rustfft::{num_complex::Complex, Fft, FftPlanner};
-use std::sync::Arc;
-
-type C = Complex<f32>;
+use crate::fft2::{Real2d, C};
 
 /// Centres of the alignment points (in the coordinates of the image they were built on, usually 2x binned).
 ///
@@ -59,24 +56,12 @@ pub struct LocalAligner {
     n: usize,
     search: usize,
     window: Vec<f32>,
-    fwd: Arc<dyn Fft<f32>>,
-    inv: Arc<dyn Fft<f32>>,
-}
-
-fn transpose(src: &[C], n: usize) -> Vec<C> {
-    let mut out = vec![C::new(0.0, 0.0); n * n];
-    for y in 0..n {
-        for x in 0..n {
-            out[x * n + y] = src[y * n + x];
-        }
-    }
-    out
+    fft: Real2d,
 }
 
 impl LocalAligner {
     pub fn new(half: usize, search: usize) -> LocalAligner {
         let n = (2 * half + 2 * search + 7) / 8 * 8; // room so that a shift of `search` does not wrap onto the peak
-        let mut p = FftPlanner::<f32>::new();
         let hann = |i: usize| (std::f32::consts::PI * (i as f32 + 0.5) / (2 * half) as f32).sin().powi(2);
         let mut window = vec![0f32; 4 * half * half];
         for y in 0..2 * half {
@@ -84,7 +69,7 @@ impl LocalAligner {
                 window[y * 2 * half + x] = hann(x) * hann(y);
             }
         }
-        LocalAligner { half, n, search, window, fwd: p.plan_fft_forward(n), inv: p.plan_fft_inverse(n) }
+        LocalAligner { half, n, search, window, fft: Real2d::new(n, n) }
     }
 
     /// The box around (`cx`, `cy`) of `img` (`w` wide, edges clamp), made zero-mean and windowed.
@@ -100,23 +85,17 @@ impl LocalAligner {
             }
         }
         let mean = vals.iter().map(|&v| v as f64).sum::<f64>() / vals.len() as f64;
-        let mut buf = vec![C::new(0.0, 0.0); n * n];
+        let mut buf = vec![0f32; n * n];
         let off = (n - side) / 2;
         let mut sq = 0.0f64;
         for y in 0..side {
             for x in 0..side {
                 let v = (vals[y * side + x] - mean as f32) * self.window[y * side + x];
                 sq += (v * v) as f64;
-                buf[(y + off) * n + x + off] = C::new(v, 0.0);
+                buf[(y + off) * n + x + off] = v;
             }
         }
-        for row in buf.chunks_exact_mut(n) {
-            self.fwd.process(row);
-        }
-        let mut t = transpose(&buf, n);
-        for row in t.chunks_exact_mut(n) {
-            self.fwd.process(row);
-        }
+        let t = self.fft.forward(&mut buf);
         Patch { spec: t, norm: sq.sqrt() as f32 }
     }
 
@@ -124,15 +103,9 @@ impl LocalAligner {
     /// the peak (1 = identical up to the shift; falls with blur and noise).
     pub fn correlate(&self, reference: &Patch, img: &Patch) -> (f32, f32, f32) {
         let n = self.n;
-        let mut cross: Vec<C> = reference.spec.iter().zip(&img.spec).map(|(r, i)| r.conj() * i).collect();
-        for row in cross.chunks_exact_mut(n) {
-            self.inv.process(row);
-        }
-        let mut t = transpose(&cross, n);
-        for row in t.chunks_exact_mut(n) {
-            self.inv.process(row);
-        }
-        let at = |x: isize, y: isize| t[(y.rem_euclid(n as isize) as usize) * n + x.rem_euclid(n as isize) as usize].re / (n * n) as f32;
+        let cross: Vec<C> = reference.spec.iter().zip(&img.spec).map(|(r, i)| r.conj() * i).collect();
+        let t = self.fft.inverse(cross);
+        let at = |x: isize, y: isize| t[(y.rem_euclid(n as isize) as usize) * n + x.rem_euclid(n as isize) as usize] / (n * n) as f32;
         let (mut best, mut bx, mut by) = (f32::MIN, 0isize, 0isize);
         let s = self.search as isize;
         for dy in -s..=s {

@@ -34,6 +34,34 @@ pub fn accumulate_shifted(acc: &mut [f32], src: &[f32], w: usize, h: usize, dx: 
     portable::accumulate_shifted(acc, src, w, h, dx, dy)
 }
 
+/// The Laplacian of `img` (zero on the border and wherever `mask` is 0): `out = mask * (4c - left - right - up - down)`.
+pub fn laplacian_masked(img: &[f32], mask: &[f32], w: usize, h: usize) -> Vec<f32> {
+    let mut out = vec![0f32; w * h];
+    for y in 1..h - 1 {
+        let (up, mid, dn, mk) = (&img[(y - 1) * w..y * w], &img[y * w..(y + 1) * w], &img[(y + 1) * w..(y + 2) * w], &mask[y * w..(y + 1) * w]);
+        let o = &mut out[y * w..(y + 1) * w];
+        for x in 1..w - 1 {
+            o[x] = (4.0 * mid[x] - mid[x - 1] - mid[x + 1] - up[x] - dn[x]) * mk[x];
+        }
+    }
+    out
+}
+
+/// Sum of `a * b * mask` and of `a * mask` over whole slices, in f32 chunks (vectorises) accumulated in f64.
+pub fn masked_dot_and_sum(a: &[f32], b: &[f32], mask: &[f32]) -> (f64, f64) {
+    let (mut dot, mut sum) = (0.0f64, 0.0f64);
+    for ((ca, cb), cm) in a.chunks(4096).zip(b.chunks(4096)).zip(mask.chunks(4096)) {
+        let (mut d, mut s) = (0.0f32, 0.0f32);
+        for ((x, y), m) in ca.iter().zip(cb).zip(cm) {
+            d += x * y * m;
+            s += x * m;
+        }
+        dot += d as f64;
+        sum += s as f64;
+    }
+    (dot, sum)
+}
+
 pub mod portable {
     pub fn bin2_calibrated(raw: &[u16], dark: Option<&[f32]>, inv_flat: Option<&[f32]>, w: usize, h: usize, out: &mut [f32]) {
         let ow = w / 2;

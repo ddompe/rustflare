@@ -35,8 +35,33 @@ Checked by search on 2026-11-22; "unverified" means I know of it but did not con
 
 Most of these are C or C++ with NEON *intrinsics*; hand-written assembly is rare (libyuv has some). Writing intrinsics in Rust, as we did, is the same technique without a C++ dependency.
 
+## FFT shoot-out (same day, afterwards)
+
+What was left after NEON was FFT, so the same questions for the two FFT sizes the stacker uses: the global alignment (480x360 on 4x4-binned frames) and the per-point correlations (80x80). One 2D forward transform, in milliseconds (spike: `spikes/fft-shootout`; PFFFT's C source comes from the `pffft_rust` crate and is not committed):
+
+| | 480x360 Mac | 480x360 **Pi 5** | 80x80 Mac | 80x80 **Pi 5** |
+|---|---|---|---|---|
+| A `rustfft`, complex 2D, plain transpose (what we had) | 1.00 | 3.74 | 0.035 | 0.098 |
+| B the same with a tiled (cache-friendly) transpose | 0.92 | 2.88 (1.30x) | 0.033 | 0.095 (1.03x) |
+| **C `realfft`: real-to-complex rows, half the spectrum** | 0.51 | **1.52 (2.46x)** | 0.017 | **0.052 (1.87x)** |
+| D PFFFT (C, NEON), complex | 0.58 (480x384) | 2.53 (1.48x) | 0.018 | 0.055 (1.77x) |
+
+- **`realfft` wins, in pure Rust**: an image is real, so half the spectrum is redundant. It beats even the C library's complex transform, so there is no reason to add a C dependency. (PFFFT's real transform, `oxifft` and FFTW's NEON build were not tried: FFTW needs a system library to cross-compile, and the gain over `realfft` would have to be large to justify either.)
+- **Adopted** (`crates/stack/src/fft2.rs`, used by both the global and the per-point aligner). Results are unchanged on the real bursts (detail measures 0.00035 and 0.00094) and in the tests.
+- The scoring pass (a Laplacian and a masked covariance per frame) got the same vectorised treatment (`simd.rs`).
+
+**End to end on the Pi 5** (the same real bursts, 100 frames of 1944x1472, warm cache):
+
+| | at the start (scalar, complex FFT) | NEON kernels | + `realfft` and vectorised scoring |
+|---|---|---|---|
+| disc burst, 2 threads | 7.2 s | 6.2 s | **5.0 s** |
+| disc burst, 4 threads | 5.6 s | 5.0 s | **4.4 s** |
+| prominence burst, 2 threads | 7.2 s | 6.8 s | **4.4 s** |
+
+(Read from the stick cold, which is what the service does now that it drops each recording's cache when it is done, the first phase takes about 1.5 s longer.) The service's own timing next to a recording is in the telemetry (about 8 to 9 s per burst under the service's CPU quota, with a writer hammering the same stick).
+
 ## Next steps, if the time matters
 
-1. The scoring pass after the global alignment still uses scalar loops (a Laplacian, a masked covariance): the same treatment should save roughly another second per burst.
-2. An FFT shoot-out at our two sizes (`rustfft` against `pffft` and `FFTW` NEON); the global alignment could also use fewer, smaller transforms.
+1. Done: the scoring pass and the FFTs.
+2. What is left is spread thin: the cold read of the recording (1.5 s from this stick), the per-point window extraction and the window/high-pass steps before each FFT. Another 10 to 20 % is possible with effort; the stage is no longer the bottleneck next to the camera and the stick.
 3. Leave the GPU.

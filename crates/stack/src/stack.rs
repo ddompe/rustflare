@@ -253,17 +253,17 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         for v in &mut mean_b {
             *v /= n as f32;
         }
-        let lm = laplacian(&mean_b, bw, bh, &valid);
-        let var_m: f64 = lm.iter().zip(&valid).filter(|(_, &v)| v).map(|(&l, _)| l as f64 * l as f64).sum::<f64>().max(1e-30);
+        let lm = crate::simd::laplacian_masked(&mean_b, &valid_f, bw, bh);
+        let var_m: f64 = crate::simd::masked_dot_and_sum(&lm, &lm, &valid_f).0.max(1e-30);
         let nvalid = valid.iter().filter(|&&v| v).count().max(1) as f64;
         let c_out = run_parallel(n, opts.threads, |i| {
             let mut s = Ser::open(path).map_err(|e| e.to_string())?;
             let img = get(&mut s, i)?;
             let mut al = vec![0f32; bw * bh];
             accumulate_shifted(&mut al, &img.d, bw, bh, shifts[i].0, shifts[i].1);
-            let l = laplacian(&al, bw, bh, &valid);
-            let cov: f64 = l.iter().zip(&lm).zip(&valid).filter(|(_, &v)| v).map(|((&a, &b), _)| a as f64 * b as f64).sum();
-            let mean_v = al.iter().zip(&valid).filter(|(_, &v)| v).map(|(&v, _)| v as f64).sum::<f64>() / nvalid;
+            let l = crate::simd::laplacian_masked(&al, &valid_f, bw, bh);
+            let cov = crate::simd::masked_dot_and_sum(&l, &lm, &valid_f).0;
+            let mean_v = crate::simd::masked_dot_and_sum(&al, &valid_f, &valid_f).0 / nvalid; // sum of al * mask * mask = sum of al * mask
             Ok::<_, String>((if mean_v > 0.0 { cov / var_m / mean_v } else { 0.0 }, mean_v)) // per unit brightness: dimmer frames are not penalised
         });
         let (mut score, mut bright) = (vec![0f64; n], vec![0f64; n]);

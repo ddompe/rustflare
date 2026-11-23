@@ -1,0 +1,18 @@
+[package]
+name = "fft-shootout"
+version = "0.0.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+# A throwaway spike (not part of the workspace): rustfft against realfft and PFFFT at the stacker's two FFT sizes.
+# PFFFT's C source is not committed: copy pffft.c, pffft.h, fftpack.c, fftpack.h from the pffft_rust crate into ../../.local/pffft
+# (or set PFFFT_SRC).
+[workspace]
+
+[dependencies]
+rustfft = "6"
+realfft = "3"
+
+[build-dependencies]
+cc = "1"
