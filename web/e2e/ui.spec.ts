@@ -498,3 +498,46 @@ test('a failed action is shown in the status bar until dismissed, never swallowe
   await bar.getByRole('button', { name: 'Dismiss' }).click()
   await expect(bar).not.toContainText('the drive is on fire')
 })
+
+test('stacks show as thumbnails with a preview, and a selection downloads as one tar', async ({ page }) => {
+  const fs = await import('node:fs')
+  const dir = path.join(process.cwd(), '.e2e-data/data/stacks/2099-01-01')
+  fs.mkdirSync(dir, { recursive: true })
+  const fits = (w: number, h: number) => {
+    const card = (s: string) => s.padEnd(80)
+    const head = Buffer.from([card('SIMPLE  =                    T'), card('BITPIX  =                  -32'), card('NAXIS   =                    2'), card(`NAXIS1  = ${String(w).padStart(20)}`), card(`NAXIS2  = ${String(h).padStart(20)}`), card('END')].join('').padEnd(2880))
+    const body = Buffer.alloc(Math.ceil((w * h * 4) / 2880) * 2880)
+    for (let i = 0; i < w * h; i++) body.writeFloatBE(((i % w) / w) * 40000 + 100, i * 4)
+    return Buffer.concat([head, body])
+  }
+  for (const n of ['stack_a_001.fits', 'stack_a_002.fits', 'stack_a_003.fits']) fs.writeFileSync(path.join(dir, n), fits(64, 48))
+  try {
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Record/ }).click()
+    await page.getByRole('button', { name: /Open file manager/ }).click()
+    const fm = page.getByRole('dialog', { name: 'File manager' })
+    await fm.locator('.fm-row[data-type="stacks"] .fm-open').click()
+    await fm.locator('.fm-row', { hasText: '2099-01-01' }).locator('.fm-open').click()
+    const cells = fm.getByRole('list', { name: 'Stacks' }).locator('li')
+    await expect(cells).toHaveCount(3)
+    await cells.first().getByRole('button', { name: /Preview/ }).click()
+    const peek = page.getByRole('dialog', { name: /^Preview of stack_a_001/ })
+    await expect(peek).toContainText('1 of 3')
+    await peek.getByRole('button', { name: /Next/ }).click()
+    await expect(page.getByRole('dialog', { name: /^Preview of stack_a_002/ })).toContainText('2 of 3')
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.fm-peek')).toHaveCount(0)
+    await expect(fm).toBeVisible() // Escape closed only the preview
+    await cells.nth(0).getByRole('checkbox').check()
+    await cells.nth(2).getByRole('checkbox').check()
+    const href = await fm.getByRole('link', { name: /Download 2 selected items/ }).getAttribute('href')
+    const r = await page.request.get(href!)
+    expect(r.status()).toBe(200)
+    const body = await r.body()
+    expect(body.length).toBe(Number(r.headers()['content-length']))
+    const names = body.toString('latin1').match(/stack_a_00\d\.fits/g) ?? []
+    expect(new Set(names)).toEqual(new Set(['stack_a_001.fits', 'stack_a_003.fits']))
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

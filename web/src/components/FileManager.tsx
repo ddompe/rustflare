@@ -90,6 +90,9 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
   const [q, setQ] = useState('')
   const [checking, setChecking] = useState(false)
   const [ask, setAsk] = useState(false)
+  const [peek, setPeek] = useState<number | null>(null)
+  const [limit, setLimit] = useState(120)
+  const [view, setView] = useState<'grid' | 'list'>(() => (localStorage.getItem('rf-fm-view') === 'list' ? 'list' : 'grid'))
   const [rs, setRs] = useState<Entry | null>(null)
   const [rsMsg, setRsMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -99,11 +102,11 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
   const closeRef = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  const go = (p: string) => { setCwd(p); setSel(new Set()); setAsk(false); setErr(null); setQ(''); sessionStorage.setItem('rf-fm-cwd', p); listRef.current?.scrollTo(0, 0) }
+  const go = (p: string) => { setLimit(120); setPeek(null); setCwd(p); setSel(new Set()); setAsk(false); setErr(null); setQ(''); sessionStorage.setItem('rf-fm-cwd', p); listRef.current?.scrollTo(0, 0) }
 
   useEffect(() => {
     closeRef.current?.focus()
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement)) onClose() }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement) && !document.querySelector('.fm-peek')) onClose() }
     document.addEventListener('keydown', esc)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -121,6 +124,10 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
     return f.sort((a, b) => (cwd === '' ? rank(a) - rank(b) : Number(b.dir) - Number(a.dir)) || by(a, b))
   }, [entries, q, sort, cwd])
 
+  const stacksShown = useMemo(() => shown.filter((e) => e.type === 'stack'), [shown])
+  const grid = view === 'grid' && stacksShown.length > 0
+  const visible = shown.slice(0, limit)
+  useEffect(() => { setLimit(120) }, [q, sort])
   const check = async (p: string) => {
     try { const s = await api<Stats>('GET', `/files/stats?path=${encodeURIComponent(p)}`); setStats((x) => ({ ...x, [p]: s })) }
     catch (e) { setStats((x) => ({ ...x, [p]: { error: e instanceof Error ? e.message : String(e) } })) }
@@ -239,9 +246,31 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
           {cwd === '' && entries.length === 0 && !loading && <div className="empty">Nothing captured yet. Record something in the Record tab and it appears here.</div>}
           {cwd !== '' && entries.length === 0 && !loading && !error && <div className="empty">This folder is empty.</div>}
           {q && shown.length === 0 && entries.length > 0 && <div className="empty">Nothing in this folder matches “{q}”.</div>}
-          <ul className="fm">{shown.map(row)}</ul>
+          {stacksShown.length > 0 && (
+            <div className="fm-viewbar" role="group" aria-label="Show the stacks as">
+              <button type="button" aria-pressed={grid} onClick={() => { setView('grid'); localStorage.setItem('rf-fm-view', 'grid') }}>Thumbnails</button>
+              <button type="button" aria-pressed={!grid} onClick={() => { setView('list'); localStorage.setItem('rf-fm-view', 'list') }}>List</button>
+            </div>
+          )}
+          <ul className="fm">{(grid ? visible.filter((e) => e.type !== 'stack') : visible).map(row)}</ul>
+          {grid && (
+            <ul className="fm-grid" aria-label="Stacks">
+              {visible.filter((e) => e.type === 'stack').map((f) => (
+                <li key={f.path} className={sel.has(f.path) ? 'sel' : ''}>
+                  <button type="button" className="fm-cell" aria-label={`Preview ${f.name}`} onClick={() => setPeek(stacksShown.findIndex((x) => x.path === f.path))}>
+                    <img loading="lazy" alt="" src={`/api/stack/thumb/${f.path.replace(/^stacks\//, '')}`} />
+                    <span className="fm-cellname">{f.name.replace(/^stack_/, '').replace(/\.fits$/, '')}</span>
+                  </button>
+                  <label className="fm-cellcheck"><input type="checkbox" checked={sel.has(f.path)} onChange={() => toggle(f.path)} aria-label={`Select ${f.name}`} /></label>
+                </li>
+              ))}
+            </ul>
+          )}
+          {shown.length > limit && <button type="button" className="wide" onClick={() => setLimit(limit + 120)}>Show {Math.min(120, shown.length - limit)} more ({shown.length - limit} not shown)</button>}
         </div>
       </div>
+
+      {peek != null && stacksShown[peek] && <Peek items={stacksShown} index={peek} setIndex={setPeek} />}
 
       <footer className="fm-foot">
         <ErrorLine error={err} />
@@ -260,6 +289,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
           </div>
         )}
         {busy && <div className="hint-text">Deleting is disabled while recording or writing.</div>}
+        {sel.size > 0 && !ask && <a className="btn wide" href={`/api/files/archive?path=${encodeURIComponent(cwd)}&names=${encodeURIComponent(JSON.stringify(selEntries.map((e) => e.name)))}`} download>Download {plural(sel.size, 'selected item')} · {size(selSize)} (.tar)</a>}
         {!ask ? (
           <button type="button" className="danger wide" disabled={sel.size === 0 || busy} onClick={() => setAsk(true)}>
             {sel.size === 0 ? 'Select items to delete' : `Delete ${plural(sel.size, 'item')} (${size(selSize)})…`}
@@ -268,7 +298,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
           <div className="confirm" role="alertdialog" aria-label="Confirm delete">
             <p className="fm-names">{selEntries.slice(0, 3).map((e) => e.name).join(', ')}{selEntries.length > 3 ? ` and ${selEntries.length - 3} more` : ''}</p>
             {selEntries.some((e) => e.type === 'recording' && !e.stack) && <p className="warn">{plural(selEntries.filter((e) => e.type === 'recording' && !e.stack).length, 'recording')} {selEntries.filter((e) => e.type === 'recording' && !e.stack).length === 1 ? 'has' : 'have'} not been stacked: the raw data is gone for good.</p>}
-            <p>Delete {plural(sel.size, 'item')}{selFiles > sel.size ? `, ${plural(selFiles, 'file')} in all,` : ''} ({size(selSize)}) permanently?</p>
+            <p>Delete {plural(sel.size, 'item')}{selFiles > sel.size ? `, ${plural(selFiles, 'file')} in all,` : ''} ({size(selSize)}) permanently?{free != null ? ` That frees ${size(selSize)}: ${size(free + selSize)} will be free.` : ''}</p>
             <div className="btnrow tight">
               <button type="button" className="grow" onClick={() => setAsk(false)}>Keep</button>
               <button type="button" className="danger grow" onClick={del}>Delete</button>
@@ -276,6 +306,39 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
           </div>
         )}
       </footer>
+    </div>
+  )
+}
+
+/** Preview of a stack (a picture made for display, not the data) with the previous and next one in the folder. */
+function Peek({ items, index, setIndex }: { items: Entry[]; index: number; setIndex: (i: number | null) => void }) {
+  const f = items[index]
+  const info = f.from?.info
+  const ref = useRef<HTMLButtonElement>(null)
+  useEffect(() => { ref.current?.focus() }, [])
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); setIndex(null) }
+      else if (e.key === 'ArrowLeft') setIndex(Math.max(0, index - 1))
+      else if (e.key === 'ArrowRight') setIndex(Math.min(items.length - 1, index + 1))
+    }
+    document.addEventListener('keydown', key, true)
+    return () => document.removeEventListener('keydown', key, true)
+  }, [index, items.length, setIndex])
+  return (
+    <div className="fm-peek" role="dialog" aria-modal="true" aria-label={`Preview of ${f.name}`}>
+      <header>
+        <b>{f.name}</b>
+        <span className="muted">{index + 1} of {items.length}{info ? ` · best ${info.kept} of ${info.frames} frames` : ''}</span>
+        <button ref={ref} type="button" onClick={() => setIndex(null)} aria-label="Close preview">✕</button>
+      </header>
+      <img alt={`Preview of ${f.name}, stretched for display`} src={`/api/stack/thumb/${f.path.replace(/^stacks\//, '')}`} />
+      <footer>
+        <button type="button" disabled={index === 0} onClick={() => setIndex(index - 1)}>‹ Previous</button>
+        <a className="btn" href={`/files/${f.path}`} download>Download · {size(f.size)}</a>
+        <button type="button" disabled={index === items.length - 1} onClick={() => setIndex(index + 1)}>Next ›</button>
+      </footer>
+      <p className="muted fm-peekhint">A preview stretched for display; the FITS file has the data.</p>
     </div>
   )
 }

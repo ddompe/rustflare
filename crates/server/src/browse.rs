@@ -24,6 +24,9 @@ const WALK_CAP: usize = 200_000;
 pub struct ListQuery {
     #[serde(default)]
     path: String,
+    /// Archive only: a JSON array of names inside the folder `path`, to archive just those (the selection of the file manager).
+    #[serde(default)]
+    names: String,
 }
 
 fn rel_ok(p: &str) -> bool {
@@ -229,23 +232,38 @@ fn padded(n: u64) -> u64 {
 
 /// `GET /api/files/archive?path=<folder or file>`: the folder as one .tar download, streamed (nothing is copied on the drive).
 pub async fn files_archive(State(st): State<AppState>, Query(q): Query<ListQuery>) -> Response {
-    let rel = q.path.trim_matches('/').to_string();
     let bad = |c: StatusCode, e: String| (c, Json(json!({ "error": e }))).into_response();
-    if rel.is_empty() || !rel_ok(&rel) {
+    let folder = q.path.trim_matches('/').to_string();
+    let rels: Vec<String> = if q.names.is_empty() {
+        vec![folder]
+    } else {
+        match serde_json::from_str::<Vec<String>>(&q.names) {
+            Ok(v) if v.iter().all(|n| !n.is_empty() && !n.contains('/')) => v.into_iter().map(|n| if folder.is_empty() { n } else { format!("{folder}/{n}") }).collect(),
+            Ok(_) => return bad(StatusCode::BAD_REQUEST, "names are file or folder names inside the folder, without a path".into()),
+            Err(e) => return bad(StatusCode::BAD_REQUEST, format!("names must be a JSON array of names: {e}")),
+        }
+    };
+    if rels.is_empty() || rels.iter().any(|r| r.is_empty() || !rel_ok(r)) {
         return bad(StatusCode::BAD_REQUEST, "choose a folder to download".into());
     }
     // files being written change size under a running tar: refuse, except in stacks/ where the stacker renames finished files into place
-    if !rel.starts_with("stacks") && st.engine.status.borrow().capture.state != "idle" {
+    if rels.iter().any(|r| !r.starts_with("stacks")) && st.engine.status.borrow().capture.state != "idle" {
         return bad(StatusCode::CONFLICT, "a capture is running or still writing: wait until it finishes".into());
     }
     let root = st.storage.dir();
-    let src = root.join(&rel);
-    let top = rel.rsplit('/').next().unwrap_or(&rel).to_string();
+    let tops: Vec<(PathBuf, String)> = rels.iter().map(|r| (root.join(r), r.rsplit('/').next().unwrap_or(r).to_string())).collect();
+    let top = if tops.len() == 1 { tops[0].1.clone() } else { "selection".to_string() };
     let items = match tokio::task::spawn_blocking({
-        let (src, top) = (src.clone(), top.clone());
+        let tops = tops.clone();
         move || {
             let mut v = vec![];
-            collect(&src, &top, &mut v)?;
+            let mut seen = std::collections::HashSet::new();
+            for (src, name) in &tops {
+                if !seen.insert(name.clone()) {
+                    return Err(format!("two of the selected items are both called {name}"));
+                }
+                collect(src, name, &mut v)?;
+            }
             for i in &v {
                 header_block(&i.arc, i.size, i.mtime, i.dir)?; // every name must fit, before the first byte is sent
             }

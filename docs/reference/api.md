@@ -86,7 +86,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `POST /api/storage/eject` | `{"mount_point"}`: flush, unmount and power off a removable drive; refused while capturing or writing |
 | `GET /api/files` | the captures (date folder / name) |
 | `GET /api/files/list?path=<folder>` | one folder of the drive (`""` is the top): `{path, entries:[{name, path, dir, type, size, files, capped, modified, stack?, from?}]}`. `type` is `day`, `stacks`, `logs`, `hdr`, `prominence`, `lane`, `folder`, `recording`, `stack`, `fits`, `image`, `notes` or `file`. For a folder `size` and `files` are totals below it (`capped` when counting stopped early). `stack` (on a recording) and `from` (on a stack) link the two from `stacks/manifest.json`. Notes files, `.ready` markers and the thumbnail cache are not listed |
-| `GET /api/files/archive?path=<folder or file>` | the folder as one streamed `.tar` (known `Content-Length`). 409 while a capture is running, except under `stacks/`; 400 if a name does not fit in tar |
+| `GET /api/files/archive?path=<folder or file>[&names=<JSON array>]` | the folder as one streamed `.tar` (known `Content-Length`); with `names` (a JSON array of names inside `path`) only those items, as `selection.tar`. 409 while a capture is running, except under `stacks/`; 400 if a name does not fit in tar |
 | `GET /api/files/stats?path=` | SER header, measured fps and duration, sampled brightness, `mostly_dark`, `complete` |
 | `POST /api/files/delete` | `{"path","confirm":true}`: deletes one file or folder (below a day folder) and its notes file; refused while recording, and for `stacks/manifest.json` |
 | `GET /api/datasheet/camera`, `/mount` | `{live, catalog}` for the device cards |
