@@ -550,7 +550,34 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 .sbar-pop p.error b { color: #ffb3aa; } .sbar-pop p.warning b { color: #f1d27a; }
 .sbar-pop .link { background: none; border: 0; padding: 0 .2rem; min-height: 0; text-decoration: underline; font-weight: 700; color: inherit; }
 .mode-cards { display: grid; gap: .5rem; margin: .5rem 0 .75rem; }
-.mode-card { text-align: left; border: 1.5px solid #565d69; border-radius: var(--radius); padding: .6rem .8rem; background: #080606; min-height: var(--tap); }
-.mode-card[aria-pressed="true"] { border-color: var(--accent); background: #1a1812; }
+.mode-card { text-align: left; border: 1.5px solid var(--line); border-radius: var(--radius); padding: .6rem .8rem; background: var(--bg); color: var(--fg); min-height: var(--tap); }
+.mode-card[aria-pressed="true"] { border-color: var(--accent); background: var(--raised); box-shadow: inset 4px 0 0 var(--accent); }
 .mode-card b { display: block; }
 .mode-card span { color: var(--muted); font-size: .9rem; }
+.mode-warn { display: block; margin-top: .2rem; font-style: normal; font-weight: 700; font-size: .85rem; color: var(--warn); }
+
+/* ---- critique fixes (2026-11) ---- */
+/* the overlay-widgets menu: a sheet over the page on a phone, where the live view is too small and too narrow to hold it */
+@media (max-width: 699px), (max-height: 520px) {
+  .hud-menu { position: fixed; left: .75rem; right: .75rem; top: auto; bottom: calc(var(--tabs, 4rem) + 3rem + env(safe-area-inset-bottom)); width: auto; max-height: min(62dvh, 360px); z-index: 40; box-shadow: 0 8px 28px #000a; }
+}
+@media (max-height: 520px) { .hud-menu { bottom: calc(3rem + env(safe-area-inset-bottom)); max-height: 80dvh; left: auto; width: min(24rem, calc(100vw - 1.5rem)); } }
+/* no empty band under the live view when the strip has nothing to show (its screen-reader announcer stays) */
+.strip:not(:has(> :not(.sr-only))) { padding: 0; gap: 0; min-height: 0; height: 0; border: 0; overflow: visible; }
+/* Hide controls keeps what must not be hidden: the status line (lost target, full disk) and a way to stop a recording */
+.app[data-full] .sbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 29; }
+.app[data-full] .fullbtn { bottom: calc(2.5rem + .6rem + env(safe-area-inset-bottom)); }
+.fullrec { position: fixed; z-index: 30; left: calc(.6rem + env(safe-area-inset-left)); bottom: calc(2.5rem + .6rem + env(safe-area-inset-bottom)); min-height: 44px; padding: 0 .9rem; background: var(--danger); color: #fff; border: 1px solid #ff8a80; border-radius: 8px; font-weight: 800; }
+/* the quiet "Ready" line is readable, not a ghost */
+.sbar-btn:disabled { opacity: 1; }
+.sbar-idle { opacity: 1; font-weight: 500; color: var(--muted); }
+/* touch targets of at least 44 px (header, live-view tools, quick bar) */
+.hfiles, .themebtn, .hidebtn { min-height: 44px; }
+.themebtn { min-width: 44px; }
+.quick button { min-height: 44px; }
+.range-more > summary { min-height: 44px; display: flex; align-items: center; }
+@media (max-width: 699px) {
+  .live-tools button, .app[data-tab='camera'] .live-tools button, .app:not([data-tab='camera']) .live-tools button, .app[data-tab='aim'] .live-tools button { width: 44px; height: 44px; }
+}
+/* landscape: the live tools wrap into a second column instead of running off the bottom of the image */
+@media (max-height: 520px) { .live-tools { flex-wrap: wrap; flex-direction: column; max-height: calc(100% - .8rem); align-content: flex-end; } }

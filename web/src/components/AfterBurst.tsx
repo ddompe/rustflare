@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { AfterBurst as AfterBurstState, AfterMode, api, Status } from '../api'
 import { Disclosure, ErrorLine, Field, useAction } from './ui'
 
-const MODES: { id: AfterMode; title: string; text: string }[] = [
+const MODES: { id: AfterMode; title: string; text: string; warn?: string }[] = [
   { id: 'video', title: 'Keep the video', text: 'Write every frame. Stack later from the file if you want to.' },
   { id: 'video_stack', title: 'Video and stack', text: 'Write every frame and also stack each burst from memory.' },
-  { id: 'stack_only', title: 'Stack only', text: 'Stack each burst from memory and write no video. Smallest on disk; the raw frames are not kept.' },
+  { id: 'stack_only', title: 'Stack only', text: 'Stack each burst from memory and write no video. Smallest on disk.', warn: 'The raw frames are not kept' },
   { id: 'best_frames', title: 'Best frames only', text: 'Stack from memory and keep only the best frames of each burst as a short video.' },
 ]
 
@@ -37,7 +37,7 @@ export function AfterBurst({ status, nFrames, frameBytes, burstSecs, everySecs, 
       <div className="mode-cards" role="group" aria-label="After each burst">
         {MODES.map((m) => (
           <button key={m.id} type="button" className="mode-card" aria-pressed={a.mode === m.id} onClick={() => set({ mode: m.id })}>
-            <b>{m.title}</b><span>{m.text}</span>
+            <b>{m.title}</b><span>{m.text}</span>{m.warn && <em className="mode-warn">{m.warn}</em>}
           </button>
         ))}
       </div>

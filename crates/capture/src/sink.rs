@@ -379,7 +379,9 @@ impl Writer {
             }
             let c = self.consumer.as_ref().unwrap();
             // give the written frame's memory back when nobody else needs it and the slot is still protected by our hold
-            if c.must_not_lose() && c.ring().consumers().len() == 1 && !self.sh.keep.lock().unwrap().contains(&burst) {
+            // (another reader that has pinned this frame, the stacker working on it, keeps it; a reader that is merely attached does not)
+            let pinned = c.ring().consumers().iter().any(|i| i.pin_seq != 0 && i.pin_seq <= seq);
+            if c.must_not_lose() && !pinned && !self.sh.keep.lock().unwrap().contains(&burst) {
                 c.release_slot_memory(seq);
             }
             c.advance(seq);
@@ -406,6 +408,13 @@ impl Writer {
             self.note_lost(before + 1, to);
         }
         let c = self.consumer.as_ref().unwrap();
+        // give the skipped frames' memory back, except any the camera is about to reach (a frame being written must not lose its page)
+        let ring = c.ring();
+        for seq in (before + 1).max(oldest)..=end {
+            if ring.frames_until_overwritten(seq) >= 3 {
+                ring.release_slot_memory(seq);
+            }
+        }
         c.advance(end);
         self.sh.queued.fetch_sub((end.saturating_sub(before)) as usize, Ordering::Relaxed);
         let mut a = Active::new(spec);

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { api, Status } from '../api'
 import { endsText } from './ui'
 import { recipeLabel, recordRequest, savedRecipe } from '../recipe'
@@ -22,9 +23,14 @@ export function chipsFor(status: Status | null): ChipSpec[] {
   return chips
 }
 
+/** How big the quick recording is, so one tap's consequence is visible: "· 100 frames" or "· 30 s". */
+const quickSize = (r: ReturnType<typeof savedRecipe>) => (r.kind === 'hdr' ? '' : r.frames?.trim() ? ` · ${r.frames.trim()} frames` : r.seconds?.trim() ? ` · ${r.seconds.trim()} s` : '')
+
 export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick }: { status: Status | null; goto: (t: TabId) => void; onStop: () => void; hideRec?: boolean; hide?: string[]; noQuick?: boolean }) {
   const quick = !!status?.camera && status.capture.state === 'idle' && !status.capture.paused && !hideRec && !noQuick
-  const startQuick = () => { const r = savedRecipe(); const q = recordRequest(r, status!.camera!); api('POST', q.path, q.body).catch(() => {}) }
+  const [qerr, setQerr] = useState('')
+  const quickCall = (path: string, body?: unknown) => { setQerr(''); api('POST', path, body).catch((e: Error) => setQerr(e.message)) }
+  const startQuick = () => { const r = savedRecipe(); const q = recordRequest(r, status!.camera!); quickCall(q.path, q.body) }
   const chips = chipsFor(status).filter((x) => !hide.includes(x.key))
   const c = status?.capture
   const recording = !!c && c.state !== 'idle' && !hideRec
@@ -45,10 +51,11 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
           ))}
         </ul>
       )}
+      {qerr && <div className="err" role="alert">{qerr}</div>}
       {quick && (
         <div className="quick" role="group" aria-label="Quick capture">
-          <button type="button" className="quick-rec" onClick={startQuick}>● Rec <span className="muted">{recipeLabel(savedRecipe())}</span></button>
-          <button type="button" onClick={() => api('POST', '/capture/single', {}).catch(() => {})}>Snap</button>
+          <button type="button" className="quick-rec" onClick={startQuick}>▶ Start <span className="muted">{recipeLabel(savedRecipe())}{quickSize(savedRecipe())}</span></button>
+          <button type="button" onClick={() => quickCall('/capture/single', {})}>Snap</button>
         </div>
       )}
       {!recording && c?.paused && !hideRec && (

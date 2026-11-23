@@ -3532,6 +3532,16 @@ struct StackJob {
     est_s: f64,
 }
 
+/// Whether the camera will overwrite a burst before its stack is done. `budget` frames can still be captured before the burst's first
+/// frame goes; the next burst will capture `next_frames`; the stack needs `remaining_s` more seconds, planned `margin` times over.
+/// Safe if the next burst leaves the frames alone, or the stack is done before the camera gets there, with the margin.
+fn wrap_unsafe(budget: f64, next_frames: f64, remaining_s: f64, margin: f64, fps: f64) -> bool {
+    if next_frames <= budget {
+        return false;
+    }
+    remaining_s * margin > budget / fps.max(1.0)
+}
+
 impl Engine {
     fn next_sink_no(&mut self) -> u64 {
         self.sink_counter += 1;
@@ -3606,15 +3616,10 @@ impl Engine {
         let margin = self.after.margin;
         let mut late: Vec<u64> = vec![];
         for (no, j) in self.stack_jobs.iter().filter(|(_, j)| j.sink_no == sink_no && j.deferred) {
-            let budget = ring.frames_until_overwritten(j.first) as f64;
-            if next_frames <= budget {
-                continue; // the next burst leaves it alone
-            }
             let remaining = (j.est_s - j.sent.elapsed().as_secs_f64()).max(0.25 * j.est_s);
-            if remaining * margin <= budget / fps {
-                continue; // it will be done before the camera gets there, with the margin
+            if wrap_unsafe(ring.frames_until_overwritten(j.first) as f64, next_frames, remaining, margin, fps) {
+                late.push(*no);
             }
-            late.push(*no);
         }
         for no in late {
             self.fallback(no, "it would not be finished before the next burst overwrote it", Some(sink));
@@ -3737,5 +3742,24 @@ impl Engine {
             let what = if j.deferred { "Its video is being written instead." } else { "Its video is safe." };
             self.notice("warning", format!("The stack of {} was not made: {err}. {what}", j.rel));
         }
+    }
+}
+
+#[cfg(test)]
+mod wrap_tests {
+    use super::wrap_unsafe;
+
+    #[test]
+    fn a_burst_is_only_given_up_on_when_the_camera_would_get_to_it_before_the_stack_is_done() {
+        // the next burst fits in what is left: never a problem, however slow the stack
+        assert!(!wrap_unsafe(200.0, 100.0, 60.0, 2.0, 57.0));
+        // it does not fit, and the stack (5 s, margin 2 = 10 s) needs longer than the 50 frames at 57 fps (0.9 s) that are left
+        assert!(wrap_unsafe(50.0, 100.0, 5.0, 2.0, 57.0));
+        // the same stack has time when 600 frames (10.5 s) are left
+        assert!(!wrap_unsafe(600.0, 700.0, 5.0, 2.0, 57.0));
+        // the margin decides the borderline: 5 s x 2 = 10 s against 10.5 s is fine, against a margin of 3 it is not
+        assert!(wrap_unsafe(600.0, 700.0, 5.0, 3.0, 57.0));
+        // nothing left at all
+        assert!(wrap_unsafe(0.0, 10.0, 0.1, 1.0, 57.0));
     }
 }

@@ -114,6 +114,9 @@ export function App() {
         {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} />}
       </main>
       <StatusBar status={status} connected={connected} />
+      {full && status && status.capture.state !== 'idle' && (
+        <button type="button" className="fullrec" onClick={() => api('POST', '/capture/stop').catch(() => undefined)}>● {status.capture.state === 'flushing' ? 'Saving' : 'Recording'}{status.capture.total ? ` ${status.capture.done}/${status.capture.total}` : ` ${status.capture.done}`} · Stop</button>
+      )}
       {full && <button type="button" className="fullbtn" aria-pressed onClick={() => setFull(false)}>Show controls</button>}
       {filesOpen && <FileManagerScreen status={status} onClose={() => setFilesOpen(false)} />}
     </div>
