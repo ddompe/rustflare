@@ -10,6 +10,6 @@ pub mod still;
 
 pub use flats::{DarkFrame, FlatAccumulator, FlatDecision, FlatField, FlatSetting, FlatTarget, SharedFlat};
 pub use ser::SerWriter;
-pub use sink::{BurstSpec, Finished, Format, FrameSink};
+pub use sink::{BurstSpec, Finished, Format, FrameSink, Resolution};
 pub use still::{read_png, write_png, write_png_rgb};
 pub use fits::{write_fits, FitsMeta};

@@ -468,6 +468,9 @@ impl Consumer {
     fn entry(&self) -> &ConsumerEntry { &self.ring.header().consumers[self.index] }
     pub fn ring(&self) -> &Ring { &self.ring }
     pub fn must_not_lose(&self) -> bool { self.entry().flags.load(Ordering::Relaxed) & 1 == 1 }
+    /// Switches whether this consumer holds the producer back. A writer that is waiting for a decision about a burst lets go (so the
+    /// camera is never held for it) and takes the hold again when it starts writing.
+    pub fn set_must_not_lose(&self, hold: bool) { self.entry().flags.store(hold as u32, Ordering::Release); }
     pub fn heartbeat(&self) { self.entry().heartbeat_ns.store(now_ns(), Ordering::Release); }
     /// The sequence number up to which this consumer is finished.
     pub fn read_seq(&self) -> u64 { self.entry().read_seq.load(Ordering::Acquire) }

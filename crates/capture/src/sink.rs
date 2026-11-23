@@ -47,15 +47,29 @@ pub struct Finished {
     pub parts: u32,
     /// Frames of this burst lost because the RAM buffer was full (drop mode): overwritten before the writer got to them. 0 in wait mode.
     pub dropped: u64,
+    /// The burst's raw video was deliberately not written (its stack was made and nothing else was asked for): there is no file.
+    pub skipped: bool,
+}
+
+/// What to do with the raw video of a burst whose writing was deferred until its stack existed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Resolution {
+    /// The stack is made and the video is not wanted.
+    SkipRaw,
+    /// Write every frame (the stack failed, or the video is wanted as well).
+    WriteAll,
+    /// Write only these frames, by index in the burst (the best N % of the stacker's ranking).
+    WriteSelected(Vec<u32>),
 }
 
 /// Control messages to the writer thread. Frames do not travel here: they are in the ring (see below).
 enum Msg {
     /// The ring and the writer's place in it (sent before the first frame is committed).
     Ring(Consumer),
-    Begin { id: u64, spec: BurstSpec },
+    Begin { id: u64, spec: BurstSpec, deferred: bool },
     /// The burst `id` has no frames after sequence number `last_seq` (0 if it has none).
     End { id: u64, last_seq: u64 },
+    Resolve { id: u64, resolution: Resolution },
     Quit,
 }
 
@@ -102,6 +116,7 @@ fn attribute(ranges: &[BurstRange], from: u64, to: u64) -> Vec<(u64, u64)> {
 /// The producer's side of the ring, made when the first frame shows what the frames look like.
 struct Feed {
     ring: Ring,
+    fd: std::os::fd::OwnedFd,
     producer: Producer,
     geometry: Geometry,
 }
@@ -143,6 +158,9 @@ fn bayer(g: &Geometry) -> Option<rustflare_core::BayerPattern> {
 struct Pending {
     id: u64,
     spec: BurstSpec,
+    /// Its frames are left in the ring until `Resolve` says what to write.
+    deferred: bool,
+    resolution: Option<Resolution>,
     /// The burst has been completed (its file finalised and reported); only its place in the queue is left.
     finished: bool,
     /// Sequence number of the burst's last frame, once the burst has ended.
@@ -160,6 +178,8 @@ struct Writer {
     scratch: Vec<u8>,
     /// Frames lost so far, per burst, until the burst is reported.
     lost: std::collections::HashMap<u64, u64>,
+    /// Whether the writer holds the producer back while it writes (wait mode).
+    hold: bool,
 }
 
 /// What happened when the writer tried to write the frame it had chosen.
@@ -179,7 +199,12 @@ impl Writer {
     fn on_msg(&mut self, m: Msg) {
         match m {
             Msg::Ring(c) => self.consumer = Some(c),
-            Msg::Begin { id, spec } => self.pending.push_back(Pending { id, spec, finished: false, end: None }),
+            Msg::Begin { id, spec, deferred } => self.pending.push_back(Pending { id, spec, deferred, resolution: None, finished: false, end: None }),
+            Msg::Resolve { id, resolution } => {
+                if let Some(p) = self.pending.iter_mut().find(|p| p.id == id) {
+                    p.resolution = Some(resolution);
+                }
+            }
             Msg::End { id, last_seq } => {
                 if let Some(p) = self.pending.iter_mut().find(|p| p.id == id) {
                     p.end = Some(last_seq);
@@ -262,6 +287,40 @@ impl Writer {
                 self.finish_active();
                 self.active = Some((burst, Active::new(spec)));
             }
+            // a burst whose raw video was deferred waits in the ring until it is resolved
+            let (deferred, resolution, first_seq) = {
+                let p = self.pending.iter().find(|p| p.id == burst);
+                let first = self.sh.ranges.lock().unwrap().iter().find(|r| r.id == burst).map_or(1, |r| r.first);
+                (p.map_or(false, |p| p.deferred), p.and_then(|p| p.resolution.clone()), first)
+            };
+            if deferred {
+                match &resolution {
+                    None => {
+                        // let go of the camera while waiting for the decision: this burst is protected by headroom, not by a hold
+                        self.consumer.as_ref().unwrap().set_must_not_lose(false);
+                        break;
+                    }
+                    Some(Resolution::SkipRaw) => {
+                        if !self.skip_burst(burst) {
+                            break; // the burst is still open: its frames are still arriving
+                        }
+                        progressed = true;
+                        continue;
+                    }
+                    Some(Resolution::WriteAll) | Some(Resolution::WriteSelected(_)) => {
+                        self.consumer.as_ref().unwrap().set_must_not_lose(self.hold);
+                        if let Some(Resolution::WriteSelected(idx)) = &resolution {
+                            if !idx.contains(&((seq - first_seq) as u32)) {
+                                let c = self.consumer.as_ref().unwrap();
+                                c.advance(seq);
+                                self.sh.queued.fetch_sub(1, Ordering::Relaxed);
+                                progressed = true;
+                                continue; // not one of the chosen frames
+                            }
+                        }
+                    }
+                }
+            }
             // write it; only fields are touched while the frame is borrowed
             let outcome = {
                 let c = self.consumer.as_mut().unwrap();
@@ -328,6 +387,35 @@ impl Writer {
         (progressed, need_control)
     }
 
+    /// Moves past all the frames of a deferred burst without writing them and reports it as skipped. False if the burst has not ended.
+    fn skip_burst(&mut self, id: u64) -> bool {
+        let Some(p) = self.pending.iter().find(|p| p.id == id) else { return false };
+        let Some(end) = p.end else { return false };
+        let spec = p.spec.clone();
+        if self.active.as_ref().map(|(i, _)| *i) == Some(id) {
+            self.active = None; // the working state made when the burst's first frame was seen: nothing was written, it is not reported
+        }
+        let c = self.consumer.as_ref().unwrap();
+        let before = c.read_seq();
+        // frames the camera has already overwritten (a stack-only burst that waited too long) are lost, not skipped: say so
+        let oldest = c.ring().oldest_possible();
+        if before + 1 < oldest {
+            let to = (oldest - 1).min(end);
+            self.note_lost(before + 1, to);
+        }
+        let c = self.consumer.as_ref().unwrap();
+        c.advance(end);
+        self.sh.queued.fetch_sub((end.saturating_sub(before)) as usize, Ordering::Relaxed);
+        let mut a = Active::new(spec);
+        a.skipped = true;
+        a.dropped = self.take_lost(id);
+        if let Some(p) = self.pending.iter_mut().find(|p| p.id == id) {
+            p.finished = true;
+        }
+        self.complete(a);
+        true
+    }
+
     /// Completes every ended burst whose frames have all been taken.
     fn finish_ended(&mut self) -> bool {
         let mut any = false;
@@ -367,13 +455,19 @@ impl FrameSink {
     pub fn with_policy(capacity_frames: usize, drop_when_full: bool) -> FrameSink {
         let (tx, rx) = channel::<Msg>();
         let shared = Arc::new(Shared::default());
-        let mut w = Writer { sh: shared.clone(), consumer: None, pending: VecDeque::new(), active: None, quit: false, scratch: Vec::new(), lost: Default::default() };
+        let mut w = Writer { sh: shared.clone(), consumer: None, pending: VecDeque::new(), active: None, quit: false, scratch: Vec::new(), lost: Default::default(), hold: !drop_when_full };
         let handle = std::thread::Builder::new()
             .name("frame-writer".into())
             .spawn(move || loop {
                 #[cfg(test)]
                 while w.sh.pause.load(Ordering::Relaxed) {
                     std::thread::sleep(Duration::from_millis(1));
+                }
+                if w.quit {
+                    // shutting down with a burst still waiting for its decision: its video is written, never thrown away
+                    for p in w.pending.iter_mut().filter(|p| p.deferred && p.resolution.is_none()) {
+                        p.resolution = Some(Resolution::WriteAll);
+                    }
                 }
                 loop {
                     match rx.try_recv() {
@@ -406,23 +500,40 @@ impl FrameSink {
         FrameSink { tx, shared, handle: Some(handle), capacity: capacity_frames.max(2), drop_when_full, feed: Mutex::new(None), burst_id: AtomicU64::new(0) }
     }
 
-    pub fn begin(&self, spec: BurstSpec) {
+    /// Starts a burst that is written as its frames arrive. Returns the burst's id.
+    pub fn begin(&self, spec: BurstSpec) -> u64 { self.begin_burst(spec, false) }
+
+    /// Starts a burst whose frames stay in the ring until `resolve` says what to write (a stack is made from them first).
+    pub fn begin_deferred(&self, spec: BurstSpec) -> u64 { self.begin_burst(spec, true) }
+
+    fn begin_burst(&self, spec: BurstSpec, deferred: bool) -> u64 {
         let id = self.burst_id.fetch_add(1, Ordering::Relaxed) + 1;
         // the first frame this burst can have, recorded before any of its frames is committed
         let first = self.feed.lock().unwrap().as_ref().map_or(1, |f| f.ring.newest() + 1);
         self.shared.ranges.lock().unwrap().push(BurstRange { id, first, last: None });
-        let _ = self.tx.send(Msg::Begin { id, spec });
+        let _ = self.tx.send(Msg::Begin { id, spec, deferred });
+        id
     }
+
+    /// Says what to do with the raw video of a deferred burst. Until then its frames wait in the ring.
+    pub fn resolve(&self, id: u64, resolution: Resolution) {
+        let _ = self.tx.send(Msg::Resolve { id, resolution });
+    }
+
+    /// The ring the frames are in (made at the first frame), for consumers that read it in place, and a descriptor to hand to another
+    /// process.
+    pub fn ring(&self) -> Option<Ring> { self.feed.lock().unwrap().as_ref().map(|f| f.ring.clone()) }
+    pub fn ring_fd(&self) -> Option<std::os::fd::OwnedFd> { self.feed.lock().unwrap().as_ref().and_then(|f| f.fd.try_clone().ok()) }
 
     /// Makes the ring on the first frame, and registers the writer in it before anything is committed.
     fn feed_for<'a>(&self, slot: &'a mut Option<Feed>, f: &Frame) -> Result<&'a mut Feed, String> {
         if slot.is_none() {
             let g = geometry_of(f);
-            let (ring, _fd) = Ring::create(g, self.capacity + 1).map_err(|e| e.to_string())?;
+            let (ring, fd) = Ring::create(g, self.capacity + 1).map_err(|e| e.to_string())?;
             let consumer = ring.attach_consumer("raw-writer", !self.drop_when_full, false).map_err(|e| e.to_string())?;
             let producer = ring.become_producer();
             self.tx.send(Msg::Ring(consumer)).map_err(|_| "the writer thread has stopped".to_string())?;
-            *slot = Some(Feed { ring, producer, geometry: g });
+            *slot = Some(Feed { ring, fd, producer, geometry: g });
         }
         let feed = slot.as_mut().unwrap();
         if feed.geometry != geometry_of(f) {
@@ -489,13 +600,15 @@ impl FrameSink {
     }
 
     /// Ends the current burst; its file is finalized after the queued frames are written.
-    pub fn end(&self) {
+    pub fn end(&self) -> (u64, u64, u64) {
         let id = self.burst_id.load(Ordering::Relaxed);
         let last_seq = self.feed.lock().unwrap().as_ref().map_or(0, |f| f.ring.newest());
         if let Some(r) = self.shared.ranges.lock().unwrap().iter_mut().find(|r| r.id == id) {
             r.last = Some(last_seq);
         }
+        let first = self.shared.ranges.lock().unwrap().iter().find(|r| r.id == id).map_or(1, |r| r.first);
         let _ = self.tx.send(Msg::End { id, last_seq });
+        (id, first, last_seq)
     }
 
     /// Asks the writer to exit once everything queued has been written.
@@ -572,13 +685,14 @@ struct Active {
     parts: u32,
     bytes: u64,
     dropped: u64,
+    skipped: bool,
     /// When the first frame of this burst reached the writer.
     started: Option<Instant>,
 }
 
 impl Active {
     fn new(spec: BurstSpec) -> Active {
-        Active { spec, ser: None, frames: 0, parts: 0, bytes: 0, dropped: 0, started: None }
+        Active { spec, ser: None, frames: 0, parts: 0, bytes: 0, dropped: 0, skipped: false, started: None }
     }
 
     fn part_path(&self, part: u32) -> PathBuf {
@@ -629,6 +743,10 @@ impl Active {
     /// Finalizes the burst and forces it onto the storage medium: "saved" must mean safe to unplug, and
     /// the returned throughput (bytes/s) is the *real* write speed, not the speed of filling the OS cache.
     fn finish(mut self) -> Result<(Finished, f64), String> {
+        if self.skipped {
+            let path = self.part_path(1);
+            return Ok((Finished { path, frames: 0, parts: 1, dropped: self.dropped, skipped: true }, 0.0));
+        }
         if let Some(w) = self.ser.take() {
             w.finalize().map_err(|e| e.to_string())?;
         }
@@ -645,7 +763,7 @@ impl Active {
         if self.frames > 0 {
             write_ready_marker(&path, self.frames, self.parts.max(1)); // a burst that lost every frame has no file to mark
         }
-        Ok((Finished { path, frames: self.frames, parts: self.parts.max(1), dropped: self.dropped }, rate))
+        Ok((Finished { path, frames: self.frames, parts: self.parts.max(1), dropped: self.dropped, skipped: false }, rate))
     }
 }
 
@@ -948,6 +1066,111 @@ mod tests {
         for (f, n) in fin.iter().zip(per) { assert_eq!(f.frames as u64 + f.dropped, n as u64); }
         assert!(!dir.join("b0.ser.ready").exists() && !dir.join("b1.ser.ready").exists(), "no marker for a file that was never written");
         assert!(dir.join("b2.ser.ready").exists() && dir.join("b3.ser.ready").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn spec(dir: &std::path::Path, name: &str) -> BurstSpec {
+        BurstSpec { stem: dir.join(name), format: Format::Ser, instrument: "cam".into(), max_file_bytes: None, fits_meta: Default::default() }
+    }
+
+    fn wait_for(sink: &FrameSink, n: usize) -> Vec<Finished> {
+        let mut got = vec![];
+        for _ in 0..1500 {
+            got.extend(sink.take_finished());
+            if got.len() >= n { break; }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        got
+    }
+
+    #[test]
+    fn a_deferred_burst_waits_in_the_ring_and_nothing_is_written_until_it_is_resolved() {
+        let dir = tmp("deferred");
+        let sink = FrameSink::new(32);
+        let id = sink.begin_deferred(spec(&dir, "d"));
+        for i in 0..10u8 { assert!(sink.push(numbered(i))); }
+        sink.end();
+        std::thread::sleep(Duration::from_millis(150));
+        assert!(!dir.join("d.ser").exists(), "nothing is written while the decision is pending");
+        assert_eq!(sink.queued(), 10, "the frames are held in the buffer");
+        assert!(sink.take_finished().is_empty());
+        sink.resolve(id, Resolution::WriteAll);
+        let fin = wait_for(&sink, 1);
+        assert_eq!((fin[0].frames, fin[0].skipped, fin[0].dropped), (10, false, 0));
+        assert_eq!(std::fs::metadata(dir.join("d.ser")).unwrap().len(), 178 + 10 * 40);
+        assert_eq!(sink.queued(), 0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_skipped_burst_writes_no_file_and_does_not_disturb_the_next_one() {
+        let dir = tmp("skipped");
+        let sink = FrameSink::new(32);
+        let id = sink.begin_deferred(spec(&dir, "s"));
+        for i in 0..10u8 { sink.push(numbered(i)); }
+        sink.end();
+        sink.resolve(id, Resolution::SkipRaw);
+        sink.begin(spec(&dir, "n")); // an ordinary burst right after
+        for i in 0..4u8 { sink.push(numbered(100 + i)); }
+        sink.end();
+        let mut fin = wait_for(&sink, 2);
+        fin.sort_by(|a, b| a.path.cmp(&b.path));
+        // sorted by file name: the ordinary burst `n` comes before the skipped `s`; each is reported exactly once
+        assert_eq!(fin.len(), 2, "{fin:?}");
+        assert_eq!((fin[0].skipped, fin[0].frames, fin[1].skipped, fin[1].frames), (false, 4, true, 0), "{fin:?}");
+        assert!(!dir.join("s.ser").exists() && !dir.join("s.ser.ready").exists(), "no file and no marker for a skipped burst");
+        assert_eq!(std::fs::metadata(dir.join("n.ser")).unwrap().len(), 178 + 4 * 40);
+        assert_eq!((sink.queued(), sink.dropped()), (0, 0));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn selected_frames_are_written_in_order_and_only_those() {
+        let dir = tmp("selected");
+        let sink = FrameSink::new(32);
+        let id = sink.begin_deferred(spec(&dir, "x"));
+        for i in 0..10u8 { sink.push(numbered(i)); }
+        sink.end();
+        sink.resolve(id, Resolution::WriteSelected(vec![1, 3, 4, 9]));
+        let fin = wait_for(&sink, 1);
+        assert_eq!((fin[0].frames, fin[0].skipped), (4, false));
+        let bytes = std::fs::read(dir.join("x.ser")).unwrap();
+        assert_eq!(bytes.len(), 178 + 4 * 40);
+        for (k, want) in [1u8, 3, 4, 9].iter().enumerate() {
+            assert!(bytes[178 + k * 32..178 + (k + 1) * 32].iter().all(|b| b == want), "frame {k} should be frame {want}");
+        }
+        assert_eq!(sink.queued(), 0);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_unresolved_burst_is_written_when_the_sink_shuts_down_never_thrown_away() {
+        let dir = tmp("unresolved");
+        {
+            let sink = FrameSink::new(32);
+            sink.begin_deferred(spec(&dir, "u"));
+            for i in 0..6u8 { sink.push(numbered(i)); }
+            sink.end();
+            sink.close();
+            while !sink.is_finished() { std::thread::sleep(Duration::from_millis(5)); }
+        }
+        assert_eq!(std::fs::metadata(dir.join("u.ser")).unwrap().len(), 178 + 6 * 40);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn while_a_burst_waits_for_its_decision_the_camera_is_never_held_back_and_losses_are_counted() {
+        let dir = tmp("waiting");
+        let sink = FrameSink::new(8); // wait mode, 9 slots: the writer normally holds the producer back
+        let id = sink.begin_deferred(spec(&dir, "w"));
+        let t = Instant::now();
+        for i in 0..40u8 { assert!(sink.push(numbered(i)), "frame {i}"); } // far more than the ring holds
+        assert!(t.elapsed() < Duration::from_secs(5), "pushing did not wait for the writer");
+        sink.end();
+        sink.resolve(id, Resolution::WriteAll);
+        let fin = wait_for(&sink, 1);
+        assert_eq!(fin[0].frames as u64 + fin[0].dropped, 40, "{fin:?}");
+        assert!(fin[0].dropped > 0, "the camera wrapped over the waiting burst, and that is counted against it");
         std::fs::remove_dir_all(&dir).ok();
     }
 }
