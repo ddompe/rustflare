@@ -36,7 +36,8 @@ ok "stack only: the burst's sidecar says where the stack is" "$(grep -q '"stack"
 ok "stack only: nothing is left in the buffer" "$([ "$(st "d['capture']['buffer_queued']")" = 0 ] && echo 1)"
 
 # 2: video and stack
-post /capture/after-burst '{"mode":"video_stack"}' PUT >/dev/null; bursts vs
+post /capture/after-burst '{"mode":"video_stack"}' PUT >/dev/null; N1=$(st "d['after_burst']['stacked']"); bursts vs
+ok "video + stack: the stacks were made from memory (not by the disk watcher)" "$([ "$(st "d['after_burst']['stacked']")" = $((N1 + 3)) ] && echo 1)"
 ok "video + stack: three videos" "$([ "$(count "$T/data/*/*_vs_*.ser")" = 3 ] && echo 1)"
 ok "video + stack: three stacks" "$([ "$(count "$T/data/stacks/*/stack_*_vs_*.fits")" = 3 ] && echo 1)"
 sleep 8

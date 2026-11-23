@@ -3008,6 +3008,8 @@ impl Engine {
             let spec = BurstSpec { stem: stem.clone(), format: job.format, instrument, max_file_bytes: job.max_file, fits_meta };
             if self.plan_burst(&mut job) {
                 job.sink.begin_deferred(spec);
+            } else if job.cur.is_some() {
+                job.sink.begin_kept(spec); // written as usual, but kept in the ring for the stacker
             } else {
                 job.sink.begin(spec);
             }

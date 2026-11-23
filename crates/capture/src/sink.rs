@@ -89,6 +89,8 @@ struct Shared {
     /// The sequence numbers each burst owns, written by the producer at `begin` and `end` (before any frame of the burst is committed),
     /// so that a lost range of frames can be charged to the bursts it belonged to exactly.
     ranges: Mutex<Vec<BurstRange>>,
+    /// Bursts whose frames stay in the ring after they are written (another process is stacking them): their memory is not released.
+    keep: Mutex<std::collections::HashSet<u64>>,
     /// Tests only: holds the writer still so that losses can be provoked deterministically.
     #[cfg(test)]
     pause: std::sync::atomic::AtomicBool,
@@ -377,7 +379,7 @@ impl Writer {
             }
             let c = self.consumer.as_ref().unwrap();
             // give the written frame's memory back when nobody else needs it and the slot is still protected by our hold
-            if c.must_not_lose() && c.ring().consumers().len() == 1 {
+            if c.must_not_lose() && c.ring().consumers().len() == 1 && !self.sh.keep.lock().unwrap().contains(&burst) {
                 c.release_slot_memory(seq);
             }
             c.advance(seq);
@@ -502,6 +504,14 @@ impl FrameSink {
 
     /// Starts a burst that is written as its frames arrive. Returns the burst's id.
     pub fn begin(&self, spec: BurstSpec) -> u64 { self.begin_burst(spec, false) }
+
+    /// Starts a burst that is written as its frames arrive, but whose frames stay in the ring afterwards (until the camera wraps over
+    /// them) because another process is going to stack them: the writer does not give their memory back. Returns the burst's id.
+    pub fn begin_kept(&self, spec: BurstSpec) -> u64 {
+        let id = self.begin_burst(spec, false);
+        self.shared.keep.lock().unwrap().insert(id);
+        id
+    }
 
     /// Starts a burst whose frames stay in the ring until `resolve` says what to write (a stack is made from them first).
     pub fn begin_deferred(&self, spec: BurstSpec) -> u64 { self.begin_burst(spec, true) }
@@ -1171,6 +1181,27 @@ mod tests {
         let fin = wait_for(&sink, 1);
         assert_eq!(fin[0].frames as u64 + fin[0].dropped, 40, "{fin:?}");
         assert!(fin[0].dropped > 0, "the camera wrapped over the waiting burst, and that is counted against it");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_kept_burst_is_written_and_its_frames_stay_readable_in_the_ring() {
+        let dir = tmp("kept");
+        let sink = FrameSink::new(32);
+        let id = sink.begin_kept(spec(&dir, "k"));
+        for i in 0..10u8 { sink.push(numbered(i)); }
+        let (_, first, last) = sink.end();
+        let fin = wait_for(&sink, 1);
+        assert_eq!((fin[0].frames, fin[0].skipped), (10, false));
+        assert_eq!(std::fs::metadata(dir.join("k.ser")).unwrap().len(), 178 + 10 * 40);
+        // another reader (the stacker) attaches only now, after the writer is done: the frames are still there, none zeroed
+        let ring = sink.ring().unwrap();
+        let c = ring.attach_consumer("late", false, false).unwrap();
+        for seq in first..=last {
+            let f = c.frame_at(seq).expect("still in the ring");
+            assert!(f.data.iter().all(|b| *b == (seq - first) as u8), "frame {seq} intact");
+        }
+        let _ = id;
         std::fs::remove_dir_all(&dir).ok();
     }
 }
