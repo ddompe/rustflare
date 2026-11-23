@@ -479,12 +479,12 @@ test('the folder tree divider can be dragged and moved with the keyboard', async
   const b = (await bar.boundingBox())!
   await page.mouse.move(b.x + b.width / 2, b.y + 200)
   await page.mouse.down(); await page.mouse.move(b.x + 120, b.y + 200, { steps: 5 }); await page.mouse.up()
+  await expect.poll(async () => (await tree.boundingBox())!.width).toBeGreaterThan(w0 + 80)
   const w1 = (await tree.boundingBox())!.width
-  expect(w1).toBeGreaterThan(w0 + 80)
   await bar.focus(); await page.keyboard.press('ArrowLeft')
-  expect((await tree.boundingBox())!.width).toBeLessThan(w1)
+  await expect.poll(async () => (await tree.boundingBox())!.width).toBeLessThan(w1)
   await bar.dblclick()
-  expect(Math.round((await tree.boundingBox())!.width)).toBe(240)
+  await expect.poll(async () => Math.round((await tree.boundingBox())!.width)).toBe(240)
 })
 
 test('a failed action is shown in the status bar until dismissed, never swallowed', async ({ page }) => {
