@@ -71,3 +71,12 @@ The Pi computes where the Sun is from its clock and your site. Without a network
 ## Location button does nothing
 
 Browsers share location only over HTTPS. Set up [HTTPS](phone-setup.md), or type the coordinates.
+
+## The drive was pulled without ejecting
+
+Pulling the USB drive during a recording stops the recording cleanly and keeps what was already written (the SER header is updated every 50 frames, so the file opens; `scripts/ser-repair.py` repairs a file that was cut earlier). The frames still in memory are lost, and the app says so until you dismiss it. Afterwards More > Storage names the problem in words:
+
+- **"was unplugged without being ejected"**: the mount is left over from the removed drive. Plug the drive in again; if it appears under a new name the app finds it by its label, otherwise choose it in More > Storage.
+- **"is mounted read-only: the filesystem has errors"**: the kernel found errors in the drive's filesystem, which is what a pulled drive comes back as. Nothing can be recorded to it until it is checked: unmount it and run `sudo fsck.vfat -a /dev/sdX1` on the Pi (the message gives the device), then plug it in again.
+
+Use **Eject drive safely** (More > Storage) to avoid all of this.

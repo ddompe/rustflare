@@ -16,6 +16,8 @@ pub struct Mount {
     pub device: String,
     pub point: PathBuf,
     pub fstype: String,
+    /// Mounted read-only (the kernel does this when a filesystem has errors, for example after the drive was pulled without ejecting).
+    pub read_only: bool,
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -40,7 +42,9 @@ pub fn parse_mounts(text: &str) -> Vec<Mount> {
     text.lines()
         .filter_map(|l| {
             let mut f = l.split_whitespace();
-            Some(Mount { device: unescape(f.next()?), point: PathBuf::from(unescape(f.next()?)), fstype: f.next()?.to_string() })
+            let (device, point, fstype) = (unescape(f.next()?), PathBuf::from(unescape(f.next()?)), f.next()?.to_string());
+            let read_only = f.next().is_some_and(|o| o.split(',').any(|x| x == "ro"));
+            Some(Mount { device, point, fstype, read_only })
         })
         .collect()
 }
@@ -54,7 +58,7 @@ fn read_mounts() -> Vec<Mount> {
 #[cfg(not(target_os = "linux"))]
 fn read_mounts() -> Vec<Mount> {
     std::fs::read_dir("/Volumes")
-        .map(|d| d.flatten().map(|e| Mount { device: String::new(), point: e.path(), fstype: "unknown".into() }).collect())
+        .map(|d| d.flatten().map(|e| Mount { device: String::new(), point: e.path(), fstype: "unknown".into(), read_only: false }).collect())
         .unwrap_or_default()
 }
 
@@ -367,6 +371,19 @@ fn perm_hint_str(e: &str) -> &'static str {
 }
 const PERM_HINT: &str = " (permission denied: auto-mounted drives belong to your login user; run `sudo rustflare-user <your-login>` to run the service as that user)";
 
+/// What is wrong with a mounted drive that is still listed: unplugged without ejecting (its device is gone but the mount is left over),
+/// or mounted read-only because the kernel found errors in the filesystem (what a pulled drive comes back as). Said in words, with what to do.
+fn drive_trouble(m: &Mount) -> Option<String> {
+    let gone = m.device.starts_with("/dev/") && !Path::new(&m.device).exists();
+    if gone {
+        return Some(format!("{} was unplugged without being ejected: its mount is left over and cannot be written. Plug the drive in again; if it comes back under a new name the app finds it by its label, otherwise choose it in More > Storage. Eject before unplugging next time.", m.point.display()));
+    }
+    if m.read_only && !matches!(m.fstype.as_str(), "iso9660" | "squashfs" | "erofs") {
+        return Some(format!("{} is mounted read-only: the filesystem has errors, usually after the drive was pulled without ejecting. Nothing can be recorded to it until it is checked: unmount it and run `sudo fsck.vfat -a {}` (or `fsck -fy`) on the Pi, then plug it in again.", m.point.display(), if m.device.is_empty() { "<device>" } else { &m.device }));
+    }
+    None
+}
+
 fn describe(dir: &Path, required_mount: Option<&Path>, mounts: &[Mount]) -> Info {
     let label = required_mount
         .and_then(|m| m.file_name())
@@ -379,6 +396,9 @@ fn describe(dir: &Path, required_mount: Option<&Path>, mounts: &[Mount]) -> Info
         if !mounts.iter().any(|m| m.point == req) {
             problem = Some(format!("{} is not mounted (drive removed?)", req.display()));
         }
+    }
+    if problem.is_none() {
+        problem = mount.and_then(drive_trouble);
     }
     let exists = dir.is_dir();
     if problem.is_none() && !exists {
@@ -449,7 +469,7 @@ mod tests {
         std::fs::remove_dir_all(&base).ok();
     }
 
-    fn mount(dev: &str, point: &str) -> Mount { Mount { device: dev.into(), point: point.into(), fstype: "vfat".into() } }
+    fn mount(dev: &str, point: &str) -> Mount { Mount { device: dev.into(), point: point.into(), fstype: "vfat".into(), read_only: false } }
 
     #[test]
     fn a_drive_is_found_again_by_its_uuid_whatever_its_mount_name() {
@@ -476,6 +496,18 @@ mod tests {
         let two = [mount("/dev/sda1", "/media/astropi/ASTRODRIVE1"), mount("/dev/sdb1", "/media/astropi/ASTRODRIVE2")];
         assert!(renamed_mount(&old, &two).is_none(), "two candidates: do not guess");
         assert!(renamed_mount(&old, &[mount("/dev/sda1", "/media/astropi/ASTRODRIVEX")]).is_none(), "only digits may follow the old name");
+    }
+
+    #[test]
+    fn a_left_over_or_read_only_mount_is_explained() {
+        let m = parse_mounts("/dev/sdb1 /media/x/DRIVE vfat rw,nosuid 0 0\n/dev/sdc1 /media/x/OTHER vfat ro,nosuid 0 0\n");
+        assert!(!m[0].read_only && m[1].read_only);
+        let stale = Mount { device: "/dev/does-not-exist-sdz9".into(), point: "/media/x/GONE".into(), fstype: "vfat".into(), read_only: false };
+        assert!(drive_trouble(&stale).unwrap().contains("unplugged without being ejected"));
+        let ro = Mount { device: "/dev/null".into(), point: "/media/x/DIRTY".into(), fstype: "vfat".into(), read_only: true };
+        assert!(drive_trouble(&ro).unwrap().contains("fsck.vfat"));
+        let fine = Mount { device: "/dev/null".into(), point: "/media/x/OK".into(), fstype: "vfat".into(), read_only: false };
+        assert_eq!(drive_trouble(&fine), None);
     }
 
     #[test]
