@@ -50,6 +50,14 @@ The AM3 stops tracking at its own limit past the meridian (about 19 minutes on 2
 - **The recording stops at 4 GB**: not a stop. FAT32 sticks cannot hold bigger files, so the recording continues in `_part2`, `_part3` files. exFAT or ext4 avoids the split (RustFlare never formats a drive).
 - **Mostly dark** in the file manager: the cap was on or the Sun was out of view.
 
+## Stacking from memory
+
+**It says "bursts are recorded as video and not stacked from memory".** The stacker was not running or not connected, a burst was too big for the RAM buffer, or a stack could not finish in time. The message in the status bar gives the reason; nothing was lost. Check `systemctl status rustflare-stack`, and More > RAM buffer.
+
+**"Stack only" is refused.** It needs the stacker, and there is no stacker connected: `sudo systemctl start rustflare-stack`.
+
+**A stack was made but I wanted the video.** Choose *Keep the video* or *Video and stack* before recording. A burst that was not written cannot be recovered.
+
 ## Clock and site
 
 The Pi computes where the Sun is from its clock and your site. Without a network the clock may be wrong, and Go to Sun then points the wrong way. More > Site shows whether the clock is synchronised. A Pi with no network and no battery-backed clock needs a network connection at least once to set it.

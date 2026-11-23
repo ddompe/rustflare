@@ -34,7 +34,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `GET /api/mount/drivers` | |
 | `POST /api/mount/connect` | `{"driver":"zwo","device":"/dev/ttyACM0"}` or `{"driver":"simulator"}` |
 | `POST /api/mount/disconnect` | |
-| `POST /api/mount/tracking` | `{"enabled":true}` (selects the solar rate when enabling) |
+| `POST /api/mount/tracking` | `{"enabled":true,"rate"?:"solar"\|"lunar"\|"sidereal"}`: switches tracking on or off. Without `rate`, enabling keeps the rate the mount last had (a Go to Saturn leaves it sidereal); `status.mount.rate` says which |
 | `POST /api/mount/slew` | `{"axis":"primary"\|"secondary","speed":8}` — signed multiples of sidereal; `0` stops |
 | `POST /api/mount/stop` | stops all motion (does not change sky tracking) |
 
@@ -56,6 +56,8 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `POST /api/capture/sequence` | `{"name"?,"frames"?,"seconds"?,"format"?}` (`format`: `ser` or `png`; at least one limit) |
 | `POST /api/capture/bursts` | `{"name"?,"frames"?,"seconds"?,"interval_s","bursts"?,"format"?}`: a burst every `interval_s` (start to start); `bursts` omitted = until stopped |
 | `PUT /api/capture/buffer` | `{"mb"}`: RAM buffer size (64–8192) |
+| `PUT /api/capture/after-burst` | any of `{"mode":"video"\|"video_stack"\|"stack_only"\|"best_frames","stack_keep_percent":1-100,"raw_keep_percent":1-100,"margin":1-5}`: what happens after each burst ([guide](../guide/recording-modes.md)). `stack_only` and `best_frames` are refused (400) while the stacker is not connected. Returns the settings; `status.after_burst` has them with `stacker_connected`, `stacking`, `stacked`, `last` and the measured `stack_s_per_frame` |
+| `POST /api/notices/ack` | `{"id"?}`: dismiss one notice, or all. `status.notices` lists what the user must know about (`level` error or warning, `text`, `at`, `acked`): frames lost, a recording stopped early, a stack that fell back to video |
 | `POST /api/capture/flats` | `{"name"?,"frames","level"?}` (`level` 0.1–0.9, default 0.5) |
 | `POST /api/capture/stop` | also forgets a paused recording |
 | `POST /api/capture/pause` | pauses a running sequence or lane recording, keeping what is left |

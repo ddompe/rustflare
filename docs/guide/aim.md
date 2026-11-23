@@ -26,7 +26,7 @@ The selector above the button lists the Sun, Moon, Mars, Jupiter and Saturn with
 
 ## Move by hand
 
-The N/S/E/W pad moves the mount while held; release to stop. Arrow keys work too. The slew speed is remembered. **STOP** always cancels motion. The *Solar tracking* switch follows what the mount itself reports.
+The N/S/E/W pad moves the mount while held; release to stop. Arrow keys work too. The slew speed is remembered. **STOP** always cancels motion. The tracking switch follows what the mount itself reports, and its label says the rate (*Solar*, *Lunar* or *Star*). Three buttons under it choose the rate. A Go to leaves the rate of its target on, and switching tracking off and on again keeps it; only an explicit choice (or Go to Sun, or a meridian flip, which is for the Sun) changes it.
 
 ## Meridian flip
 

@@ -83,6 +83,15 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 | Wait mode | A recording longer than the buffer with *Wait for the disk*: nothing lost, the camera slows to disk speed (done: 57 fps down to 11 fps, 1200 of 1200 frames) |
 | Drop mode | The same with *Drop frames*: a note on the Record tab, an entry in the event log, the burst's `.json` says how many were lost, and written + dropped = captured (done: 1053 + 147 = 1200) |
 
+## After each burst (ADR 0019, stage 4)
+
+| Check | How |
+|---|---|
+| Each mode with the real camera | Record 5 bursts at the Sun's exposure in each of the four modes (Record > After each burst): stack-only leaves stacks and no video, best frames leaves 25 % of the frames, video + stack leaves both |
+| Stack time against the real Sun | The plan line uses the measured seconds per frame; compare with a stack of the same SER from disk (a real disc is slower than the noise a camera sees indoors) |
+| No frame loss with a stack running | `frame_gap` events and `dropped` stay at zero for an hour of 30 s bursts in stack-only mode |
+| Fallbacks are visible | Stop the stacker mid-recording (`sudo systemctl stop rustflare-stack`): the status bar warns and stays until dismissed, and every burst has a video or a stack |
+
 ## Recorder priority and stalls
 
 | Check | How |

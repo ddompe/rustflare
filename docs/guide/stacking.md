@@ -5,6 +5,8 @@ RustFlare can stack your recordings into sharper still images, on the Pi, withou
 !!! note "Status"
     Tested on the simulators and on real field-day recordings (disc and prominence lanes, on a Pi 5 and a Mac). Not yet run for hours alongside a real recording, and not yet compared with AutoStakkert or Siril on the same data.
 
+See also [After each burst](recording-modes.md): the recorder can stack bursts straight from memory and skip the video.
+
 ## What it does
 
 For each recording (a burst of frames), it applies your dark and flat, aligns every frame, keeps the best ones (25 % by default), averages them, and writes a 32-bit float FITS file. The alignment is **multi-point**: besides one shift per frame it measures a shift for many small patches, because seeing bends the picture differently a few arcseconds apart, and each patch keeps its own best frames. On a field-day disc burst this gave visibly crisper detail than a single shift per frame. A 100-frame burst of 1944x1472 takes about 8 seconds on two cores of a Pi 5.
