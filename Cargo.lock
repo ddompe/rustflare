@@ -1514,7 +1514,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-camera"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "libloading",
  "log",
@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-capture"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "libc",
  "log",
@@ -1535,7 +1535,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "serde",
  "thiserror 1.0.69",
@@ -1543,7 +1543,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-mount"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "rustflare-core",
  "serde",
@@ -1553,14 +1553,14 @@ dependencies = [
 
 [[package]]
 name = "rustflare-ring"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "rustflare-server"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "axum",
  "axum-server",
@@ -1589,7 +1589,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-stack"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "libc",
  "realfft",
@@ -1603,7 +1603,7 @@ dependencies = [
 
 [[package]]
 name = "rustflare-tracking"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "rustflare-core",
  "serde",
