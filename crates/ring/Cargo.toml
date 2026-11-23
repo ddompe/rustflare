@@ -1,0 +1,9 @@
+[package]
+name = "rustflare-ring"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "A single-producer, multi-consumer ring of camera frames in shared memory (ADR 0019)"
+
+[dependencies]
+libc = "0.2"
