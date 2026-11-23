@@ -433,9 +433,10 @@ mod tests {
         for n in [1u32, 2, 9, 11] {
             let (a, b) = (write("b.ser", false, n), write("d.ser", true, n));
             assert_eq!(a.len(), b.len(), "{n} frames: same length");
-            // the header carries the creation time: compare everything else
-            assert_eq!(a[42..], b[42..], "{n} frames: same bytes");
-            assert_eq!(a[..38], b[..38]);
+            // the header's creation times (bytes 162 to 178) and the timestamp trailer differ between two writes: compare the rest
+            let frames_end = HEADER_LEN + n as usize * 1000 * 777 * 2;
+            assert_eq!(a[..162], b[..162], "{n} frames: same header");
+            assert_eq!(a[HEADER_LEN..frames_end], b[HEADER_LEN..frames_end], "{n} frames: same frame bytes");
             assert_eq!(u32::from_le_bytes(b[38..42].try_into().unwrap()), n);
         }
         // cut short: only whole chunks are on the drive, and the header declares only the frames among them
