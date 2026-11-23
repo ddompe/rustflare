@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, Status, StorageInfo } from '../api'
+import { api, Status, StorageInfo, reportError } from '../api'
 import { ErrorLine, useAction } from './ui'
 
 const gb = (b: number | null) => (b == null ? '?' : b >= 1e12 ? `${(b / 1e12).toFixed(2)} TB` : `${(b / 1e9).toFixed(b >= 1e10 ? 0 : 1)} GB`)
@@ -9,7 +9,7 @@ export interface StorageData { current: StorageInfo; candidates: StorageInfo[] }
 /** Current storage location and candidate drives, refreshed every few seconds while mounted. */
 export function useStorage() {
   const [data, setData] = useState<StorageData | null>(null)
-  const load = () => api<StorageData>('GET', '/storage').then(setData).catch(() => {})
+  const load = () => api<StorageData>('GET', '/storage').then(setData).catch((e) => reportError(e, 'Reading the storage state'))
   useEffect(() => {
     load()
     const t = window.setInterval(load, 4000)

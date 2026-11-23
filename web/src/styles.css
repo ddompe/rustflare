@@ -618,3 +618,7 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--info, #6
 .fm-big { flex-basis: 100%; margin: 0; }
 .fm-names { margin: 0 0 .3rem; word-break: break-all; font-weight: 650; }
 .fg-band { fill: var(--accent); opacity: .2; stroke: none; }
+
+/* #88: the Start bar is not sticky in landscape on a phone (it landed on the Name field), and STOP on the slew pad is round so it is not mistaken for a direction */
+@media (orientation: landscape) and (max-height: 520px) { .sticky-act { position: static; margin: 1rem 0 0; padding: 0; background: none; } }
+.pad-stop { border-radius: 50%; }

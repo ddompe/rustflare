@@ -1,5 +1,5 @@
 import { KeyboardEvent, useEffect, useRef, useState } from 'react'
-import { api, Status, useStatus } from './api'
+import { api, Status, useStatus, reportError, useUiError } from './api'
 import { useDisplay } from './display'
 import { useSetting } from './settings'
 import { LiveView } from './components/LiveView'
@@ -40,7 +40,7 @@ export function App() {
 
   const goto = (t: TabId) => setTab(t)
   const openMore = (id: string) => { setFocus({ id, nonce: Date.now() }); setTab('more') }
-  const stopCapture = () => { api('POST', '/capture/stop').catch(() => {}) }
+  const stopCapture = () => { api('POST', '/capture/stop').catch((e) => reportError(e, 'Stop')) }
 
   // A dot on each tab says where the session stands without opening anything.
   const g = status?.guiding
@@ -115,7 +115,7 @@ export function App() {
       </main>
       <StatusBar status={status} connected={connected} />
       {full && status && status.capture.state !== 'idle' && (
-        <button type="button" className="fullrec" onClick={() => api('POST', '/capture/stop').catch(() => undefined)}>● {status.capture.state === 'flushing' ? 'Saving' : 'Recording'}{status.capture.total ? ` ${status.capture.done}/${status.capture.total}` : ` ${status.capture.done}`} · Stop</button>
+        <button type="button" className="fullrec" onClick={() => api('POST', '/capture/stop').catch((e) => reportError(e, 'Stop'))}>● {status.capture.state === 'flushing' ? 'Saving' : 'Recording'}{status.capture.total ? ` ${status.capture.done}/${status.capture.total}` : ` ${status.capture.done}`} · Stop</button>
       )}
       {full && <button type="button" className="fullbtn" aria-pressed onClick={() => setFull(false)}>Show controls</button>}
       {filesOpen && <FileManagerScreen status={status} onClose={() => setFilesOpen(false)} />}
@@ -135,8 +135,10 @@ function StatusBar({ status, connected }: { status: Status | null; connected: bo
   let text = ''
   // things the user has to know about stay until dismissed, newest first
   const notices = (status?.notices ?? []).filter((n) => !n.acked).reverse()
-  const dismiss = (id?: number) => api('POST', '/notices/ack', id === undefined ? {} : { id }).catch(() => undefined)
+  const [uiError, clearUiError] = useUiError()
+  const dismiss = (id?: number) => api('POST', '/notices/ack', id === undefined ? {} : { id }).catch((e) => reportError(e, 'Dismissing the message'))
   if (!connected && !status) { tone = 'warn'; text = 'Connecting to the RustFlare server…' }
+  else if (uiError) { tone = 'bad'; text = uiError }
   else if (notices.length) { tone = notices.some((n) => n.level === 'error') ? 'bad' : 'warn'; text = notices[0].text + (notices.length > 1 ? ` (+${notices.length - 1} more)` : '') }
   else if (status?.error && !(lost && /^tracking lost/i.test(status.error))) { tone = 'bad'; text = status.error }
   else if (status?.auto_flip?.message && (status.auto_flip.stage === 'flipping' || status.auto_flip.stage === 'done')) { tone = 'warn'; text = status.auto_flip.message } // an active flip explains everything else
@@ -151,7 +153,8 @@ function StatusBar({ status, connected }: { status: Status | null; connected: bo
       <button type="button" className="sbar-btn" disabled={!text} aria-expanded={open} onClick={() => setOpen(!open)}>
         {text ? <><i aria-hidden="true" /><span>{text}</span></> : <span className="sbar-idle">Ready</span>}
       </button>
-      {notices.length > 0 && <button type="button" className="sbar-dismiss" onClick={() => { setOpen(false); void dismiss() }}>{notices.length > 1 ? 'Dismiss all' : 'Dismiss'}</button>}
+      {uiError && <button type="button" className="sbar-dismiss" onClick={() => { setOpen(false); clearUiError() }}>Dismiss</button>}
+      {!uiError && notices.length > 0 && <button type="button" className="sbar-dismiss" onClick={() => { setOpen(false); void dismiss() }}>{notices.length > 1 ? 'Dismiss all' : 'Dismiss'}</button>}
       {open && text && (notices.length
         ? <div className="sbar-pop">{notices.map((n) => <p key={n.id} className={n.level}><b>{n.at}</b> {n.text} <button type="button" className="link" onClick={() => void dismiss(n.id)}>Dismiss</button></p>)}</div>
         : <div className="sbar-pop" onClick={() => setOpen(false)}>{text}</div>)}

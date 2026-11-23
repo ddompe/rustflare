@@ -486,3 +486,15 @@ test('the folder tree divider can be dragged and moved with the keyboard', async
   await bar.dblclick()
   expect(Math.round((await tree.boundingBox())!.width)).toBe(240)
 })
+
+test('a failed action is shown in the status bar until dismissed, never swallowed', async ({ page }) => {
+  await page.route('**/api/storage', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'the drive is on fire' }) }))
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Record/ }).click()
+  await page.getByRole('button', { name: /Open file manager/ }).click() // reads the storage state
+  const bar = page.locator('.sbar')
+  await expect(bar).toContainText('Reading the storage state failed: the drive is on fire')
+  await page.keyboard.press('Escape')
+  await bar.getByRole('button', { name: 'Dismiss' }).click()
+  await expect(bar).not.toContainText('the drive is on fire')
+})

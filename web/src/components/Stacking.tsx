@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api'
+import { api, reportError } from '../api'
 import { Disclosure, ErrorLine, Field, Segmented, Switch, useAction } from './ui'
 
 export interface StackEntry {
@@ -47,7 +47,7 @@ export function useStackInfo(ms = 5000): [StackInfo | null, () => void] {
   const [tick, setTick] = useState(0)
   useEffect(() => {
     let live = true
-    const load = () => api<StackInfo>('GET', '/stack').then((i) => live && setInfo(i)).catch(() => {})
+    const load = () => api<StackInfo>('GET', '/stack').then((i) => live && setInfo(i)).catch((e) => reportError(e, 'Reading the stacker\'s state'))
     load()
     const t = setInterval(load, ms)
     return () => { live = false; clearInterval(t) }

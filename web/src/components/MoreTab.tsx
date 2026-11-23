@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from 'react'
-import { api, Optics, Status } from '../api'
+import { api, Optics, Status, reportError } from '../api'
 import { Display } from '../display'
 import { Disclosure, ErrorLine, Field, RangeField, Switch, useAction } from './ui'
 import { Stacking, stackSummary, useStackInfo } from './Stacking'
@@ -35,13 +35,13 @@ function SiteSettings({ status }: { status: Status | null }) {
 
 function DisplaySettings({ d, set, reset, status }: { d: Display; set: (p: Partial<Display>) => void; reset: () => void; status: Status | null }) {
   const [stretch, setStretch] = useState(false)
-  useEffect(() => { api<{ stretch: boolean }>('GET', '/preview').then((r) => setStretch(r.stretch)).catch(() => {}) }, [])
+  useEffect(() => { api<{ stretch: boolean }>('GET', '/preview').then((r) => setStretch(r.stretch)).catch((e) => reportError(e, 'Reading the auto-stretch setting')) }, [])
   return (
     <div>
       <h3>Image</h3>
-      <Switch label="Auto-stretch" checked={stretch} onChange={(on) => { setStretch(on); api('PUT', '/preview', { stretch: on }).catch(() => {}) }} hint="Brightens dim 16-bit frames (everyone's preview)." />
-      <Switch label="Prominence view (software coronagraph)" checked={!!status?.coronagraph?.enabled} disabled={!status?.sun} onChange={(on) => api('PUT', '/coronagraph', { enabled: on, scale: status?.coronagraph?.scale ?? 1.03 }).catch(() => {})} hint={status?.sun ? 'Blacks out the Sun disc in the live view so the faint prominences and limb show. Viewing only: recordings are untouched.' : 'Needs the Sun in view.'} />
-      {status?.coronagraph?.enabled && <RangeField label="Mask size" value={status.coronagraph.scale} min={0.9} max={1.2} step={0.005} show={`${Math.round(status.coronagraph.scale * 100)}% of the disc`} onChange={(v) => api('PUT', '/coronagraph', { enabled: true, scale: v }).catch(() => {})} />}
+      <Switch label="Auto-stretch" checked={stretch} onChange={(on) => { setStretch(on); api('PUT', '/preview', { stretch: on }).catch((e) => reportError(e, 'Changing auto-stretch')) }} hint="Brightens dim 16-bit frames (everyone's preview)." />
+      <Switch label="Prominence view (software coronagraph)" checked={!!status?.coronagraph?.enabled} disabled={!status?.sun} onChange={(on) => api('PUT', '/coronagraph', { enabled: on, scale: status?.coronagraph?.scale ?? 1.03 }).catch((e) => reportError(e, 'Prominence view'))} hint={status?.sun ? 'Blacks out the Sun disc in the live view so the faint prominences and limb show. Viewing only: recordings are untouched.' : 'Needs the Sun in view.'} />
+      {status?.coronagraph?.enabled && <RangeField label="Mask size" value={status.coronagraph.scale} min={0.9} max={1.2} step={0.005} show={`${Math.round(status.coronagraph.scale * 100)}% of the disc`} onChange={(v) => api('PUT', '/coronagraph', { enabled: true, scale: v }).catch((e) => reportError(e, 'Prominence view'))} />}
       <RangeField label="Brightness" value={d.brightness} min={0.3} max={4} step={0.05} show={d.brightness.toFixed(2)} onChange={(v) => set({ brightness: v })} />
       <RangeField label="Contrast" value={d.contrast} min={0.3} max={4} step={0.05} show={d.contrast.toFixed(2)} onChange={(v) => set({ contrast: v })} />
       <RangeField label="Gamma" value={d.gamma} min={0.3} max={3} step={0.05} show={d.gamma.toFixed(2)} onChange={(v) => set({ gamma: v })} />

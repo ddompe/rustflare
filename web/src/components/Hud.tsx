@@ -1,5 +1,5 @@
 import { KeyboardEvent, PointerEvent, ReactNode, useEffect, useRef, useState } from 'react'
-import { api as callApi, Status } from '../api'
+import { api as callApi, Status, reportError } from '../api'
 import { FocusBody } from './FocusAssist'
 import { useSetting } from '../settings'
 
@@ -261,7 +261,7 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
         <div><b>Mask size</b> <b className="cv">{pct}%</b> <span className="cl">of the disc</span></div>
         <input type="range" className="mask-range" aria-label="Prominence mask size" min={0.9} max={1.2} step={0.005} value={corona.scale}
           onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onPointerMove={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}
-          onChange={(e) => callApi('PUT', '/coronagraph', { enabled: true, scale: parseFloat(e.target.value) }).catch(() => {})} />
+          onChange={(e) => callApi('PUT', '/coronagraph', { enabled: true, scale: parseFloat(e.target.value) }).catch((e) => reportError(e, 'Changing the mask size'))} />
       </Widget>,
     )
   }

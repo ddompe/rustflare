@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { api } from './api'
+import { api, reportError } from './api'
 
 /**
  * UI preferences (slew speed, form fields, display options, ...) stored on the Pi, not in the browser:
@@ -21,7 +21,7 @@ export async function loadSettings(): Promise<void> {
 const timers: Record<string, number> = {}
 function save(key: string, value: unknown) {
   window.clearTimeout(timers[key])
-  timers[key] = window.setTimeout(() => { api('PUT', '/ui', { key, value }).catch(() => {}) }, 400)
+  timers[key] = window.setTimeout(() => { api('PUT', '/ui', { key, value }).catch((e) => reportError(e, 'Saving a display setting')) }, 400)
 }
 
 /** Reads a saved setting outside a component (the quick Rec button reuses the Record tab's last recipe). */

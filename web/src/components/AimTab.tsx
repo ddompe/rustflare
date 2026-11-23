@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, Status } from '../api'
+import { api, Status, reportError } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
 import { DeviceCard } from './DeviceCard'
@@ -28,8 +28,8 @@ function MountConnect() {
       if (d.length && !d.some((x) => x.address === bleAddr)) setBleAddr(d[0].address)
     } finally { setScanning(false) }
   })
-  useEffect(() => { api<string[]>('GET', '/mount/drivers').then(setDrivers).catch(() => {}) }, [])
-  const scan = () => api<{ path: string; label: string }[]>('GET', '/mount/ports').then((p) => { setPorts(p); if (!device) setDevice(p[0]?.path || '/dev/ttyACM0') }).catch(() => {})
+  useEffect(() => { api<string[]>('GET', '/mount/drivers').then(setDrivers).catch((e) => reportError(e, 'Listing the mount drivers')) }, [])
+  const scan = () => api<{ path: string; label: string }[]>('GET', '/mount/ports').then((p) => { setPorts(p); if (!device) setDevice(p[0]?.path || '/dev/ttyACM0') }).catch((e) => reportError(e, 'Listing the serial ports'))
   useEffect(() => { scan() }, [])
   return (
     <Section title="Connect the mount" error={err}>
@@ -284,7 +284,7 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
   const low = alt != null && alt >= -1 && alt < 15
   const go = () => run(async () => { await api('POST', '/mount/goto', { target: planet ? planet.id : 'sun', confirm: true, allow_unsynced_clock: clockBad, allow_below_horizon: false }); setAsk(false) })
   if (status.goto) return <div className="hint-text" role="status">Going to {bodies.find((b) => b.id === status.goto?.target)?.name ?? 'the Sun'} ({status.goto.phase}). STOP cancels.</div>
-  const label = (b: { name: string; altitude_deg: number }) => `${b.name} · ${b.altitude_deg < -1 ? 'below horizon' : `${b.altitude_deg.toFixed(0)}° up`}`
+  const label = (b: { name: string; altitude_deg: number }) => `${b.name} · ${b.altitude_deg < -1 ? 'not up (below the horizon)' : `${b.altitude_deg.toFixed(0)}° up`}`
   return (
     <div className="home">
       {!ask ? (

@@ -54,6 +54,23 @@ export type AfterMode = 'video' | 'video_stack' | 'stack_only' | 'best_frames'
 export interface AfterBurst { mode: AfterMode; stack_keep_percent: number; raw_keep_percent: number; margin: number; stacker_connected: boolean; stacking: number; stacked: number; last: string | null; stack_s_per_frame: number }
 export interface CameraInfo { driver: string; id: string; name: string }
 
+/** Failures of things the user did (or that should have worked) are shown in the status bar until dismissed; nothing fails quietly. */
+let uiError: string | null = null
+let uiErrorAt = 0
+const uiErrorListeners = new Set<() => void>()
+export function reportError(e: unknown, what: string) {
+  const msg = `${what} failed: ${e instanceof Error ? e.message : String(e)}`
+  if (msg === uiError && Date.now() - uiErrorAt < 30_000) return
+  uiError = msg
+  uiErrorAt = Date.now()
+  uiErrorListeners.forEach((l) => l())
+}
+export function useUiError(): [string | null, () => void] {
+  const [, force] = useState(0)
+  useEffect(() => { const l = () => force((n) => n + 1); uiErrorListeners.add(l); return () => { uiErrorListeners.delete(l) } }, [])
+  return [uiError, () => { uiError = null; uiErrorListeners.forEach((l) => l()) }]
+}
+
 export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
   const r = await fetch('/api' + path, {
     method,

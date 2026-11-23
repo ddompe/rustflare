@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import { api, Status } from '../api'
+import { api, Status, reportError } from '../api'
 import { Display, cssFilter } from '../display'
 import { HudLayer, HudMenu, useHudLayout } from './Hud'
 
@@ -109,7 +109,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
       <div className="live-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
         <button type="button" aria-label="Zoom in" onClick={() => { const zoom = Math.min(8, d.zoom * 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>+</button>
         <button type="button" aria-label="Zoom out" disabled={d.zoom <= 1} onClick={() => { const zoom = Math.max(1, d.zoom / 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>−</button>
-        <button type="button" aria-label="Prominence view" aria-pressed={!!status?.coronagraph?.enabled} className={status?.coronagraph?.enabled ? 'tool-on' : ''} disabled={!status?.sun && !status?.coronagraph?.enabled} title="Black out the Sun's disc to judge the exposure for prominences" onClick={() => api('PUT', '/coronagraph', { enabled: !status?.coronagraph?.enabled, scale: status?.coronagraph?.scale ?? 1.03 }).catch(() => {})}>
+        <button type="button" aria-label="Prominence view" aria-pressed={!!status?.coronagraph?.enabled} className={status?.coronagraph?.enabled ? 'tool-on' : ''} disabled={!status?.sun && !status?.coronagraph?.enabled} title="Black out the Sun's disc to judge the exposure for prominences" onClick={() => api('PUT', '/coronagraph', { enabled: !status?.coronagraph?.enabled, scale: status?.coronagraph?.scale ?? 1.03 }).catch((e) => reportError(e, 'Prominence view'))}>
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="10" cy="10" r="4.5" fill="currentColor" /></svg>
         </button>
         <button type="button" aria-label={d.overlays ? 'Hide overlays' : 'Show overlays'} aria-pressed={!d.overlays} className={d.overlays ? '' : 'tool-on'} title="Hide the crosshair, rings and Sun marks to see the bare image" onClick={() => setDisplay({ overlays: !d.overlays })}>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api, Status } from '../api'
+import { api, Status, reportError } from '../api'
 import { endsText } from './ui'
 import { recipeLabel, recordRequest, savedRecipe } from '../recipe'
 
@@ -61,7 +61,7 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
       {!recording && c?.paused && !hideRec && (
         <div className="recbar" role="status">
           <div className="rec-text"><b>Recording paused</b> <span className="muted rec-sub">{c.paused_reason ?? ''}</span></div>
-          {c.paused_reason === 'paused by you' && <button type="button" className="quick-rec" onClick={() => api('POST', '/capture/resume').catch(() => {})}>Resume</button>}
+          {c.paused_reason === 'paused by you' && <button type="button" className="quick-rec" onClick={() => api('POST', '/capture/resume').catch((e) => reportError(e, 'Resume'))}>Resume</button>}
           <button type="button" className="danger" onClick={onStop}>Discard</button>
         </div>
       )}
@@ -76,7 +76,7 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
             </span>
             {c.total != null && c.state !== 'flushing' && <progress max={c.total} value={c.done} aria-label="Frames captured" />}
           </div>
-          {['sequence', 'bursts'].includes(c.state) && <button type="button" onClick={() => api('POST', '/capture/pause').catch(() => {})}>Pause</button>}
+          {['sequence', 'bursts'].includes(c.state) && <button type="button" onClick={() => api('POST', '/capture/pause').catch((e) => reportError(e, 'Pause'))}>Pause</button>}
           {['single', 'sequence', 'bursts', 'flats'].includes(c.state) && <button type="button" className="danger" onClick={onStop}>Stop</button>}
         </div>
       )}

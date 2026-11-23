@@ -1,4 +1,4 @@
-import { api, Status } from '../api'
+import { api, Status, reportError } from '../api'
 import { AfterBurst } from './AfterBurst'
 import { Disclosure, Empty, endsText, Field, Section, Segmented, Switch, useAction } from './ui'
 import { StorageLine } from './Storage'
@@ -30,7 +30,7 @@ export function Progress({ status, onStop }: { status: Status; onStop: () => voi
       )}
       <div className="hint-text">{c.done}{c.total != null ? ` / ${c.total}` : ''} frames {c.file && `· ${c.file}`}</div>
       <div className="btnrow">
-        {['sequence', 'bursts'].includes(c.state) && <button type="button" className="grow big" onClick={() => { api('POST', '/capture/pause').catch(() => {}) }}>Pause</button>}
+        {['sequence', 'bursts'].includes(c.state) && <button type="button" className="grow big" onClick={() => { api('POST', '/capture/pause').catch((e) => reportError(e, 'Pause')) }}>Pause</button>}
         {active && <button type="button" className="danger grow big" onClick={onStop}>Stop recording</button>}
       </div>
     </div>
