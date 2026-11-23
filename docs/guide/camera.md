@@ -38,10 +38,10 @@ Colour cameras show a colour live view (half resolution) with white balance (Cam
 
 Camera tab > Focus assist helps you focus by hand, which is hard to judge by eye on a bright day. Switch it on and turn the focuser slowly. A **score** appears over the live image together with a small **history graph**, and again in the Camera tab with a larger graph, the best score so far and how long ago you reached it.
 
-- The score is a sharpness measure of the bright part of the picture around the Sun (the limb and surface detail). It does not change with exposure or gain.
-- Seeing makes single frames jump, so every second of frames is summarised by the mean of its **sharpest quarter** (lucky imaging). One point of the graph is one such second.
-- Turn towards the highest point of the line, pass it, and come back to the dashed **best** line. A peak you pass and return to is the focus. **Reset history** starts a new session, for example after changing the filter.
-- Keep solar tracking on so the Sun stays in the same place, and keep the Sun in view with the cap off. If nothing bright is in view the panel says so.
+- The score is a sharpness measure of the Sun's **surface detail** (filaments, plage, granulation) inside the disc. The limb is left out, because turning a focuser shifts the Sun a little and the limb would move through the window and fool the score. The window stays where the Sun was when you switched focus assist on. The score does not change with exposure or gain.
+- Seeing makes single frames jump, so each burst of about 2.5 seconds is summarised by the mean of its **sharpest 12 %** of frames (at least three), with the scatter of those frames as an **error**. One point of the graph is one burst, and the grey band around the line is its error: a difference smaller than the band is noise, and the app says "same (within noise)" instead of sharper or softer.
+- The dashed **best** line is the peak of the *smoothed* curve, so one lucky burst does not win. Turn towards the top of the curve, pass it, and come back to the best line; "you are at the best" appears when you are within the noise of it. **Reset history** starts a new session, for example after changing the filter or after a Go to (the window is placed again).
+- Keep solar tracking on, so the Sun stays roughly in place, and keep the Sun in view with the cap off. If nothing bright is in view, or the Sun has left the window, the panel says so.
 - The simulator has a *Sim defocus* control for trying it without a telescope.
 
 Status: tested on the simulator; the score has not yet been tuned on real solar data (see the hardware checklist).

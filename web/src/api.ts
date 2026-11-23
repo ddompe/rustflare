@@ -22,7 +22,7 @@ export interface Status {
   last_flip?: unknown
   guide_params?: { window_s: number; deadband_px: number; gain: number; speed: number; fast_speed: number; fast_above_px: number }
   coronagraph?: { enabled: boolean; scale: number }
-  focus?: { enabled: boolean; live: number | null; lucky: number | null; best: number | null; best_age_s: number | null; history: [number, number][]; note: string | null }
+  focus?: { enabled: boolean; live: number | null; lucky: number | null; lucky_err: number | null; best: number | null; best_err: number | null; best_age_s: number | null; history: [number, number, number][]; note: string | null }
   colour?: { mode: string; r: number; b: number; applied: [number, number, number] }
   session_log?: { lost_frames: boolean; lost_saved: number; enabled: boolean; lines: number; frames: number; bytes: number; file: string | null }
   roi?: { x: number; y: number; width: number; height: number; sensor_width: number; sensor_height: number } | null

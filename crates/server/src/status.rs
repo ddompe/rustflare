@@ -306,11 +306,14 @@ pub struct FocusStatus {
     pub live: Option<f64>,
     /// Lucky score of the last finished burst (mean of its sharpest quarter).
     pub lucky: Option<f64>,
-    /// Best lucky score since the session started or was reset, and how long ago it was reached.
+    /// The error of that score (standard error of the mean of the frames that counted): differences below it are noise.
+    pub lucky_err: Option<f64>,
+    /// The peak of the smoothed history since the session started or was reset, its error, and how long ago it was reached.
     pub best: Option<f64>,
+    pub best_err: Option<f64>,
     pub best_age_s: Option<f64>,
-    /// (seconds since start, lucky score) per burst, oldest first.
-    pub history: Vec<[f64; 2]>,
+    /// (seconds since start, lucky score, error) per burst of about 2.5 s, oldest first.
+    pub history: Vec<[f64; 3]>,
     pub note: Option<String>,
 }
 

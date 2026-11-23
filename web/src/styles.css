@@ -617,3 +617,4 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--info, #6
 .fm-find { flex-basis: 100%; }
 .fm-big { flex-basis: 100%; margin: 0; }
 .fm-names { margin: 0 0 .3rem; word-break: break-all; font-weight: 650; }
+.fg-band { fill: var(--accent); opacity: .2; stroke: none; }

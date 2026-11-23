@@ -86,9 +86,14 @@ struct FocusState {
     burst_started: Instant,
     burst: Vec<f64>,
     live: Option<f64>,
-    history: Vec<[f64; 2]>,
-    best: Option<(f64, Instant)>,
+    /// (seconds since start, lucky score, its error) per burst, oldest first.
+    history: Vec<[f64; 3]>,
+    /// The scoring window, fixed in the frame when the session starts (and whether the Sun was known then).
+    window: Option<(rustflare_tracking::focus::Window, bool)>,
 }
+
+/// Length of a focus burst: long enough to hold some frames of good seeing, short enough to follow the focuser.
+const FOCUS_BURST: Duration = Duration::from_millis(2500);
 
 struct GotoState {
     started: Instant,
@@ -1436,7 +1441,7 @@ impl Engine {
                     }
                     if reset || self.focus.is_none() {
                         let now = Instant::now();
-                        self.focus = Some(FocusState { started: now, last_scored: now - Duration::from_secs(1), burst_started: now, burst: vec![], live: None, history: vec![], best: None });
+                        self.focus = Some(FocusState { started: now, last_scored: now - Duration::from_secs(1), burst_started: now, burst: vec![], live: None, history: vec![], window: None });
                     }
                     self.status.focus = FocusStatus { enabled: true, ..Default::default() };
                     self.publish();
@@ -2271,7 +2276,8 @@ impl Engine {
 
     // ----------------------------------------------------------------- frames
 
-    /// Focus assist: score about 25 frames a second, summarise each second as a lucky score, publish the history.
+    /// Focus assist: score about 25 frames a second, summarise each burst of a few seconds as a lucky score with its error, and
+    /// publish the history and the peak of its smoothed curve.
     fn step_focus(&mut self, frame: &Frame) {
         let Some(f) = self.focus.as_mut() else { return };
         let now = Instant::now();
@@ -2279,37 +2285,48 @@ impl Engine {
             return;
         }
         f.last_scored = now;
-        let (cx, cy) = self.status.sun.as_ref().map(|s| (s.pos.x, s.pos.y)).unwrap_or((frame.width as f64 / 2.0, frame.height as f64 / 2.0));
+        let sun = self.status.sun.as_ref().map(|s| (s.pos.x, s.pos.y, s.radius));
+        // the window stays where the Sun was when the session began; it is placed again once, if the Sun was not known then
+        if f.window.map_or(true, |(_, had_sun)| !had_sun && sun.is_some()) {
+            f.window = Some((rustflare_tracking::focus::Window::new(sun, frame.width, frame.height), sun.is_some()));
+            f.burst.clear();
+        }
+        let win = f.window.unwrap().0;
         let mut note = None;
-        match rustflare_tracking::focus::sharpness(frame, cx, cy) {
+        match rustflare_tracking::focus::sharpness(frame, win, sun) {
             Some(sc) => {
                 f.burst.push(sc);
                 f.live = Some(f.live.map_or(sc, |l| 0.7 * l + 0.3 * sc));
             }
+            None if sun.is_some() => note = Some("The Sun has moved out of the scoring window (a Go to, or a long drift): press Reset history.".to_string()),
             None => note = Some("Nothing bright to judge: is the Sun in view and the cap off?".to_string()),
         }
-        if now.duration_since(f.burst_started) >= Duration::from_secs(1) {
-            if let Some(l) = rustflare_tracking::focus::lucky_score(&f.burst) {
+        if sun.is_none() && note.is_none() {
+            note = Some("The Sun is not detected, so the score includes its edge and moves with the Sun.".to_string());
+        }
+        if now.duration_since(f.burst_started) >= FOCUS_BURST {
+            if let Some((l, e)) = rustflare_tracking::focus::lucky_score(&f.burst) {
                 let t = now.duration_since(f.started).as_secs_f64();
-                f.history.push([t, l]);
-                if f.history.len() > 600 {
+                f.history.push([t, l, e]);
+                if f.history.len() > 400 {
                     f.history.remove(0);
-                }
-                if f.best.map_or(true, |(b, _)| l > b) {
-                    f.best = Some((l, now));
                 }
             }
             f.burst.clear();
             f.burst_started = now;
         }
-        let last = f.history.last().map(|h| h[1]);
-        let skip = f.history.len().saturating_sub(180);
+        let last = f.history.last().copied();
+        let peak = rustflare_tracking::focus::peak(&f.history);
+        let t_now = now.duration_since(f.started).as_secs_f64();
+        let skip = f.history.len().saturating_sub(90);
         self.status.focus = FocusStatus {
             enabled: true,
             live: f.live,
-            lucky: last,
-            best: f.best.map(|b| b.0),
-            best_age_s: f.best.map(|b| now.duration_since(b.1).as_secs_f64()),
+            lucky: last.map(|h| h[1]),
+            lucky_err: last.map(|h| h[2]),
+            best: peak.map(|p| p.1),
+            best_err: peak.map(|p| p.2),
+            best_age_s: peak.map(|p| t_now - f.history[p.0][0]),
             history: f.history[skip..].to_vec(),
             note,
         };
