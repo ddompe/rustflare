@@ -121,7 +121,7 @@ pub enum Command {
     SetControl { id: String, value: f64 },
     ConnectMount { driver: String, device: Option<String> },
     DisconnectMount,
-    MountTracking { enabled: bool },
+    MountTracking { enabled: bool, rate: Option<TrackingRate> },
     MountSlew { axis: Axis, speed: f64 },
     MountStop,
     /// Moves the mount to its home (zero) position; the API asks for explicit confirmation.
@@ -336,6 +336,8 @@ pub struct Engine {
     camera: Option<Box<dyn Camera>>,
     mount: Option<Box<dyn Mount>>,
     mount_tracking: bool,
+    /// The rate the mount tracks at (or will when tracking is switched on): the Sun's unless a Go to or the user chose another.
+    mount_rate: TrackingRate,
     /// What the mount itself last reported (it can be changed from outside: its buttons, another app).
     mount_state: MountState,
     last_mount_poll: Instant,
@@ -481,6 +483,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         camera: None,
         mount: None,
         mount_tracking: false,
+        mount_rate: TrackingRate::Solar,
         mount_state: MountState::default(),
         last_mount_poll: Instant::now(),
         mount_poll_failures: 0,
@@ -797,6 +800,7 @@ impl Engine {
             match r {
                 Ok(()) => {
                     self.mount_tracking = true;
+                    self.mount_rate = rate;
                     log::info!("GoTo {target} finished; tracking is on");
                 }
                 Err(e) => self.status.error = Some(format!("the mount arrived, but tracking could not be switched on: {e}")),
@@ -1017,7 +1021,10 @@ impl Engine {
                     f.slew_done_at = Some(Instant::now());
                     let r = m.set_tracking_rate(TrackingRate::Solar).and_then(|_| m.set_tracking(true));
                     match r {
-                        Ok(()) => self.mount_tracking = true,
+                        Ok(()) => {
+                            self.mount_tracking = true;
+                            self.mount_rate = TrackingRate::Solar;
+                        }
                         Err(e) => self.status.error = Some(format!("flip: arrived, but solar tracking could not be switched on: {e}")),
                     }
                     f.phase = "settling";
@@ -1212,7 +1219,7 @@ impl Engine {
         self.status.seq += 1;
         self.last_publish = Instant::now();
         let ms = self.mount_state;
-        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking, slewing: ms.slewing, at_home: ms.at_home, park: ms.park, alt_az: ms.alt_az, link: m.link().map(|l| l.kind), link_up: m.link().map_or(true, |l| l.up) });
+        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking, slewing: ms.slewing, at_home: ms.at_home, park: ms.park, alt_az: ms.alt_az, link: m.link().map(|l| l.kind), link_up: m.link().map_or(true, |l| l.up), rate: self.mount_rate });
         self.status.guiding.state = match self.guide {
             GuideState::Off => "off",
             GuideState::Calibrating(_) => "calibrating",
@@ -1291,13 +1298,16 @@ impl Engine {
                 self.save_startup();
                 Ok(json!({}))
             }
-            Command::MountTracking { enabled } => {
+            Command::MountTracking { enabled, rate } => {
                 if enabled {
                     self.require_not_parked()?;
                 }
+                // switching tracking on keeps the rate the mount was last given (a Go to Saturn leaves it sidereal), unless one is asked for
+                let want = rate.unwrap_or(self.mount_rate);
                 let m = self.mount.as_mut().ok_or("no mount connected")?;
                 if enabled {
-                    m.set_tracking_rate(TrackingRate::Solar).map_err(s)?;
+                    m.set_tracking_rate(want).map_err(s)?;
+                    self.mount_rate = want;
                 }
                 m.set_tracking(enabled).map_err(s)?;
                 self.mount_tracking = enabled;

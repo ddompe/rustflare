@@ -28,6 +28,8 @@ pub struct MountStatus {
     pub info: String,
     /// Whether the mount is tracking, as last read back from the mount itself.
     pub tracking: bool,
+    /// The tracking rate in use or last chosen: solar, lunar or sidereal.
+    pub rate: rustflare_core::TrackingRate,
     pub slewing: Option<bool>,
     pub at_home: Option<bool>,
     pub park: Option<rustflare_core::ParkState>,

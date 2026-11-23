@@ -19,6 +19,7 @@
 //! All the `unsafe` is in this file and `map.rs`; the API is safe.
 
 mod map;
+pub mod ipc;
 
 use map::Mapping;
 use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd};

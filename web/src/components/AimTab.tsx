@@ -319,6 +319,8 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
 
 import { MeridianFlip } from './MeridianFlip'
 
+const RATE_NAME = { solar: 'Solar', lunar: 'Lunar', sidereal: 'Star' } as const;
+
 /** Step 2: connect the mount, switch on solar tracking, slew the region of interest into view. */
 export function AimTab({ status, next, openMore }: { status: Status | null; next: () => void; openMore?: (focus: string) => void }) {
   const { err, run } = useAction()
@@ -336,7 +338,12 @@ export function AimTab({ status, next, openMore }: { status: Status | null; next
         <MeridianFlip status={status} />
       </Disclosure>
       <Section error={err}>
-        <Switch label="Solar tracking" checked={m.tracking} disabled={parked} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? shortInfo(m.info) : `${shortInfo(m.info)}. Off: the Sun will drift out of view.`} />
+        <Switch label={`${RATE_NAME[m.rate ?? 'solar']} tracking`} checked={m.tracking} disabled={parked} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? shortInfo(m.info) : `${shortInfo(m.info)}. Off: the target will drift out of view.`} />
+        <div className="seg" role="group" aria-label="Tracking rate">
+          {(['solar', 'lunar', 'sidereal'] as const).map((r) => (
+            <button key={r} type="button" className={(m.rate ?? 'solar') === r ? 'on' : ''} aria-pressed={(m.rate ?? 'solar') === r} disabled={parked} onClick={() => run(() => api('POST', '/mount/tracking', { enabled: true, rate: r }))}>{RATE_NAME[r]}</button>
+          ))}
+        </div>
         <MountState m={m} />
       </Section>
       <SendHome status={status} disabled={parked || status.capture.state !== 'idle'} reason={parked ? 'The mount is parked.' : status.capture.state !== 'idle' ? 'Not while recording.' : null} />

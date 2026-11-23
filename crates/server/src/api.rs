@@ -191,8 +191,10 @@ async fn mount_scan() -> Res {
 
 #[derive(Deserialize)]
 struct Enabled { enabled: bool }
-async fn mount_tracking(s: State<AppState>, Json(b): Json<Enabled>) -> Res {
-    run(s, Command::MountTracking { enabled: b.enabled }).await
+#[derive(Deserialize)]
+struct TrackBody { enabled: bool, rate: Option<rustflare_core::TrackingRate> }
+async fn mount_tracking(s: State<AppState>, Json(b): Json<TrackBody>) -> Res {
+    run(s, Command::MountTracking { enabled: b.enabled, rate: b.rate }).await
 }
 
 #[derive(Deserialize)]

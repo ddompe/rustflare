@@ -33,7 +33,7 @@ export interface Status {
   camera: CameraStatus | null
   sun: SunLocation | null
   /** What the mount itself reports (read back every ~2 s); everything but info and tracking may be null. */
-  mount: { info: string; tracking: boolean; slewing?: boolean | null; at_home?: boolean | null; park?: 'unparked' | 'parking' | 'parked' | null; alt_az?: boolean | null; link?: 'usb' | 'ble' | null; link_up?: boolean } | null
+  mount: { info: string; tracking: boolean; rate?: 'solar' | 'lunar' | 'sidereal'; slewing?: boolean | null; at_home?: boolean | null; park?: 'unparked' | 'parking' | 'parked' | null; alt_az?: boolean | null; link?: 'usb' | 'ble' | null; link_up?: boolean } | null
   tracking: Tracking | null
   guiding: { state: 'off' | 'calibrating' | 'guiding'; calibration: Calibration | null; target: [number, number] | null; error_px: number | null; held?: boolean; dead_reckoning?: boolean }
   capture: {
