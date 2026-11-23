@@ -42,8 +42,8 @@ Every failure of the pipeline (a burst falling back to raw, a stack that failed 
 
 ## Plan
 
-1. `rustflare-ring`: ring, producer, consumers, pins, heartbeats, crash recovery, tests. (this step)
-2. The stacker reads frames through a `FrameSource` (SER file or ring), with identical results.
+1. Done: `rustflare-ring`: ring, producer, consumers, pins, heartbeats, crash recovery, tests.
+2. Done: the stacker reads frames through a `FrameSource` (a SER file, frames in memory, or a burst in the ring); a stack from memory or from the ring is bit-identical to one from the file (single thread), and a frame that cannot be read fails the job with its reason instead of being skipped.
 3. The raw writer as a ring consumer replacing `FrameSink`'s queue; policies and counters preserved.
 4. Burst table, the stacker's `serve` mode, the descriptor handover and reconnect, the gap check and the raw fallback.
 5. Modes and percentages in the API, the Record tab, telemetry and docs; tests on the simulators and on the real camera.

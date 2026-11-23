@@ -18,6 +18,7 @@ rustflare-mount = { path = "crates/mount" }
 rustflare-tracking = { path = "crates/tracking" }
 rustflare-capture = { path = "crates/capture" }
 rustflare-stack = { path = "crates/stack" }
+rustflare-ring = { path = "crates/ring" }
 
 [profile.release]
 opt-level = 3

@@ -10,6 +10,7 @@ use crate::calib::Calibration;
 use crate::image::{bin, mask_f32, sharpness_masked, valid_mask, Img};
 use crate::multipoint::{add_box, build_grid, LocalAligner, Patch};
 use crate::ser::Ser;
+use crate::source::FrameSource;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -154,12 +155,20 @@ fn common_detail(a: &[f32], b: &[f32], w: usize, h: usize, valid: &[bool]) -> f6
 
 /// Stack one SER recording (with its `_partN` files).
 pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stacked, String> {
-    let mut ser = Ser::open(path).map_err(|e| e.to_string())?;
-    let (w, h, n) = (ser.width, ser.height, ser.frames());
+    let ser = Ser::open(path).map_err(|e| e.to_string())?;
+    let result = stack_frames(&ser, opts, cal);
+    ser.release();
+    result
+}
+
+/// Stack any source of frames: a SER file, frames in memory, a burst in the shared frame ring. The computation is the same whatever the
+/// source; a source that can lose its frames (the ring) makes the job fail with an error saying so.
+pub fn stack_frames(src: &dyn FrameSource, opts: &Options, cal: &Calibration) -> Result<Stacked, String> {
+    let (w, h, n) = (src.width(), src.height(), src.frames());
     if n == 0 {
-        return Err(format!("{}: no frames", path.display()));
+        return Err(format!("{}: no frames", src.describe()));
     }
-    if ser.is_mosaic() {
+    if src.is_mosaic() {
         return Err("colour (mosaic) recordings are not supported yet".into());
     }
     if let Some(d) = cal.dark.as_ref().or(cal.flat.as_ref()) {
@@ -185,22 +194,21 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     let probe: Vec<usize> = (0..n.min(6)).map(|k| k * n / n.min(6)).collect();
     let mut mean = vec![0f32; w * h];
     for &i in &probe {
-        for (m, v) in mean.iter_mut().zip(ser.read_frame(i).map_err(|e| e.to_string())?) {
-            *m += v as f32 / probe.len() as f32;
+        for (m, v) in mean.iter_mut().zip(src.read_frame(i)?.iter()) {
+            *m += *v as f32 / probe.len() as f32;
         }
     }
     let valid = valid_mask(&bin(&mean, w, h, b), 2.0, opts.erode);
     let valid_f = mask_f32(&valid);
-    let binned_of = |s: &mut Ser, i: usize| -> Result<Img, String> {
-        let raw = s.read_frame(i).map_err(|e| e.to_string())?;
+    let binned_of = |i: usize| -> Result<Img, String> {
+        let raw = src.read_frame(i)?;
         Ok(cal.bin_calibrated(&raw, w, h, b))
     };
 
     // pass A: read every frame once, bin it, keep it in RAM when it fits, and take the Laplacian score
     let cache_ok = n * bw * bh * 4 <= opts.cache_mb * 1_000_000;
     let a = run_parallel(n, opts.threads, |i| {
-        let mut s = Ser::open(path).map_err(|e| e.to_string())?;
-        let img = binned_of(&mut s, i)?;
+        let img = binned_of(i)?;
         let sh = sharpness_masked(&img, &valid_f);
         Ok::<_, String>((sh, if cache_ok { Some(img) } else { None }))
     });
@@ -212,7 +220,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         cache.push(img);
     }
     lap_t("read, bin, score every frame (pass A)", &mut tp);
-    let get = |s: &mut Ser, i: usize| -> Result<Img, String> { match &cache[i] { Some(img) => Ok(img.clone()), None => binned_of(s, i) } };
+    let get = |i: usize| -> Result<Img, String> { match &cache[i] { Some(img) => Ok(img.clone()), None => binned_of(i) } };
     let ref0 = (0..n).max_by(|&x, &y| lap[x].partial_cmp(&lap[y]).unwrap_or(std::cmp::Ordering::Equal)).unwrap_or(0);
 
     // With multi-point alignment the global shift only has to land within the points' search range, so it is found on 4x4-binned images
@@ -225,8 +233,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     let whole = |v: f64| if opts.integer_shifts { (v * b as f64).round() / b as f64 } else { v };
     let align_and_score = |reference: &crate::align::Prepared| -> Result<(Vec<(f64, f64)>, Vec<f64>, Vec<f64>, Vec<f32>), String> {
         let b_out = run_parallel(n, opts.threads, |i| {
-            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
-            let img = get(&mut s, i)?;
+            let img = get(i)?;
             let (dx, dy) = if !opts.align {
                 (0.0, 0.0)
             } else if fast {
@@ -245,9 +252,8 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         }
         let mut mean_b = vec![0f32; bw * bh];
         {
-            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
             for i in 0..n {
-                accumulate_shifted(&mut mean_b, &get(&mut s, i)?.d, bw, bh, shifts[i].0, shifts[i].1);
+                accumulate_shifted(&mut mean_b, &get(i)?.d, bw, bh, shifts[i].0, shifts[i].1);
             }
         }
         for v in &mut mean_b {
@@ -257,8 +263,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         let var_m: f64 = crate::simd::masked_dot_and_sum(&lm, &lm, &valid_f).0.max(1e-30);
         let nvalid = valid.iter().filter(|&&v| v).count().max(1) as f64;
         let c_out = run_parallel(n, opts.threads, |i| {
-            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
-            let img = get(&mut s, i)?;
+            let img = get(i)?;
             let mut al = vec![0f32; bw * bh];
             accumulate_shifted(&mut al, &img.d, bw, bh, shifts[i].0, shifts[i].1);
             let l = crate::simd::laplacian_masked(&al, &valid_f, bw, bh);
@@ -277,8 +282,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     // pass 1 against the sharpest single frame; pass 2 against the aligned mean of the best few (they agree with each other,
     // so the reference carries less noise and less of one frame's seeing)
     let reference = {
-        let mut s = Ser::open(path).map_err(|e| e.to_string())?;
-        let img = get(&mut s, ref0)?;
+        let img = get(ref0)?;
         if fast {
             Aligner::new(b4w, b4h, &valid4, opts.whiten).prepare(&bin(&img.d, bw, bh, 2))
         } else {
@@ -294,9 +298,8 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         let top = ((n as f64 * opts.refine).round() as usize).clamp(3, n);
         let mut mean_top = vec![0f32; bw * bh];
         {
-            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
             for &i in &ord[..top] {
-                accumulate_shifted(&mut mean_top, &get(&mut s, i)?.d, bw, bh, shifts_b[i].0, shifts_b[i].1);
+                accumulate_shifted(&mut mean_top, &get(i)?.d, bw, bh, shifts_b[i].0, shifts_b[i].1);
             }
         }
         for v in &mut mean_top {
@@ -333,8 +336,16 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     // pass D: the kept frames at full resolution, shifted onto the reference, into two accumulators (even and odd ranks) so
     // the quality of the stack can be measured without noise
     let t1 = Instant::now();
-    let load = |my: &mut Ser, idx: usize| -> Option<Vec<f32>> {
-        let raw = my.read_frame(idx).ok()?;
+    // a frame that cannot be read (a ring frame overwritten, a truncated file) fails the whole job at the end of the pass, with its message
+    let load_err: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+    let load = |idx: usize| -> Option<Vec<f32>> {
+        let raw = match src.read_frame(idx) {
+            Ok(r) => r,
+            Err(e) => {
+                load_err.lock().unwrap().get_or_insert(e);
+                return None;
+            }
+        };
         let mut frame = cal.apply(&raw);
         let sc = scale(idx);
         if sc != 1.0 {
@@ -349,7 +360,6 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
     std::thread::scope(|s| {
         for _ in 0..opts.threads.max(1).min(kept_n) {
             s.spawn(|| {
-                let mut my = Ser::open(path).expect("reopen");
                 let (mut even, mut odd, mut ne, mut no) = (vec![0f32; w * h], vec![0f32; w * h], 0, 0);
                 loop {
                     let k = next.fetch_add(1, Ordering::Relaxed);
@@ -357,7 +367,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
                         break;
                     }
                     let idx = kept[k];
-                    let Some(frame) = load(&mut my, idx) else { continue };
+                    let Some(frame) = load(idx) else { continue };
                     let (fx, fy) = (shifts_b[idx].0 * b as f64, shifts_b[idx].1 * b as f64);
                     if k % 2 == 0 {
                         accumulate_shifted(&mut even, &frame, w, h, fx, fy);
@@ -399,9 +409,8 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         let top = ((n as f64 * opts.refine.max(0.1)).round() as usize).clamp(3, n);
         let mut ref_d = vec![0f32; bw * bh];
         {
-            let mut s = Ser::open(path).map_err(|e| e.to_string())?;
             for &i in &ord[..top] {
-                accumulate_shifted(&mut ref_d, &get(&mut s, i)?.d, bw, bh, shifts_b[i].0, shifts_b[i].1);
+                accumulate_shifted(&mut ref_d, &get(i)?.d, bw, bh, shifts_b[i].0, shifts_b[i].1);
             }
         }
         for v in &mut ref_d {
@@ -418,8 +427,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
             let registered: Vec<usize> = ord[..reg_n].to_vec();
             let local_r = run_parallel(reg_n, opts.threads, |k| {
                 let i = registered[k];
-                let mut s = Ser::open(path).map_err(|e| e.to_string())?;
-                let img = get(&mut s, i)?;
+                let img = get(i)?;
                 let (gx, gy) = (shifts_b[i].0.round() as isize, shifts_b[i].1.round() as isize);
                 Ok::<_, String>(grid.iter().enumerate().map(|(j, &(x, y))| {
                     let cur = la.prepare(&img.d, bw, bh, x as isize + gx, y as isize + gy);
@@ -451,7 +459,6 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
             std::thread::scope(|sc| {
                 for _ in 0..opts.threads.max(1).min(reg_n) {
                     sc.spawn(|| {
-                        let mut my = Ser::open(path).expect("reopen");
                         let mut st = [(vec![0f32; w * h], vec![0f32; w * h]), (vec![0f32; w * h], vec![0f32; w * h])];
                         loop {
                             let k = next.fetch_add(1, Ordering::Relaxed);
@@ -461,7 +468,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
                             if chosen[k].iter().all(|&c| c == 0) {
                                 continue;
                             }
-                            let Some(frame) = load(&mut my, registered[k]) else { continue };
+                            let Some(frame) = load(registered[k]) else { continue };
                             for (j, &(x, y)) in grid.iter().enumerate() {
                                 let c = chosen[k][j];
                                 if c == 0 {
@@ -514,7 +521,6 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
             std::thread::scope(|s| {
                 for _ in 0..opts.threads.max(1).min(kept_n) {
                     s.spawn(|| {
-                        let mut my = Ser::open(path).expect("reopen");
                         let (mut a, mut c) = (vec![0f32; w * h], vec![0f32; w * h]);
                         let mut sh = vec![0f32; w * h];
                         loop {
@@ -523,7 +529,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
                                 break;
                             }
                             let idx = kept[k];
-                            let Some(frame) = load(&mut my, idx) else { continue };
+                            let Some(frame) = load(idx) else { continue };
                             sh.iter_mut().for_each(|v| *v = 0.0);
                             accumulate_shifted(&mut sh, &frame, w, h, shifts_b[idx].0 * b as f64, shifts_b[idx].1 * b as f64);
                             for i in 0..w * h {
@@ -558,9 +564,11 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         }
     }
 
+    if let Some(e) = load_err.lock().unwrap().take() {
+        return Err(format!("{}: {e}", src.describe()));
+    }
     let shifts: Vec<(usize, f64, f64)> = kept.iter().map(|&i| (i, shifts_b[i].0 * b as f64, shifts_b[i].1 * b as f64)).collect();
     let rms = (shifts.iter().map(|s| s.1 * s.1 + s.2 * s.2).sum::<f64>() / shifts.len().max(1) as f64).sqrt();
-    crate::ser::drop_page_cache(path);
     let report = Report {
         frames: n,
         kept: kept_n,
@@ -576,7 +584,7 @@ pub fn stack_ser(path: &Path, opts: &Options, cal: &Calibration) -> Result<Stack
         local_shift_rms_px: mp_rms,
         multipoint_seconds: mp_seconds,
         phases: phase_log.into_inner(),
-        first_timestamp: ser.timestamp(0),
+        first_timestamp: src.first_timestamp(),
         rank_seconds,
         stack_seconds: t1.elapsed().as_secs_f64(),
         flat_applied: cal.flat.is_some(),

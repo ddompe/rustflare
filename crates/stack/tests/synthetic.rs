@@ -302,3 +302,68 @@ fn local_aligner_measures_the_displacement_at_each_point() {
     }
     assert!(worst < 0.5, "worst error {worst} px over {n} points");
 }
+
+fn as_u16(frames: &[Vec<f32>]) -> Vec<Vec<u16>> { frames.iter().map(|f| f.iter().map(|&v| v.clamp(0.0, 65535.0) as u16).collect()).collect() }
+
+fn to_ring(frames: &[Vec<u16>], slots: usize) -> (rustflare_ring::Ring, std::os::fd::OwnedFd) {
+    let (ring, fd) = rustflare_ring::Ring::create(rustflare_ring::Geometry { width: W as u32, height: H as u32, bits: 16, format: 0 }, slots).unwrap();
+    let mut p = ring.become_producer();
+    for (i, f) in frames.iter().enumerate() {
+        let bytes: Vec<u8> = f.iter().flat_map(|v| v.to_le_bytes()).collect();
+        p.push(&bytes, rustflare_ring::FrameMeta { ts_ns: 1_700_000_000_000_000_000 + i as u64 * 1_000_000, ..Default::default() }).unwrap();
+    }
+    (ring, fd)
+}
+
+#[test]
+fn a_stack_from_memory_or_from_the_ring_is_the_same_computation_as_from_the_file() {
+    use rustflare_stack::source::{MemFrames, RingFrames};
+    use rustflare_stack::stack::stack_frames;
+    let dir = std::env::temp_dir().join(format!("rf-stack-src-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (fl, _) = burst(40);
+    let frames = as_u16(&fl);
+    let path = dir.join("b.ser");
+    write_ser(&path, &fl);
+    let cal = Calibration::default();
+    let o = Options { threads: 1, ..Options::default() }; // one thread: the order of the float sums is then fixed
+    let from_file = stack_ser(&path, &o, &cal).unwrap();
+    let from_mem = stack_frames(&MemFrames { width: W, height: H, frames: frames.clone(), first_timestamp: None }, &o, &cal).unwrap();
+    let (ring, _fd) = to_ring(&frames, 64);
+    let consumer = ring.attach_consumer("stacker", false, false).unwrap();
+    let from_ring = stack_frames(&RingFrames::new(consumer, 1, frames.len()).unwrap(), &o, &cal).unwrap();
+    for (name, s) in [("memory", &from_mem), ("ring", &from_ring)] {
+        assert_eq!(s.data, from_file.data, "the stack from {name} differs from the one from the file");
+        assert_eq!((s.report.kept_frames.clone(), s.report.aps), (from_file.report.kept_frames.clone(), from_file.report.aps), "{name}");
+        assert_eq!(s.report.signal, from_file.report.signal, "{name}");
+    }
+    // the ring knows when the first frame was taken; the stack carries it
+    assert!(from_ring.report.first_timestamp.unwrap() > 1.6e9);
+    // and the stacker shows up in the ring's consumer list while it works (advisory pin), and is gone after
+    assert!(ring.consumers().iter().all(|c| c.pin_seq == 0), "the pin is released when the source is dropped");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_ring_frame_overwritten_before_or_during_the_stack_is_an_error_and_never_a_silent_gap() {
+    use rustflare_stack::source::RingFrames;
+    use rustflare_stack::stack::stack_frames;
+    let (fl, _) = burst(24);
+    let frames = as_u16(&fl);
+    // a ring too small for the burst: the first frames are already gone when the stacker starts
+    let (small, _fd) = to_ring(&frames, 16);
+    let c = small.attach_consumer("stacker", false, false).unwrap();
+    let err = RingFrames::new(c, 1, frames.len()).err().unwrap();
+    assert!(err.contains("overwritten"), "{err}");
+    // a ring that held the burst at first and is then overwritten by the camera while the stacker has not finished
+    let (ring, _fd2) = to_ring(&frames, 24);
+    let c = ring.attach_consumer("stacker", false, false).unwrap();
+    let src = RingFrames::new(c, 1, frames.len()).unwrap();
+    assert!(src.intact());
+    let mut p = ring.become_producer();
+    let bytes: Vec<u8> = frames[0].iter().flat_map(|v| v.to_le_bytes()).collect();
+    for _ in 0..6 { p.push(&bytes, Default::default()).unwrap(); } // the camera wraps over frames 1 to 6
+    assert!(!src.intact());
+    let e = stack_frames(&src, &Options::default(), &Calibration::default()).err().unwrap();
+    assert!(e.contains("overwritten"), "the failure says why: {e}");
+}

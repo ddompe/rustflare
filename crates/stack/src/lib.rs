@@ -10,6 +10,7 @@ pub mod output;
 pub mod ser;
 pub mod session;
 pub mod simd;
+pub mod source;
 pub mod stack;
 pub mod telemetry;
 pub mod watch;

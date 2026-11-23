@@ -18,7 +18,7 @@ pub struct Calibration {
 
 /// The mean of all the frames of a raw SER recording, in float (no rounding, no intermediate file format).
 fn mean_of(path: &Path) -> Result<(usize, usize, Vec<f32>), String> {
-    let mut ser = Ser::open(path).map_err(|e| e.to_string())?;
+    let ser = Ser::open(path).map_err(|e| e.to_string())?;
     let (w, h, n) = (ser.width, ser.height, ser.frames());
     if n == 0 {
         return Err(format!("{}: no frames", path.display()));

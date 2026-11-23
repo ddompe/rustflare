@@ -4,7 +4,8 @@
 //! most cameras write it so, and the flag is unreliable in practice (see `rustflare-capture`'s writer).
 
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
+use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 
 const HEADER_LEN: u64 = 178;
@@ -22,6 +23,7 @@ pub struct Part {
 /// One recording: the first file and any `_partN` files that continue it.
 #[derive(Debug)]
 pub struct Ser {
+    first_path: PathBuf,
     parts: Vec<Part>,
     pub width: usize,
     pub height: usize,
@@ -100,7 +102,7 @@ impl Ser {
         for p in &parts {
             stamp_offset.push(HEADER_LEN + p.frames as u64 * frame_bytes);
         }
-        Ok(Ser { parts, width, height, depth, color_id, instrument, frame_bytes, stamp_offset })
+        Ok(Ser { first_path: path.to_path_buf(), parts, width, height, depth, color_id, instrument, frame_bytes, stamp_offset })
     }
 
     /// Every part holds all the frames its header declares and the timestamp trailer after them: the writer has finished the file.
@@ -113,14 +115,14 @@ impl Ser {
     /// Bayer pattern id of the header's ColorID (8 to 11), if the data is a mosaic.
     pub fn is_mosaic(&self) -> bool { (8..=11).contains(&self.color_id) }
 
-    /// Frame `i` as 16-bit values (8-bit data is scaled up by 257 so both depths share a range).
-    pub fn read_frame(&mut self, i: usize) -> Result<Vec<u16>, SerError> {
+    /// Frame `i` as 16-bit values (8-bit data is scaled up by 257 so both depths share a range). Positional reads, so one `Ser` can be
+    /// shared by threads.
+    pub fn read_frame(&self, i: usize) -> Result<Vec<u16>, SerError> {
         let mut rem = i;
-        for p in &mut self.parts {
+        for p in &self.parts {
             if rem < p.frames {
                 let mut raw = vec![0u8; self.frame_bytes as usize];
-                p.file.seek(SeekFrom::Start(HEADER_LEN + rem as u64 * self.frame_bytes)).map_err(|e| SerError(e.to_string()))?;
-                p.file.read_exact(&mut raw).map_err(|e| SerError(format!("{}: frame {i}: {e}", p.path.display())))?;
+                p.file.read_exact_at(&mut raw, HEADER_LEN + rem as u64 * self.frame_bytes).map_err(|e| SerError(format!("{}: frame {i}: {e}", p.path.display())))?;
                 return Ok(if self.depth == 16 { raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect() } else { raw.iter().map(|&b| b as u16 * 257).collect() });
             }
             rem -= p.frames;
@@ -129,17 +131,16 @@ impl Ser {
     }
 
     /// The capture time of frame `i` in seconds since the Unix epoch, from the timestamp trailer when the file has one.
-    pub fn timestamp(&mut self, i: usize) -> Option<f64> {
+    pub fn timestamp(&self, i: usize) -> Option<f64> {
         let mut rem = i;
-        for (k, p) in self.parts.iter_mut().enumerate() {
+        for (k, p) in self.parts.iter().enumerate() {
             if rem < p.frames {
                 let off = self.stamp_offset[k] + rem as u64 * 8;
                 if p.file.metadata().ok()?.len() < off + 8 * (p.frames - rem) as u64 {
                     return None;
                 }
                 let mut b = [0u8; 8];
-                p.file.seek(SeekFrom::Start(off)).ok()?;
-                p.file.read_exact(&mut b).ok()?;
+                p.file.read_exact_at(&mut b, off).ok()?;
                 let ticks = u64::from_le_bytes(b);
                 const EPOCH_TICKS: u64 = 621_355_968_000_000_000;
                 return ticks.checked_sub(EPOCH_TICKS).map(|t| t as f64 / 1e7);
@@ -164,4 +165,15 @@ pub fn drop_page_cache(first: &Path) {
     }
     #[cfg(not(target_os = "linux"))]
     let _ = first;
+}
+
+impl crate::source::FrameSource for Ser {
+    fn width(&self) -> usize { self.width }
+    fn height(&self) -> usize { self.height }
+    fn frames(&self) -> usize { Ser::frames(self) }
+    fn is_mosaic(&self) -> bool { Ser::is_mosaic(self) }
+    fn first_timestamp(&self) -> Option<f64> { self.timestamp(0) }
+    fn read_frame(&self, i: usize) -> Result<std::borrow::Cow<'_, [u16]>, String> { Ser::read_frame(self, i).map(std::borrow::Cow::Owned).map_err(|e| e.to_string()) }
+    fn describe(&self) -> String { self.first_path.display().to_string() }
+    fn release(&self) { drop_page_cache(&self.first_path); }
 }
