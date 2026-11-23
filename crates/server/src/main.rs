@@ -4,6 +4,7 @@ mod api;
 mod asynclog;
 mod config;
 mod engine;
+mod browse;
 mod files;
 mod logs;
 mod preview;

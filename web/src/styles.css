@@ -390,7 +390,7 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .strip > .sr-only { position: absolute; }
 
 /* File manager: full-screen overlay */
-.fm-screen { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+.fm-screen { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 .fm-top { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .1rem .75rem; padding: .75rem 1rem .5rem; border-bottom: 1px solid var(--line-soft); }
 .fm-top h2 { margin: 0; font-size: 1.25rem; }
 .fm-summary { grid-column: 1; font-size: .85rem; }
@@ -581,3 +581,32 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 }
 /* landscape: the live tools wrap into a second column instead of running off the bottom of the image */
 @media (max-height: 520px) { .live-tools { flex-wrap: wrap; flex-direction: column; max-height: calc(100% - .8rem); align-content: flex-end; } }
+
+/* file manager: path bar, folder tree, thumbnails */
+.fm-crumbs { display: flex; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; scrollbar-width: none; align-items: center; gap: .15rem; padding: .35rem .6rem; border-bottom: 1px solid var(--line-soft); }
+.fm-crumbwrap { display: inline-flex; align-items: center; gap: .15rem; color: var(--muted); }
+.fm-crumb, .fm-up { min-height: var(--tap); padding: 0 .6rem; border: 0; background: transparent; color: var(--fg); font-weight: 650; border-radius: var(--radius); }
+.fm-crumb[aria-current='page'] { color: var(--accent, var(--fg)); text-decoration: underline; text-underline-offset: 4px; }
+.fm-up { border: 1.5px solid #565d69; background: var(--raised); min-width: var(--tap); padding: 0; }
+.fm-find { flex: 1 1 10rem; min-width: 8rem; min-height: var(--tap); }
+.fm-body { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.fm-tree { display: none; overflow-y: auto; border-right: 1px solid var(--line-soft); padding: .5rem .3rem; font-size: .9rem; }
+.fm-tnode { display: flex; align-items: center; }
+.fm-tnode.cur .fm-tname { background: rgba(255, 255, 255, .1); font-weight: 700; }
+.fm-tog, .fm-tname { min-height: 36px; border: 0; background: transparent; color: var(--fg); padding: 0 .35rem; text-align: left; border-radius: 6px; }
+.fm-tog { width: 28px; color: var(--muted); padding: 0; }
+.fm-tname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-open { display: inline-flex; align-items: center; gap: .35rem; min-height: var(--tap); padding: 0 .4rem; border: 0; background: transparent; color: var(--fg); font-weight: 700; font-size: 1rem; word-break: break-all; text-align: left; }
+.fm-ico { color: var(--muted); }
+.fm-thumb { width: 56px; height: 42px; object-fit: cover; background: #000; border-radius: 6px; flex: none; }
+.fm-tip { margin: .6rem 0 0; }
+button.tag.linkish { background: transparent; cursor: pointer; }
+button.linklike { background: none; border: 0; padding: 0; color: var(--info, #6cb4c4); text-decoration: underline; min-height: 0; font: inherit; }
+@media (min-width: 900px) { .fm-body { grid-template-columns: 15rem minmax(0, 1fr); } .fm-tree { display: block; } }
+.fm-row.nocheck { grid-template-columns: 1fr auto; }
+@media (max-width: 699px) { .fm-row.nocheck { grid-template-columns: 1fr; } .fm-row.nocheck .fm-actions { grid-column: 1; } .fm-crumb { padding: 0 .4rem; } .fm-name { align-self: center; } }
+.fm-row.hero { border: 1.5px solid var(--accent, #c4521a); border-radius: var(--radius); margin: .6rem 0; padding: .8rem .7rem; background: rgba(196, 82, 26, .08); }
+.fm-row.hero .fm-open { font-size: 1.2rem; }
+.fm-find { flex-basis: 100%; }
+.fm-big { flex-basis: 100%; margin: 0; }
+.fm-names { margin: 0 0 .3rem; word-break: break-all; font-weight: 650; }

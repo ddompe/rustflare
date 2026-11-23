@@ -282,7 +282,7 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
   const alt = planet ? planet.altitude_deg : sky?.altitude_deg
   const below = alt != null && alt < -1
   const low = alt != null && alt >= -1 && alt < 15
-  const go = () => run(async () => { await api('POST', '/mount/goto', { target: planet ? planet.id : 'sun', confirm: true, allow_unsynced_clock: clockBad, allow_below_horizon: below && !!planet }); setAsk(false) })
+  const go = () => run(async () => { await api('POST', '/mount/goto', { target: planet ? planet.id : 'sun', confirm: true, allow_unsynced_clock: clockBad, allow_below_horizon: false }); setAsk(false) })
   if (status.goto) return <div className="hint-text" role="status">Going to {bodies.find((b) => b.id === status.goto?.target)?.name ?? 'the Sun'} ({status.goto.phase}). STOP cancels.</div>
   const label = (b: { name: string; altitude_deg: number }) => `${b.name} · ${b.altitude_deg < -1 ? 'below horizon' : `${b.altitude_deg.toFixed(0)}° up`}`
   return (
@@ -295,23 +295,22 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
               {bodies.map((b) => <option key={b.id} value={b.id}>{label(b)}</option>)}
             </select>
           )}
-          <button type="button" className="wide primary" disabled={disabled || !status.site || (below && !planet)} onClick={() => setAsk(true)}>Go to {planet ? planet.name : 'Sun'}</button>
+          <button type="button" className="wide primary" disabled={disabled || !status.site || below} title={below ? `${planet ? planet.name : 'The Sun'} is below the horizon` : undefined} onClick={() => setAsk(true)}>Go to {planet ? planet.name : 'Sun'}</button>
         </>
       ) : (
         <div className="confirm" role="alertdialog" aria-label={`Go to ${name}`}>
           <p>The mount will slew to the position of {name} computed from your site and the Pi's clock, then start {planet ? (planet.id === 'moon' ? 'lunar' : 'sidereal') : 'solar'} tracking. Make sure the telescope and cables are clear.{planet ? ' The position is good to a few arcminutes: centre it by hand.' : ''}</p>
-          {below && <p className="warn">{name} is {Math.abs(alt!).toFixed(0)}° below the horizon: the telescope would point into the ground or the mount's limits.</p>}
           {low && <p className="warn">{name} is only {alt!.toFixed(0)}° up: expect trees, buildings and poor seeing.</p>}
           {clockBad && <p className="warn">The Pi's clock is not synchronised, so the position may be off.</p>}
           <div className="btnrow tight">
             <button type="button" className="grow" onClick={() => setAsk(false)}>Cancel</button>
-            <button type="button" className="danger grow" disabled={busy} onClick={go}>{below ? 'Go anyway' : `Go to ${planet ? planet.name : 'Sun'}`}</button>
+            <button type="button" className="danger grow" disabled={busy} onClick={go}>{`Go to ${planet ? planet.name : 'Sun'}`}</button>
           </div>
         </div>
       )}
       {!status.site && <div className="hint-text">Go to needs your site. {openMore ? <button type="button" className="linklike" onClick={() => openMore('site')}>Set the site</button> : 'Set it in More, Site.'}</div>}
-      {alt != null && !planet && sky && <div className="hint-text">Sun now: altitude {sky.altitude_deg.toFixed(1)}°, azimuth {sky.azimuth_deg.toFixed(0)}°{sky.altitude_deg < 0 ? ' (below the horizon)' : ''}</div>}
-      {planet && <div className="hint-text">{planet.name} now: altitude {planet.altitude_deg.toFixed(1)}°, azimuth {planet.azimuth_deg.toFixed(0)}°{below ? ' (below the horizon)' : ''}</div>}
+      {alt != null && !planet && sky && <div className="hint-text">Sun now: altitude {sky.altitude_deg.toFixed(1)}°, azimuth {sky.azimuth_deg.toFixed(0)}°{sky.altitude_deg < 0 ? ' (below the horizon: Go to is off until it rises)' : ''}</div>}
+      {planet && <div className="hint-text">{planet.name} now: altitude {planet.altitude_deg.toFixed(1)}°, azimuth {planet.azimuth_deg.toFixed(0)}°{below ? ' (below the horizon: Go to is off until it rises)' : ''}</div>}
       <ErrorLine error={err} />
     </div>
   )

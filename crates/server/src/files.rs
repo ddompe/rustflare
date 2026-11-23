@@ -138,6 +138,9 @@ pub fn delete(root: &Path, rel: &str) -> Result<u64, String> {
     if p.components().count() <= root.components().count() + 1 {
         return Err("choose a file inside a date folder".into());
     }
+    if rel == "stacks/manifest.json" {
+        return Err("this is the stacker's record of what it has done; deleting it would make it stack everything again".into());
+    }
     let md = std::fs::symlink_metadata(&p).map_err(|e| format!("{rel}: {e}"))?;
     let mut freed = 0;
     if md.is_dir() {

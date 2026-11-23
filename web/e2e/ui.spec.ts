@@ -5,6 +5,12 @@ import path from 'node:path'
 const post = (page: Page, path: string, body: unknown = {}) => page.request.post(`/api${path}`, { data: body })
 const put = (page: Page, path: string, body: unknown) => page.request.put(`/api${path}`, { data: body })
 
+/** Opens the newest day folder in the file manager (the top shows the days, stacks and logs). */
+async function openDay(fm: import('@playwright/test').Locator) {
+  await fm.locator('.fm-row[data-type="day"]').first().locator('.fm-open').click()
+  await expect(fm.locator('.fm-crumbs')).toContainText('›')
+}
+
 test.beforeEach(async ({ page }) => {
   await post(page, '/camera/close'); await post(page, '/mount/disconnect')
   await post(page, '/camera/open', { driver: 'simulator', id: 'sim0' })
@@ -55,7 +61,7 @@ test('Go to Sun: needs a site, asks for confirmation, ends with solar tracking o
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).mount.tracking, { timeout: 15_000 }).toBe(true)
 })
 
-test('Go to the Moon and planets: one target selector, a warning below the horizon, tracking at the right rate', async ({ page }) => {
+test('Go to the Moon and planets: one target selector, a greyed-out button below the horizon, tracking at the right rate', async ({ page }) => {
   await put(page, '/site', { latitude: 40, longitude: -105 })
   await page.goto('/')
   await page.getByRole('tab', { name: /^Aim/ }).click()
@@ -67,17 +73,18 @@ test('Go to the Moon and planets: one target selector, a warning below the horiz
   await expect(select.locator('option')).toHaveCount(5)
   for (const t of targets) {
     await select.selectOption(t.id)
-    await expect(page.getByRole('button', { name: `Go to ${t.name}` })).toBeEnabled()
-    await page.getByRole('button', { name: `Go to ${t.name}` }).click()
+    const goBtn = page.getByRole('button', { name: `Go to ${t.name}` })
+    // below the horizon: the button is greyed out and the page says why
+    if (t.altitude_deg < -1) {
+      await expect(goBtn).toBeDisabled()
+      await expect(page.getByText(/below the horizon: Go to is off/)).toBeVisible()
+      continue
+    }
+    await expect(goBtn).toBeEnabled()
+    await goBtn.click()
     const dialog = page.getByRole('alertdialog', { name: `Go to ${t.name}` })
     await expect(dialog).toBeVisible()
-    // below the horizon: a clear warning, and the button says what it is
-    if (t.altitude_deg < -1) {
-      await expect(dialog.getByText(/below the horizon/)).toBeVisible()
-      await expect(dialog.getByRole('button', { name: 'Go anyway' })).toBeVisible()
-    } else {
-      await expect(dialog.getByRole('button', { name: `Go to ${t.name}` })).toBeVisible()
-    }
+    await expect(dialog.getByRole('button', { name: `Go to ${t.name}` })).toBeVisible()
     await dialog.getByRole('button', { name: 'Cancel' }).click()
   }
   // the API: unknown targets are refused, below the horizon needs the explicit flag, and the mount tracks at the target's rate
@@ -105,13 +112,14 @@ test('record a short sequence, check it, delete it', async ({ page }) => {
   await page.getByRole('button', { name: /Open file manager/ }).click()
   const fm = page.getByRole('dialog', { name: 'File manager' })
   await expect(fm).toBeVisible()
+  await openDay(fm)
   const row = fm.locator('.fm-row', { hasText: 'e2e' })
   await expect(row).toHaveCount(1) // the .json notes file is not a row of its own
   await row.getByRole('button', { name: 'Check' }).click()
   await expect(row).toContainText('10/10 frames')
   await expect(row).not.toContainText('Mostly dark')
   await row.getByRole('checkbox').check()
-  await fm.getByRole('button', { name: /Delete 1 selected/ }).click()
+  await fm.getByRole('button', { name: /Delete 1 item/ }).click()
   await fm.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
   await expect(fm.locator('.fm-row', { hasText: 'e2e' })).toHaveCount(0)
   await page.keyboard.press('Escape')
@@ -168,7 +176,10 @@ test('HDR lanes record into one folder per lane', async ({ page }) => {
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
   await page.getByRole('tab', { name: /^Record/ }).click()
   await page.getByRole('button', { name: /Open file manager/ }).click()
-  await expect(page.getByRole('dialog', { name: 'File manager' })).toContainText('hdr_')
+  const fm = page.getByRole('dialog', { name: 'File manager' })
+  await openDay(fm)
+  await expect(fm).toContainText('hdr_')
+  await expect(fm.locator('.fm-row[data-type="hdr"]').first()).toContainText('HDR lanes')
 })
 
 test('the prominence recording with the coronagraph masks the disc in its lane only', async ({ page }) => {
@@ -182,9 +193,10 @@ test('the prominence recording with the coronagraph masks the disc in its lane o
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
   await page.getByRole('button', { name: /Open file manager/ }).click()
   const fm = page.getByRole('dialog', { name: 'File manager' })
-  await fm.getByLabel('Show').selectOption('prominence')
-  await expect(fm).toContainText('Prominence video')
-  await expect(fm).toContainText('2 lanes')
+  await openDay(fm)
+  await expect(fm.locator('.fm-row[data-type="prominence"]').first()).toContainText('Prominence video')
+  await fm.locator('.fm-row[data-type="prominence"]').first().locator('.fm-open').click()
+  await expect(fm.locator('.fm-row[data-type="lane"]')).toHaveCount(2)
 })
 
 test('focus assist scores the image, falls when defocused and keeps a best marker', async ({ page }) => {
@@ -419,4 +431,38 @@ test('After each burst: modes, a stacker that is not there is never quiet, notic
   await put(page, '/capture/after-burst', { mode: 'video' })
   const files = (await (await page.request.get('/api/files')).json()) as { files?: { path: string }[] }
   for (const f of files.files ?? []) if (f.path.includes('noticetest')) await page.request.delete(`/api/files/${f.path}`)
+})
+
+test('the file manager browses folders: stacks and a folder download are reachable', async ({ page }) => {
+  await page.goto('/')
+  await expect.poll(async () => (await post(page, '/capture/sequence', { name: 'fmnav', frames: 5, format: 'ser' })).text(), { timeout: 10_000 }).toContain('buffer_frames')
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 15_000 }).toBe('idle')
+  await page.getByRole('tab', { name: /^Record/ }).click()
+  await page.getByRole('button', { name: /Open file manager/ }).click()
+  const fm = page.getByRole('dialog', { name: 'File manager' })
+  await openDay(fm)
+  await expect(fm.locator('.fm-row', { hasText: 'fmnav' })).toHaveCount(1)
+  // the breadcrumb goes back to the top, and the filter narrows a folder
+  await fm.locator('.fm-crumbs').getByRole('button', { name: 'Drive', exact: true }).click()
+  await expect(fm.locator('.fm-row[data-type="day"]').first()).toBeVisible()
+  await openDay(fm)
+  await fm.getByLabel('Filter this folder by name').fill('no-such-name')
+  await expect(fm).toContainText('Nothing in this folder matches')
+  await fm.getByLabel('Filter this folder by name').fill('')
+  // the whole day as one tar: the server answers with a tar of the right size
+  const href = await fm.getByRole('link', { name: /Download this folder/ }).getAttribute('href')
+  const r = await page.request.get(href!)
+  expect(r.status()).toBe(200)
+  expect(r.headers()['content-type']).toBe('application/x-tar')
+  const body = await r.body()
+  expect(body.length).toBe(Number(r.headers()['content-length']))
+  expect(body.length % 512).toBe(0)
+  // the stacker's record of what it has done cannot be deleted
+  const del = await post(page, '/files/delete', { path: 'stacks/manifest.json', confirm: true })
+  expect(del.status()).toBe(400)
+  // clean up
+  await fm.locator('.fm-row', { hasText: 'fmnav' }).getByRole('checkbox').check()
+  await fm.getByRole('button', { name: /Delete 1 item/ }).click()
+  await fm.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
+  await expect(fm.locator('.fm-row', { hasText: 'fmnav' })).toHaveCount(0)
 })

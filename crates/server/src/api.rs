@@ -94,6 +94,8 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/darks/applied", put(darks_applied))
         .route("/api/datasheet/:kind", get(datasheet))
         .route("/api/files/stats", get(file_stats))
+        .route("/api/files/list", get(crate::browse::files_list))
+        .route("/api/files/archive", get(crate::browse::files_archive))
         .route("/api/files/delete", post(file_delete))
         .route("/api/optics", put(optics_put))
         .route("/api/startup", put(startup_put))

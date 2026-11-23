@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, Status } from '../api'
 import { ErrorLine } from './ui'
 import { useStorage } from './Storage'
 
-interface LaneInfo { name: string; size: number; files: { path: string; size: number }[] }
-interface FileEntry { path: string; size: number; modified: number | null; folder_files: number | null; kind?: 'hdr' | 'prominence' | null; lanes?: LaneInfo[] }
-const KIND_LABEL: Record<string, string> = { hdr: 'HDR lanes', prominence: 'Prominence video' }
+interface StackInfo { frames: number | null; kept: number | null; seconds: number | null; dark: boolean | null; flat: boolean | null }
+interface Entry {
+  name: string; path: string; dir: boolean; type: string; size: number; files: number; capped: boolean; modified: number | null
+  stack?: { output: string; info: StackInfo }; from?: { source: string; info: StackInfo }
+}
+interface Listing { path: string; entries: Entry[] }
 interface Stats {
   width: number; height: number; depth: number; frames: number; frames_present: number; complete: boolean
   fps: number | null; duration_s: number | null; mean_min: number; mean_avg: number; mean_max: number
@@ -13,81 +16,125 @@ interface Stats {
 }
 type StatsOrError = Stats | { error: string }
 
-const size = (b: number) => (b > 1e12 ? `${(b / 1e12).toFixed(2)} TB` : b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} kB`)
-const time = (s: number | null) => (s ? new Date(s * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')
-const isSer = (p: string) => p.toLowerCase().endsWith('.ser')
-const base = (p: string) => p.split('/').slice(1).join('/')
-const day = (p: string) => p.split('/')[0]
+const TYPE_LABEL: Record<string, string> = {
+  stacks: 'Stacked images', logs: 'Logs and debug', day: 'Day', hdr: 'HDR lanes', prominence: 'Prominence video', lane: 'Lane', folder: 'Folder',
+  recording: 'SER', stack: 'Stack', fits: 'FITS', image: 'Picture', notes: 'Notes', file: 'File',
+}
+const size = (b: number) => (b > 1e12 ? `${(b / 1e12).toFixed(2)} TB` : b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b > 0 ? `${Math.max(1, Math.round(b / 1e3))} kB` : '0 kB')
+const when = (s: number | null) => (s ? new Date(s * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '')
+const parentOf = (p: string) => p.split('/').slice(0, -1).join('/')
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
-/** The captures list without the .json notes files and the .ready markers (they travel with their capture). */
-function useFiles(refreshKey: unknown) {
-  const [all, setAll] = useState<FileEntry[]>([])
-  const load = () => api<FileEntry[]>('GET', '/files').then(setAll).catch(() => {})
-  useEffect(() => { load() }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
-  const files = all.filter((f) => !f.path.endsWith('.ready') && !(f.path.endsWith('.json') && all.some((o) => o.path !== f.path && o.path.startsWith(f.path.slice(0, -5)))))
-  return { files, load }
+function useListing(path: string, refreshKey: unknown, enabled = true) {
+  const [data, setData] = useState<Listing | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const load = useCallback(() => {
+    if (!enabled) { setLoading(false); return Promise.resolve() }
+    setLoading(true)
+    return api<Listing>('GET', `/files/list?path=${encodeURIComponent(path)}`)
+      .then((d) => { setData(d); setError(null) })
+      .catch((e) => { setData(null); setError(e instanceof Error ? e.message : String(e)) })
+      .finally(() => setLoading(false))
+  }, [path, enabled])
+  useEffect(() => { load() }, [load, refreshKey])
+  return { data, error, loading, load }
 }
 
 /** Record-tab entry point: a summary line and the button that opens the full-screen manager. */
 export function FileManagerButton({ status, onOpen }: { status: Status | null; onOpen: () => void }) {
-  const { files } = useFiles(status?.capture.last_file)
-  const total = files.reduce((a, f) => a + f.size, 0)
+  const { data } = useListing('', status?.capture.last_file)
+  const n = data?.entries.reduce((a, e) => a + e.files, 0) ?? 0
+  const total = data?.entries.reduce((a, e) => a + e.size, 0) ?? 0
   return (
     <button type="button" className="wide" onClick={onOpen}>
-      Open file manager · {files.length ? `${files.length} captures, ${size(total)}` : 'nothing captured yet'}
+      Open file manager · {n ? `${plural(n, 'file')}, ${size(total)}` : 'nothing captured yet'}
     </button>
   )
 }
 
-/** Full-screen file manager: browse by day, check recordings (brightness, timing, cut-offs), download, delete in bulk. */
+/** Folder tree for wide screens: the drive's folders, opened on demand. */
+function Tree({ cwd, go, refreshKey }: { cwd: string; go: (p: string) => void; refreshKey: unknown }) {
+  return <nav className="fm-tree" aria-label="Folders"><TreeNode path="" name="Drive" cwd={cwd} go={go} depth={0} refreshKey={refreshKey} /></nav>
+}
+function TreeNode({ path, name, cwd, go, depth, refreshKey }: { path: string; name: string; cwd: string; go: (p: string) => void; depth: number; refreshKey: unknown }) {
+  const onPath = cwd === path || cwd.startsWith(path ? path + '/' : '')
+  const [open, setOpen] = useState(depth === 0)
+  const expanded = open || onPath
+  const { data } = useListing(path, refreshKey, expanded)
+  const dirs = expanded && data && data.path === path ? data.entries.filter((e) => e.dir) : []
+  // `stacks` first, `logs` last, days newest first
+  dirs.sort((a, b) => rank(a) - rank(b) || (a.type === 'day' ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)))
+  return (
+    <div role="group">
+      <div className={`fm-tnode ${cwd === path ? 'cur' : ''}`} style={{ paddingLeft: `${depth * 0.9}rem` }}>
+        <button type="button" className="fm-tog" aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>{expanded ? '▾' : '▸'}</button>
+        <button type="button" className="fm-tname" aria-current={cwd === path ? 'page' : undefined} onClick={() => go(path)}>{name}</button>
+      </div>
+      {expanded && dirs.map((d) => <TreeNode key={d.path} path={d.path} name={d.name} cwd={cwd} go={go} depth={depth + 1} refreshKey={refreshKey} />)}
+    </div>
+  )
+}
+const rank = (e: Entry) => (e.type === 'stacks' ? 0 : e.type === 'logs' ? 2 : 1)
+
+/** Full-screen file manager: a breadcrumb path and one folder at a time (a folder tree beside it on wide screens). */
 export function FileManagerScreen({ status, onClose }: { status: Status | null; onClose: () => void }) {
   const busy = !!status && status.capture.state !== 'idle'
-  const { files, load } = useFiles(`${status?.capture.last_file}|${busy}`)
+  const [cwd, setCwd] = useState(() => sessionStorage.getItem('rf-fm-cwd') ?? '')
+  const refreshKey = `${status?.capture.last_file}|${busy}|${status?.after_burst?.stacked}`
+  const { data, error, loading, load } = useListing(cwd, refreshKey)
   const { data: storage } = useStorage()
   const [stats, setStats] = useState<Record<string, StatsOrError>>({})
   const [sel, setSel] = useState<Set<string>>(new Set())
-  const [sort, setSort] = useState<'new' | 'big' | 'name'>('new')
-  const [show, setShow] = useState<'all' | 'rec' | 'hdr' | 'prominence'>('all')
+  const [sort, setSort] = useState<'name' | 'new' | 'big'>('name')
+  const [q, setQ] = useState('')
   const [checking, setChecking] = useState(false)
   const [ask, setAsk] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  const go = (p: string) => { setCwd(p); setSel(new Set()); setAsk(false); setErr(null); setQ(''); sessionStorage.setItem('rf-fm-cwd', p); listRef.current?.scrollTo(0, 0) }
 
   useEffect(() => {
     closeRef.current?.focus()
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement)) onClose() }
     document.addEventListener('keydown', esc)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { document.removeEventListener('keydown', esc); document.body.style.overflow = prev }
   }, [onClose])
 
+  // a remembered folder that no longer exists (deleted, other drive): say so, and go back to the top
+  useEffect(() => { if (error && cwd) { setErr(`${cwd} is not on the drive any more: showing the top.`); setCwd(''); sessionStorage.removeItem('rf-fm-cwd') } }, [error, cwd])
+
+  const entries = data?.entries ?? []
+  const shown = useMemo(() => {
+    const f = entries.filter((e) => !q || e.name.toLowerCase().includes(q.toLowerCase()))
+    const dates = entries.filter((e) => e.dir).length > 0 && entries.filter((e) => e.dir).every((e) => /^\d{4}-\d\d-\d\d$/.test(e.name))
+    const by = (a: Entry, b: Entry) => (sort === 'big' ? b.size - a.size : sort === 'new' ? (b.modified ?? 0) - (a.modified ?? 0) : cwd === '' || (dates && a.dir && b.dir) ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name, undefined, { numeric: true }))
+    return f.sort((a, b) => (cwd === '' ? rank(a) - rank(b) : Number(b.dir) - Number(a.dir)) || by(a, b))
+  }, [entries, q, sort, cwd])
+
   const check = async (p: string) => {
     try { const s = await api<Stats>('GET', `/files/stats?path=${encodeURIComponent(p)}`); setStats((x) => ({ ...x, [p]: s })) }
     catch (e) { setStats((x) => ({ ...x, [p]: { error: e instanceof Error ? e.message : String(e) } })) }
   }
-  const checkAll = async () => { setChecking(true); for (const f of files.filter((f) => isSer(f.path))) await check(f.path); setChecking(false) }
+  const recs = shown.filter((e) => e.type === 'recording')
+  const checkAll = async () => { setChecking(true); for (const f of recs) await check(f.path); setChecking(false) }
   const toggle = (p: string) => setSel((s) => { const n = new Set(s); if (n.has(p)) n.delete(p); else n.add(p); return n })
-
-  const sorted = useMemo(() => {
-    const f = files.filter((x) => show === 'all' || (show === 'rec' ? !x.kind : x.kind === show))
-    if (sort === 'big') f.sort((a, b) => b.size - a.size)
-    else if (sort === 'name') f.sort((a, b) => a.path.localeCompare(b.path))
-    else f.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0))
-    return f
-  }, [files, sort, show])
-  const groups = useMemo(() => {
-    if (sort !== 'new' && sort !== 'name') return [['All captures', sorted] as [string, FileEntry[]]]
-    const m = new Map<string, FileEntry[]>()
-    for (const f of sorted) m.set(day(f.path), [...(m.get(day(f.path)) ?? []), f])
-    return [...m.entries()]
-  }, [sorted, sort])
-
-  const total = files.reduce((a, f) => a + f.size, 0)
-  const dark = files.filter((f) => { const s = stats[f.path]; return s && !('error' in s) && s.mostly_dark })
-  const cut = files.filter((f) => { const s = stats[f.path]; return s && !('error' in s) && !s.complete })
-  const selSize = files.filter((f) => sel.has(f.path)).reduce((a, f) => a + f.size, 0)
+  const okStat = (p: string) => { const s = stats[p]; return s && !('error' in s) ? s : undefined }
+  const dark = entries.filter((f) => okStat(f.path)?.mostly_dark)
+  const cut = entries.filter((f) => okStat(f.path) && !okStat(f.path)!.complete)
+  const selectable = shown.filter((e) => cwd !== '' || !['stacks', 'logs', 'day'].includes(e.type))
+  const selEntries = entries.filter((e) => sel.has(e.path))
+  const selSize = selEntries.reduce((a, f) => a + f.size, 0)
+  const selFiles = selEntries.reduce((a, f) => a + f.files, 0)
+  const total = entries.reduce((a, f) => a + f.size, 0)
   const free = storage?.current.free
+  const crumbs = cwd ? cwd.split('/') : []
+  const crumbsRef = useRef<HTMLElement>(null)
+  useEffect(() => { crumbsRef.current?.scrollTo({ left: 9999 }) }, [cwd])
 
   const del = async () => {
     setErr(null)
@@ -101,78 +148,84 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
     load()
   }
 
+  const row = (f: Entry) => {
+    const st = stats[f.path]
+    const s = okStat(f.path)
+    const info = f.from?.info ?? f.stack?.info
+    const protectedTop = cwd === '' && ['stacks', 'logs', 'day'].includes(f.type)
+    return (
+      <li key={f.path} className={`fm-row ${sel.has(f.path) ? 'sel' : ''} ${protectedTop ? 'nocheck' : ''} ${f.type === 'stacks' ? 'hero' : ''}`} data-type={f.type}>
+        {protectedTop ? null : <label className="fm-check"><input type="checkbox" checked={sel.has(f.path)} onChange={() => toggle(f.path)} aria-label={`Select ${f.name}`} /></label>}
+        <div className="fm-main">
+          <div className="fm-head">
+            {f.type === 'stack' && <img className="fm-thumb" loading="lazy" alt="" src={`/api/stack/thumb/${f.path.replace(/^stacks\//, '')}`} />}
+            {f.dir
+              ? <button type="button" className="fm-open" onClick={() => go(f.path)}><span className="fm-ico" aria-hidden="true">▸</span>{f.type === 'stacks' ? 'Stacked images' : f.name}</button>
+              : <span className="fm-name">{f.name}</span>}
+            {!['stack', 'recording', 'notes', 'file', 'image', 'fits', 'folder', 'day'].includes(f.type) && <span className="tag">{TYPE_LABEL[f.type] ?? f.type}</span>}
+            {f.stack && <button type="button" className="tag ok linkish" onClick={() => go(parentOf(f.stack!.output))}>Stacked ✓ show</button>}
+            {s?.mostly_dark && <span className="tag warn" title={`${Math.round(s.dark_fraction * 100)}% of sampled frames are dark`}>Mostly dark</span>}
+            {s && !s.complete && <span className="tag warn" title="The file ends early: the recording was cut off">Incomplete</span>}
+          </div>
+          <div className="muted fm-sub">
+            {f.type === 'stacks' && <>Your finished stacks, by day · </>}{when(f.modified)}{f.modified ? ' · ' : ''}{f.dir ? `${plural(f.files, 'file')} · ` : ''}{f.capped ? 'at least ' : ''}{size(f.size)}
+            {f.type === 'stack' && info && <> · best {info.kept} of {info.frames} frames{info.seconds ? ` · stacked in ${info.seconds.toFixed(0)} s` : ''}{info.dark || info.flat ? ` · ${[info.dark && 'dark', info.flat && 'flat'].filter(Boolean).join(' + ')} applied` : ' · no dark or flat'}</>}
+            {s && <> · {s.width}×{s.height} · {s.depth}-bit · {s.frames_present}/{s.frames} frames{s.fps ? ` · ${s.fps.toFixed(1)} fps` : ''}{s.duration_s ? ` · ${s.duration_s.toFixed(1)} s` : ''} · brightness {Math.round(s.mean_avg * 100)}% (min {Math.round(s.mean_min * 100)}, max {Math.round(s.mean_max * 100)})</>}
+            {st && 'error' in st && <> · {st.error}</>}
+          </div>
+          {f.from && <div className="muted fm-sub">From <button type="button" className="linklike" onClick={() => go(parentOf(f.from!.source))}>{f.from.source.split('/').pop()}</button></div>}
+        </div>
+        <div className="fm-actions">
+          {f.type === 'recording' && <button type="button" className="small" onClick={() => check(f.path)}>{st ? 'Re-check' : 'Check'}</button>}
+          {f.dir
+            ? (f.files === 0 ? <span className="muted">Empty</span> : <a className="btn small" href={`/api/files/archive?path=${encodeURIComponent(f.path)}`} download aria-label={`Download ${f.name} as one .tar file, ${size(f.size)}`}>Download all · {size(f.size)}</a>)
+            : <a className="btn small" href={`/files/${f.path}`} download>Download</a>}
+        </div>
+      </li>
+    )
+  }
+
   return (
     <div className="fm-screen" role="dialog" aria-modal="true" aria-label="File manager">
       <header className="fm-top">
-        <h2>Captures</h2>
+        <h2>Files</h2>
         <div className="fm-summary muted">
-          {files.length} files · {size(total)}{free != null ? ` · ${size(free)} free` : ''}
+          {loading && !data ? 'Loading…' : <>{plural(entries.length, 'item')} · {size(total)}{free != null ? ` · ${size(free)} free on the drive` : ''}</>}
           {dark.length > 0 && <> · <b className="warn-text">{dark.length} mostly dark</b></>}
           {cut.length > 0 && <> · <b className="warn-text">{cut.length} incomplete</b></>}
         </div>
         <button ref={closeRef} type="button" className="fm-close" onClick={onClose} aria-label="Close file manager">✕</button>
       </header>
 
+      <nav className="fm-crumbs" aria-label="Folder path" ref={crumbsRef}>
+        {cwd && <button type="button" className="fm-up" onClick={() => go(parentOf(cwd))} aria-label="Up one folder">↑</button>}
+        <button type="button" className="fm-crumb" aria-current={cwd === '' ? 'page' : undefined} onClick={() => go('')}>Drive</button>
+        {crumbs.map((c, i) => {
+          const p = crumbs.slice(0, i + 1).join('/')
+          return <span key={p} className="fm-crumbwrap"><span aria-hidden="true">›</span><button type="button" className="fm-crumb" aria-current={i === crumbs.length - 1 ? 'page' : undefined} onClick={() => go(p)}>{c}</button></span>
+        })}
+      </nav>
+
       <div className="fm-bar">
-        <button type="button" disabled={checking || busy || !files.some((f) => isSer(f.path))} onClick={checkAll}>{checking ? 'Checking…' : 'Check recordings'}</button>
-        <button type="button" onClick={() => setSel(sel.size === files.length ? new Set() : new Set(files.map((f) => f.path)))}>{sel.size === files.length && files.length > 0 ? 'Select none' : 'Select all'}</button>
-        {dark.length > 0 && <button type="button" onClick={() => setSel(new Set(dark.map((f) => f.path)))}>Select dark ({dark.length})</button>}
-        <label className="fm-sort">Show <select value={show} onChange={(e) => setShow(e.target.value as typeof show)}>
-          <option value="all">Everything</option><option value="rec">Recordings</option><option value="hdr">HDR lanes</option><option value="prominence">Prominence video</option>
-        </select></label>
+        <input type="search" className="fm-find" placeholder="Filter this folder" aria-label="Filter this folder by name" value={q} onChange={(e) => setQ(e.target.value)} />
         <label className="fm-sort">Sort <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
-          <option value="new">Newest first</option><option value="big">Largest first</option><option value="name">Name</option>
+          <option value="name">Name</option><option value="new">Newest first</option><option value="big">Largest first</option>
         </select></label>
+        <button type="button" disabled={selectable.length === 0} onClick={() => setSel(sel.size === selectable.length ? new Set() : new Set(selectable.map((f) => f.path)))}>{sel.size === selectable.length && sel.size > 0 ? 'Select none' : 'Select all'}</button>
+        {recs.length > 0 && <button type="button" disabled={checking || busy} onClick={checkAll}>{checking ? 'Checking…' : `Check ${plural(recs.length, 'recording')}`}</button>}
+        {total > 1e9 && cwd !== '' && <div className="hint-text fm-big">{size(total)} is a long download over Wi-Fi: keep this tab open until it finishes. The file is a .tar, which opens by double-click on a Mac or PC.</div>}
+        {dark.length > 0 && <button type="button" onClick={() => setSel(new Set(dark.map((f) => f.path)))}>Select dark ({dark.length})</button>}
+        {cwd !== '' && total > 0 && <a className="btn" href={`/api/files/archive?path=${encodeURIComponent(cwd)}`} download>Download this folder · {size(total)}</a>}
       </div>
 
-      <div className="fm-list">
-        {files.length === 0 && <div className="empty">Nothing captured yet. Record something in the Record tab and it appears here.</div>}
-        {groups.map(([g, items]) => (
-          <section key={g}>
-            <h3 className="fm-day">{g} <span className="muted">· {items.length} · {size(items.reduce((a, f) => a + f.size, 0))}</span></h3>
-            <ul className="fm">
-              {items.map((f) => {
-                const st = stats[f.path]
-                const s = st && !('error' in st) ? st : undefined
-                return (
-                  <li key={f.path} className={`fm-row ${sel.has(f.path) ? 'sel' : ''}`}>
-                    <label className="fm-check"><input type="checkbox" checked={sel.has(f.path)} onChange={() => toggle(f.path)} aria-label={`Select ${f.path}`} /></label>
-                    <div className="fm-main">
-                      <div className="fm-head">
-                        <span className="fm-name">{sort === 'big' ? f.path : base(f.path)}{f.folder_files != null ? '/' : ''}</span>
-                        {f.kind && <span className="tag">{KIND_LABEL[f.kind]}</span>}
-                        {s?.mostly_dark && <span className="tag warn" title={`${Math.round(s.dark_fraction * 100)}% of sampled frames are dark`}>Mostly dark</span>}
-                        {s && !s.complete && <span className="tag warn" title="The file ends early: the recording was cut off">Incomplete</span>}
-                      </div>
-                      <div className="muted fm-sub">
-                        {time(f.modified)}{f.modified ? ' · ' : ''}{f.folder_files != null ? `${f.folder_files} frames · ` : ''}{size(f.size)}
-                        {s && <> · {s.width}×{s.height} · {s.depth}-bit · {s.frames_present}/{s.frames} frames{s.fps ? ` · ${s.fps.toFixed(1)} fps` : ''}{s.duration_s ? ` · ${s.duration_s.toFixed(1)} s` : ''} · brightness {Math.round(s.mean_avg * 100)}% (min {Math.round(s.mean_min * 100)}, max {Math.round(s.mean_max * 100)})</>}
-                        {st && 'error' in st && <> · {st.error}</>}
-                      </div>
-                      {f.lanes && f.lanes.length > 0 && (
-                        <details className="fm-lanes">
-                          <summary>{f.lanes.length} lanes: {f.lanes.map((l) => `${l.name} ${l.files.length}`).join(' · ')}</summary>
-                          {f.lanes.map((l) => (
-                            <div key={l.name} className="fm-lane">
-                              <b>{l.name}</b> <span className="muted">{l.files.length} recordings · {size(l.size)}</span>
-                              <ul>{l.files.map((x) => (
-                                <li key={x.path}>{x.path.split('/').pop()} <span className="muted">{size(x.size)}</span> <a href={`/files/${x.path}`} download>Download</a>{isSer(x.path) && <> <button type="button" className="small" onClick={() => check(x.path)}>Check</button></>}{stats[x.path] && ('error' in stats[x.path] ? <span className="muted"> {(stats[x.path] as { error: string }).error}</span> : <span className="muted"> {(stats[x.path] as Stats).frames_present}/{(stats[x.path] as Stats).frames} frames · brightness {Math.round((stats[x.path] as Stats).mean_avg * 100)}%</span>)}</li>
-                              ))}</ul>
-                            </div>
-                          ))}
-                        </details>
-                      )}
-                    </div>
-                    <div className="fm-actions">
-                      {isSer(f.path) && <button type="button" className="small" onClick={() => check(f.path)}>{st ? 'Re-check' : 'Check'}</button>}
-                      {f.folder_files == null && <a className="btn small" href={`/files/${f.path}`} download>Download</a>}
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          </section>
-        ))}
+      <div className="fm-body">
+        <Tree cwd={cwd} go={go} refreshKey={refreshKey} />
+        <div className="fm-list" ref={listRef}>
+          {cwd === '' && entries.length === 0 && !loading && <div className="empty">Nothing captured yet. Record something in the Record tab and it appears here.</div>}
+          {cwd !== '' && entries.length === 0 && !loading && !error && <div className="empty">This folder is empty.</div>}
+          {q && shown.length === 0 && entries.length > 0 && <div className="empty">Nothing in this folder matches “{q}”.</div>}
+          <ul className="fm">{shown.map(row)}</ul>
+        </div>
       </div>
 
       <footer className="fm-foot">
@@ -180,11 +233,13 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
         {busy && <div className="hint-text">Deleting is disabled while recording or writing.</div>}
         {!ask ? (
           <button type="button" className="danger wide" disabled={sel.size === 0 || busy} onClick={() => setAsk(true)}>
-            {sel.size === 0 ? 'Select captures to delete' : `Delete ${sel.size} selected (${size(selSize)})…`}
+            {sel.size === 0 ? 'Select items to delete' : `Delete ${plural(sel.size, 'item')} (${size(selSize)})…`}
           </button>
         ) : (
           <div className="confirm" role="alertdialog" aria-label="Confirm delete">
-            <p>Delete {sel.size} capture{sel.size === 1 ? '' : 's'} ({size(selSize)}) permanently?</p>
+            <p className="fm-names">{selEntries.slice(0, 3).map((e) => e.name).join(', ')}{selEntries.length > 3 ? ` and ${selEntries.length - 3} more` : ''}</p>
+            {selEntries.some((e) => e.type === 'recording' && !e.stack) && <p className="warn">{plural(selEntries.filter((e) => e.type === 'recording' && !e.stack).length, 'recording')} {selEntries.filter((e) => e.type === 'recording' && !e.stack).length === 1 ? 'has' : 'have'} not been stacked: the raw data is gone for good.</p>}
+            <p>Delete {plural(sel.size, 'item')}{selFiles > sel.size ? `, ${plural(selFiles, 'file')} in all,` : ''} ({size(selSize)}) permanently?</p>
             <div className="btnrow tight">
               <button type="button" className="grow" onClick={() => setAsk(false)}>Keep</button>
               <button type="button" className="danger grow" onClick={del}>Delete</button>

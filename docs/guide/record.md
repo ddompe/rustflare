@@ -43,13 +43,16 @@ The buffer size (default 1 GB) is set here. The panel shows whether a burst fits
 
 These are captured from the [Camera tab](camera.md#flats). Recordings always stay raw.
 
-## Captures (file manager)
+## Files (file manager)
 
-**Captures** lists what you recorded, by day.
+**Files** shows the whole drive one folder at a time. The path across the top (**Drive › stacks › 2026-11-22**) takes you back up; on a wide screen a folder tree sits beside the list.
 
-- **Check** reads a recording's header and samples frames: size, frame count, measured fps, duration and brightness. It flags **Mostly dark** (cap left on, or the Sun out of view) and **Incomplete** (cut off).
-- **Download** and **Delete** work per capture. Delete asks for confirmation and removes the notes file too.
-- You can check or delete several at once.
+- **Where things are:** each day's recordings are in a folder named for the day. Finished stacks are in **stacks**, grouped by the day of their recording, with a thumbnail, how many frames were kept and whether a dark or flat was applied. Logs and debug files are in **logs**.
+- **Recording ↔ stack:** a recording that has been stacked shows **Stacked ✓ show**, which jumps to its stack. A stack says which recording it came from.
+- **Download .tar** on a folder (or **Download this folder** in the bar) gives you everything in it as one file that macOS, Windows and Linux open directly. It is streamed from the Pi, so nothing extra is written to the drive. Folders other than `stacks` are refused while a recording is running.
+- **Check** reads a recording's header and samples frames: size, frame count, measured fps, duration and brightness. It flags **Mostly dark** (cap left on, or the Sun out of view) and **Incomplete** (cut off). **Check recordings** does every recording in the folder.
+- **Filter** narrows the folder by name; **Sort** by name, newest or largest.
+- **Delete** works on files and folders (several at once) and asks first, with the number of files and the size. It removes the notes file too. The day folders, `stacks` and `logs` themselves, and the stacker's `manifest.json`, cannot be deleted. Deleting a stack does not make the stacker redo it.
 
 ## Safe eject
 
