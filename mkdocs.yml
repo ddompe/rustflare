@@ -53,6 +53,7 @@ nav:
       - Hardware verification checklist: project/hardware-checklist.md
       - Field report 2026-11-22: project/field-report-2026-11-22.md
       - Proposal, on-board stacker: project/proposal-onboard-stacking.md
+      - Design, recording modes and their UI: project/design-recording-modes.md
       - Stacker telemetry run 2026-11-22: project/stacker-telemetry-run-2026-11-22.md
       - Spike, NEON and GPU 2026-11-22: project/stacker-simd-gpu-spike-2026-11-22.md
       - Performance audit: project/performance-audit.md
