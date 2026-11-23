@@ -5,10 +5,16 @@
 //! exists only once committed, so a crash in the middle of a frame leaves nothing half-visible. Consumers register in the shared
 //! header with a read cursor and a heartbeat, so everything needed to carry on after a process dies is in the shared memory.
 //!
-//! * A *must-not-lose* consumer (the raw writer) holds the producer back: a slot is reused only once every such consumer is past it.
-//! * A *best-effort* consumer (preview, debugging taps) never holds anything back and can be lapped; it resynchronises.
+//! **Capture never waits for a consumer.** The producer wraps around; a consumer that is slow, stalled or dead is the one that has to
+//! catch up (and loses what was overwritten). The single exception is a consumer that asks to be *must-not-lose*, which holds the
+//! producer back: only the raw writer in the "wait for the disk" mode does (a slot is reused only once every such consumer is past it).
+//!
+//! * A *best-effort* consumer (the stacker, preview, debugging taps) never holds anything back and can be lapped; it resynchronises or
+//!   discards the work it was doing.
 //! * A consumer can *pin* a sequence number to read from there on in place, in any order, as often as it likes (the stacker reading a
-//!   burst), until it releases.
+//!   burst). For a best-effort consumer the pin is advisory: it marks what the consumer is working on (visible in `consumers()`), and
+//!   `frame_at` / `FrameRef::still_valid` tell it whether a frame was overwritten. `frames_until_overwritten` says how much time a
+//!   burst has left.
 //!
 //! All the `unsafe` is in this file and `map.rs`; the API is safe.
 
@@ -190,6 +196,12 @@ impl Ring {
 
     /// Sequence number of the newest committed frame (0 if none yet).
     pub fn newest(&self) -> u64 { self.header().write_seq.load(Ordering::Acquire) }
+
+    /// How many more frames can be committed before frame `seq` is overwritten (0 if it already has been): the time a burst has left
+    /// is this divided by the frame rate. Used to decide whether a burst can be stacked from memory before its first frames go.
+    pub fn frames_until_overwritten(&self, seq: u64) -> u64 {
+        (seq + self.n_slots).saturating_sub(self.newest() + 1)
+    }
 
     /// The oldest sequence number that may still be in its slot.
     pub fn oldest_possible(&self) -> u64 { self.newest().saturating_sub(self.n_slots - 1).max(1) }
@@ -449,8 +461,9 @@ impl Consumer {
         if seq > c.read_seq.load(Ordering::Relaxed) { c.read_seq.store(seq, Ordering::Release); }
     }
 
-    /// Keeps frames from `from_seq` on in the ring (the producer will not reuse their slots) until `unpin`, whatever the cursor says.
-    /// Returns false if `from_seq` has already been overwritten.
+    /// Marks `from_seq` on as the range this consumer is working on until `unpin`, whatever the cursor says. For a must-not-lose consumer
+    /// the producer will not reuse those slots; for a best-effort one it is advisory (see the module notes). Returns false if `from_seq`
+    /// has already been overwritten.
     pub fn pin(&self, from_seq: u64) -> bool {
         let c = self.entry();
         c.pin_seq.store(from_seq, Ordering::SeqCst);

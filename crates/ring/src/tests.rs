@@ -77,7 +77,7 @@ fn an_uncommitted_slot_is_invisible_and_a_new_producer_carries_on_numbering() {
     let mut p = ring.become_producer();
     for i in 1..=3 { p.push(&frame(i), meta(i)).unwrap(); }
     {
-        let mut w = p.begin().unwrap(); // the producer "dies" in the middle of frame 4
+        let w = p.begin().unwrap(); // the producer "dies" in the middle of frame 4
         w.data[..8].copy_from_slice(&[9; 8]);
     }
     let mut c = ring.attach_consumer("reader", true, true).unwrap();
@@ -182,4 +182,34 @@ fn a_lapped_reader_can_tell_that_the_frame_it_read_was_overwritten() {
     assert!(f.still_valid());
     for i in 5..=8 { p.push(&frame(i), meta(i)).unwrap(); } // laps the whole ring while the reader holds frame 1
     assert!(!f.still_valid());
+}
+
+#[test]
+fn an_advisory_pin_never_holds_the_producer_back_and_the_reader_notices_being_overwritten() {
+    let (ring, _fd) = Ring::create(geo(), 4).unwrap();
+    let mut p = ring.become_producer();
+    let stacker = ring.attach_consumer("stacker", false, false).unwrap(); // best effort
+    for i in 1..=4 { p.push(&frame(i), meta(i)).unwrap(); }
+    assert!(stacker.pin(1));
+    assert_eq!(ring.frames_until_overwritten(1), 0 + 4 - 4, "four slots, four frames in: the next frame reuses slot 1");
+    // the camera does not wait: it wraps over the burst the stacker was reading
+    for i in 5..=8 { assert_eq!(p.push(&frame(i), meta(i)).unwrap(), i); }
+    assert!(stacker.frame_at(1).is_none() && stacker.frame_at(4).is_none(), "frames 1 to 4 are gone");
+    assert_eq!(stacker.frame_at(6).unwrap().data, &frame(6)[..]);
+    // the pin is still visible to status and telemetry
+    assert_eq!(ring.consumers()[0].pin_seq, 1);
+    assert!(!stacker.pin(2), "and a pin on an overwritten frame is refused");
+}
+
+#[test]
+fn the_time_a_burst_has_left_is_the_frames_that_can_still_be_committed() {
+    let (ring, _fd) = Ring::create(geo(), 8).unwrap();
+    let mut p = ring.become_producer();
+    for i in 1..=3 { p.push(&frame(i), meta(i)).unwrap(); }
+    // frame 1 is overwritten by frame 9: frames 4 to 8 can still be committed first
+    assert_eq!(ring.frames_until_overwritten(1), 5);
+    assert_eq!(ring.frames_until_overwritten(3), 7);
+    for i in 4..=10 { p.push(&frame(i), meta(i)).unwrap(); }
+    assert_eq!(ring.frames_until_overwritten(1), 0, "already overwritten");
+    assert_eq!(ring.frames_until_overwritten(10), 7);
 }
