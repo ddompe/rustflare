@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, Status, StorageInfo, reportError } from '../api'
-import { ErrorLine, useAction } from './ui'
+import { ErrorLine, Switch, useAction } from './ui'
 
 const gb = (b: number | null) => (b == null ? '?' : b >= 1e12 ? `${(b / 1e12).toFixed(2)} TB` : `${(b / 1e9).toFixed(b >= 1e10 ? 0 : 1)} GB`)
 
@@ -101,6 +101,9 @@ export function StorageSettings({ status }: { status: Status | null }) {
       )}
       {ejected && <div className="hint-text" role="status">{ejected}</div>}
       {busy && <div className="hint-text">Can't change or eject storage while capturing or writing.</div>}
+      <Switch label="Write recordings directly to the drive" checked={!!status?.capture.direct_io?.wanted} disabled={busy} onChange={(v) => run(async () => { await api('PUT', '/capture/direct-io', { enabled: v }) })}
+        hint="Skips the Linux page cache, which can fill memory with frames waiting for a slow USB stick and make the camera stall at full frame rate. Try it if the event log shows frame_gap events; some sticks write slower this way. Takes effect with the next recording." />
+      {status?.capture.direct_io?.problem && <div className="warn-text" role="status">Not used for the last recording: {status.capture.direct_io.problem}</div>}
       <div className="hint-text">Captures go in a <code>rustflare</code> folder on the chosen drive. The choice is remembered.</div>
       <ErrorLine error={err} />
     </div>

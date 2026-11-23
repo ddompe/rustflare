@@ -9,7 +9,7 @@ pub mod sink;
 pub mod still;
 
 pub use flats::{DarkFrame, FlatAccumulator, FlatDecision, FlatField, FlatSetting, FlatTarget, SharedFlat};
-pub use ser::SerWriter;
+pub use ser::{direct_io, direct_io_supported, set_direct_io, SerWriter};
 pub use sink::{BurstSpec, Finished, Format, FrameSink, Resolution};
 pub use still::{read_png, write_png, write_png_rgb};
 pub use fits::{write_fits, FitsMeta};

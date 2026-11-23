@@ -60,6 +60,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/capture/lanes", post(capture_lanes))
         .route("/api/capture/buffer", put(capture_buffer))
         .route("/api/capture/after-burst", put(capture_after_burst))
+        .route("/api/capture/direct-io", put(capture_direct_io))
         .route("/api/notices/ack", post(notices_ack))
         .route("/api/capture/flats", post(capture_flats))
         .route("/api/capture/prominence", post(capture_prominence))
@@ -245,6 +246,13 @@ async fn capture_bursts(s: State<AppState>, Json(b): Json<Bursts>) -> Res {
 
 async fn capture_after_burst(s: State<AppState>, Json(b): Json<serde_json::Value>) -> Res {
     run(s, Command::SetAfterBurst { patch: b }).await
+}
+
+#[derive(Deserialize)]
+struct DirectIoBody { enabled: bool }
+/// Write recordings with O_DIRECT instead of through the page cache (refused if the drive does not allow it).
+async fn capture_direct_io(s: State<AppState>, Json(b): Json<DirectIoBody>) -> Res {
+    run(s, Command::SetDirectIo { enabled: b.enabled }).await
 }
 
 #[derive(Deserialize)]

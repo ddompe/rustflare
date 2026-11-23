@@ -90,6 +90,15 @@ pub struct GuidingStatus {
     pub dead_reckoning: bool,
 }
 
+#[derive(Clone, Default, Serialize)]
+pub struct DirectIoStatus {
+    /// The setting.
+    pub wanted: bool,
+    /// Used for the recording that is running or was last started.
+    pub active: bool,
+    pub problem: Option<String>,
+}
+
 #[derive(Clone, Serialize)]
 pub struct CaptureStatus {
     /// "idle" | "single" | "sequence" | "flats"
@@ -122,6 +131,8 @@ pub struct CaptureStatus {
     pub frames_lost: Option<String>,
     /// Seconds until the running recording ends, as far as can be told (None: it runs until stopped).
     pub eta_s: Option<f64>,
+    /// Direct writes (O_DIRECT) for recordings: the setting, and whether the last recording used them.
+    pub direct_io: DirectIoStatus,
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -387,7 +398,7 @@ impl Default for Status {
             mount: None,
             tracking: None,
             guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None, held: false, dead_reckoning: false },
-            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0, paused: false, paused_reason: None, stopped_early: None, frames_lost: None, eta_s: None },
+            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0, paused: false, paused_reason: None, stopped_early: None, frames_lost: None, eta_s: None, direct_io: DirectIoStatus::default() },
             after_burst: AfterBurstStatus::default(),
             notices: Vec::new(),
             error: None,

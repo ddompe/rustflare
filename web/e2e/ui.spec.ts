@@ -541,3 +541,25 @@ test('stacks show as thumbnails with a preview, and a selection downloads as one
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('direct writes can be switched on, are used for a recording, and the file is a valid SER', async ({ page }) => {
+  const sw = await put(page, '/capture/direct-io', { enabled: true })
+  test.skip(sw.status() === 400, 'this filesystem does not allow O_DIRECT')
+  expect(sw.status()).toBe(200)
+  try {
+    await expect.poll(async () => (await post(page, '/capture/sequence', { name: 'directio', frames: 12, format: 'ser' })).text(), { timeout: 10_000 }).toContain('buffer_frames')
+    await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 15_000 }).toBe('idle')
+    const st = (await (await page.request.get('/api/status')).json()).capture.direct_io
+    expect(st.wanted && st.active).toBe(true)
+    const files = (await (await page.request.get('/api/files/list?path=')).json()).entries as { name: string }[]
+    const day = files.filter((e) => /^\d{4}-/.test(e.name)).map((e) => e.name).sort().pop()!
+    const list = (await (await page.request.get(`/api/files/list?path=${day}`)).json()).entries as { name: string; path: string }[]
+    const ser = list.find((e) => e.name.includes('directio') && e.name.endsWith('.ser'))!
+    const stats = await (await page.request.get(`/api/files/stats?path=${encodeURIComponent(ser.path)}`)).json()
+    expect(stats.frames_present).toBe(12)
+    expect(stats.complete).toBe(true)
+    await post(page, '/files/delete', { path: ser.path, confirm: true })
+  } finally {
+    await put(page, '/capture/direct-io', { enabled: false })
+  }
+})

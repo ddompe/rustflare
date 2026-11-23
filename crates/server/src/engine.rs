@@ -183,6 +183,8 @@ pub enum Command {
     CaptureBursts { name: Option<String>, frames: Option<u32>, seconds: Option<f64>, interval_s: Option<f64>, bursts: Option<u32>, format: Option<String>, on_full: Option<String>, home_when_done: bool },
     SetBuffer { mb: u64 },
     SetAfterBurst { patch: Value },
+    /// Write recordings with O_DIRECT (skipping the page cache) instead of through it; see `rustflare_capture::set_direct_io`.
+    SetDirectIo { enabled: bool },
     AckNotices { id: Option<u64> },
     /// Reconnect the last camera and mount automatically at startup (and after a camera error).
     SetStartup { enabled: bool },
@@ -437,6 +439,8 @@ pub struct Engine {
     close_when_stacked: bool,
     bridge: Bridge,
     after: AfterBurst,
+    /// The user's choice of direct writes (saved); whether it is in use is decided per recording against the drive.
+    direct_io: bool,
     stack_jobs: std::collections::HashMap<u64, StackJob>,
     job_no: u64,
     sink_counter: u64,
@@ -575,6 +579,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         draining_no: 0,
         close_when_stacked: false,
         bridge: Bridge::start(&storage.config_file().with_file_name("stack.sock")),
+        direct_io: crate::config::read(storage.config_file()).get("direct_io").and_then(|v| v.as_bool()).unwrap_or(false),
         after: AfterBurst::load(&crate::config::read(storage.config_file()).get("after_burst").cloned().unwrap_or(Value::Null)),
         stack_jobs: Default::default(),
         job_no: 0,
@@ -1181,6 +1186,7 @@ impl Engine {
         {
             let c = self.corona.lock().unwrap();
             self.status.coronagraph = CoronagraphStatus { enabled: c.enabled, scale: c.scale };
+            self.status.capture.direct_io.wanted = self.direct_io;
             let col = self.colour.lock().unwrap();
             self.status.colour = ColourStatus { mode: col.mode, r: col.r, b: col.b, applied: col.applied };
         }
@@ -1861,6 +1867,16 @@ impl Engine {
                 self.status.capture.bursts_total = total;
                 Ok(json!({ "lanes": n_lanes, "buffer_frames": cap }))
             }
+            Command::SetDirectIo { enabled } => {
+                if enabled {
+                    let dir = self.storage.dir();
+                    rustflare_capture::direct_io_supported(&dir).map_err(|e| format!("this drive does not allow direct writes: {e}"))?;
+                }
+                self.direct_io = enabled;
+                crate::config::set(self.storage.config_file(), "direct_io", json!(enabled))?;
+                self.status.capture.direct_io = self.direct_io_state(None);
+                Ok(json!({ "direct_io": self.status.capture.direct_io }))
+            }
             Command::SetAfterBurst { patch } => {
                 let mut a = self.after.clone();
                 if let Some(m) = patch["mode"].as_str() {
@@ -2077,12 +2093,24 @@ impl Engine {
     fn data_dir(&self) -> PathBuf {
         self.storage.dir()
     }
-    fn require_capture_ready(&self) -> Result<(), String> {
+    fn require_capture_ready(&mut self) -> Result<(), String> {
         if self.camera.is_none() {
             return Err("no camera open".into());
         }
         self.require_idle()?;
-        self.storage.ensure_ready().map(|_| ())
+        let dir = self.storage.ensure_ready()?;
+        // direct writes, if wanted and if this drive allows them; if not, the normal way, said out loud
+        let problem = if self.direct_io { rustflare_capture::direct_io_supported(&dir).err() } else { None };
+        rustflare_capture::set_direct_io(self.direct_io && problem.is_none());
+        if let Some(p) = &problem {
+            self.event("direct_io_unavailable", json!({ "why": p }));
+            self.notice("warning", format!("Direct writes are switched on but this drive does not allow them ({p}): recording the normal way, through the page cache."));
+        }
+        self.status.capture.direct_io = self.direct_io_state(problem);
+        Ok(())
+    }
+    fn direct_io_state(&self, problem: Option<String>) -> DirectIoStatus {
+        DirectIoStatus { wanted: self.direct_io, active: self.direct_io && problem.is_none(), problem }
     }
     fn require_ready_to_guide(&self, need_cal: bool) -> Result<(), String> {
         self.require_not_parked()?;
