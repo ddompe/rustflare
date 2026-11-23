@@ -130,7 +130,11 @@ function StatusBar({ status, connected }: { status: Status | null; connected: bo
   const held = !!status?.guiding?.held
   let tone: 'bad' | 'warn' | '' = ''
   let text = ''
+  // things the user has to know about stay until dismissed, newest first
+  const notices = (status?.notices ?? []).filter((n) => !n.acked).reverse()
+  const dismiss = (id?: number) => api('POST', '/notices/ack', id === undefined ? {} : { id }).catch(() => undefined)
   if (!connected && !status) { tone = 'warn'; text = 'Connecting to the RustFlare server…' }
+  else if (notices.length) { tone = notices.some((n) => n.level === 'error') ? 'bad' : 'warn'; text = notices[0].text + (notices.length > 1 ? ` (+${notices.length - 1} more)` : '') }
   else if (status?.error && !(lost && /^tracking lost/i.test(status.error))) { tone = 'bad'; text = status.error }
   else if (status?.auto_flip?.message && (status.auto_flip.stage === 'flipping' || status.auto_flip.stage === 'done')) { tone = 'warn'; text = status.auto_flip.message } // an active flip explains everything else
   else if (status?.capture?.stopped_early) { tone = 'bad'; text = status.capture.stopped_early }
@@ -144,7 +148,10 @@ function StatusBar({ status, connected }: { status: Status | null; connected: bo
       <button type="button" className="sbar-btn" disabled={!text} aria-expanded={open} onClick={() => setOpen(!open)}>
         {text ? <><i aria-hidden="true" /><span>{text}</span></> : <span className="sbar-idle">Ready</span>}
       </button>
-      {open && text && <div className="sbar-pop" onClick={() => setOpen(false)}>{text}</div>}
+      {notices.length > 0 && <button type="button" className="sbar-dismiss" onClick={() => { setOpen(false); void dismiss() }}>{notices.length > 1 ? 'Dismiss all' : 'Dismiss'}</button>}
+      {open && text && (notices.length
+        ? <div className="sbar-pop">{notices.map((n) => <p key={n.id} className={n.level}><b>{n.at}</b> {n.text} <button type="button" className="link" onClick={() => void dismiss(n.id)}>Dismiss</button></p>)}</div>
+        : <div className="sbar-pop" onClick={() => setOpen(false)}>{text}</div>)}
     </div>
   )
 }

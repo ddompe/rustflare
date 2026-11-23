@@ -92,6 +92,7 @@ test('Go to the Moon and planets: one target selector, a warning below the horiz
   const r = await post(page, '/mount/goto', { target: up.id, confirm: true, allow_below_horizon: true })
   expect(r.ok()).toBe(true)
   await expect.poll(async () => (await status()).mount.tracking, { timeout: 20_000 }).toBe(true)
+  expect((await status()).mount.rate).toBe(up.id === 'moon' ? 'lunar' : 'sidereal')
   await select.selectOption('sun')
 })
 
@@ -365,4 +366,57 @@ test('Stacking: the stacker, its settings and the stacks it made, with thumbnail
   const kept = await put(page, '/stack/config', { keep_percent: 500, threads: 64, policy: 'between_bursts' })
   expect((await kept.json()).keep_percent).toBe(100) // clamped
   await put(page, '/stack/config', { keep_percent: 25, threads: 2 })
+})
+
+test('tracking rate: a Go to leaves the rate of its target on, and switching tracking off and on keeps it; the rate can be chosen', async ({ page }) => {
+  await put(page, '/site', { latitude: 40, longitude: -105 })
+  const status = async () => (await page.request.get('/api/status')).json()
+  expect((await post(page, '/mount/goto', { target: 'saturn', confirm: true, allow_below_horizon: true })).ok()).toBe(true)
+  await expect.poll(async () => (await status()).mount.tracking, { timeout: 20_000 }).toBe(true)
+  expect((await status()).mount.rate).toBe('sidereal')
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Aim/ }).click()
+  await expect(page.getByText('Star tracking')).toBeVisible()
+  await page.getByRole('group', { name: 'Tracking rate' }).getByRole('button', { name: 'Lunar' }).click()
+  await expect.poll(async () => (await status()).mount.rate).toBe('lunar')
+  await post(page, '/mount/tracking', { enabled: false })
+  await post(page, '/mount/tracking', { enabled: true }) // no rate given: the last one stays
+  expect((await status()).mount.rate).toBe('lunar')
+  await page.getByRole('group', { name: 'Tracking rate' }).getByRole('button', { name: 'Solar' }).click()
+  await expect.poll(async () => (await status()).mount.rate).toBe('solar')
+})
+
+test('After each burst: modes, a stacker that is not there is never quiet, notices stay until dismissed', async ({ page }) => {
+  const status = async () => (await page.request.get('/api/status')).json()
+  await put(page, '/capture/after-burst', { mode: 'video' })
+  // the API: stack-only needs the stacker, values are checked
+  const r = await put(page, '/capture/after-burst', { mode: 'stack_only' })
+  expect(r.status()).toBe(400)
+  expect(await r.text()).toContain('stacker is not running')
+  expect((await put(page, '/capture/after-burst', { margin: 9 })).status()).toBe(400)
+  expect((await put(page, '/capture/after-burst', { raw_keep_percent: 0 })).status()).toBe(400)
+  expect((await put(page, '/capture/after-burst', { mode: 'nonsense' })).status()).toBe(400)
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Record/ }).click()
+  await page.getByText('After each burst', { exact: true }).click()
+  await expect(page.getByRole('button', { name: /Keep the video/ })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: /Stack only/ }).click()
+  await expect(page.getByText(/stacker is not running/).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /Keep the video/ })).toHaveAttribute('aria-pressed', 'true') // refused: nothing changed
+  // video + stack without a stacker: allowed, but every recording says it is video only, in the status bar, until dismissed
+  await page.getByRole('button', { name: /Video and stack/ }).click()
+  await expect(page.getByRole('button', { name: /Video and stack/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText(/Stacker ready|The stacker is not running, so bursts are recorded as video/)).toBeVisible()
+  expect((await post(page, '/capture/sequence', { name: 'noticetest', frames: 8, format: 'ser' })).ok()).toBe(true)
+  const bar = page.locator('.sbar')
+  await expect(bar).toContainText('recorded as video', { timeout: 15_000 })
+  await expect(bar.getByRole('button', { name: 'Dismiss' })).toBeVisible()
+  await expect.poll(async () => (await status()).capture.state, { timeout: 20_000 }).toBe('idle')
+  await expect(bar).toContainText('recorded as video') // still there after the recording
+  await bar.getByRole('button', { name: 'Dismiss' }).click()
+  await expect(bar).not.toContainText('recorded as video')
+  expect(((await status()).notices as { acked: boolean }[]).every((n) => n.acked)).toBe(true)
+  await put(page, '/capture/after-burst', { mode: 'video' })
+  const files = (await (await page.request.get('/api/files')).json()) as { files?: { path: string }[] }
+  for (const f of files.files ?? []) if (f.path.includes('noticetest')) await page.request.delete(`/api/files/${f.path}`)
 })

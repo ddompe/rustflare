@@ -42,9 +42,16 @@ export interface Status {
     burst: number | null; bursts_total: number | null; next_in_s: number | null
     dropped?: number; paused?: boolean; paused_reason?: string | null; stopped_early?: string | null; frames_lost?: string | null; eta_s?: number | null; buffer_queued: number; buffer_capacity: number; buffer_mb: number; ram_available_mb: number | null; disk_mb_s: number
   }
+  after_burst?: AfterBurst
+  notices?: Notice[]
   error: string | null
   seq: number
 }
+/** Something to know about, shown until dismissed. */
+export interface Notice { id: number; level: 'error' | 'warning'; text: string; at: string; acked: boolean }
+export type AfterMode = 'video' | 'video_stack' | 'stack_only' | 'best_frames'
+/** What happens after each burst, and whether the stacker is there to do it. */
+export interface AfterBurst { mode: AfterMode; stack_keep_percent: number; raw_keep_percent: number; margin: number; stacker_connected: boolean; stacking: number; stacked: number; last: string | null; stack_s_per_frame: number }
 export interface CameraInfo { driver: string; id: string; name: string }
 
 export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {

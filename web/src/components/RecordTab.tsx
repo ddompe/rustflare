@@ -1,4 +1,5 @@
 import { api, Status } from '../api'
+import { AfterBurst } from './AfterBurst'
 import { Disclosure, Empty, endsText, Field, Section, Segmented, Switch, useAction } from './ui'
 import { StorageLine } from './Storage'
 import { FileManagerButton } from './FileManager'
@@ -162,6 +163,7 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
         <Segmented label="File format" value={format} onChange={setFormat} options={lanesMode ? [{ id: 'ser', label: 'SER video' }, { id: 'fits', label: 'FITS' }] : [{ id: 'ser', label: 'SER video' }, { id: 'png', label: 'PNG' }, { id: 'fits', label: 'FITS' }]} />
         <Segmented label="When the RAM buffer is full" value={onFull} onChange={setOnFull} options={[{ id: 'wait', label: 'Wait for the disk' }, { id: 'drop', label: 'Drop frames' }]} />
         <div className="hint-text">{onFull === 'drop' ? 'Keeps the camera at full speed; frames that do not fit are dropped and counted.' : 'Never loses a frame: a camera faster than the disk slows to disk speed once the buffer is full.'}{format === 'fits' ? ' FITS makes one file per frame, with exposure, gain and time in the header.' : ''}</div>
+        <AfterBurst status={status} nFrames={nFrames} frameBytes={frameBytes} burstSecs={burstSecs} everySecs={every_s} bufFrames={bufFrames} />
         <StorageLine status={status} onChange={() => goto('more', 'storage')} />
         <div className="sticky-act"><button type="button" className="primary wide big" onClick={start}>{kind === 'plain' ? (repeating ? 'Start repeating recording' : 'Start recording') : kind === 'prominence' ? 'Start prominence recording' : 'Start HDR lanes'}</button></div>
       </Section>

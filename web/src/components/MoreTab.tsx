@@ -166,6 +166,11 @@ function BufferSettings({ status }: { status: Status | null }) {
         Frames are captured into memory and written to disk in the background. {c?.ram_available_mb ? `${c.ram_available_mb} MB of RAM free; the buffer is capped to 70% of that. ` : ''}
         {bufFrames > 0 && `Holds ≈ ${bufFrames} frames at the current size.`}
       </p>
+      {status?.after_burst && (
+        <p className="hint-text">
+          Frames wait in a ring in shared memory, so the stacker can read a burst while the camera keeps going. Stacker: {status.after_burst.stacker_connected ? 'connected' : 'not running'}{status.after_burst.stacking ? `, ${status.after_burst.stacking} burst(s) being stacked` : ''}. After each burst: {status.after_burst.mode.replace('_', ' ')}.
+        </p>
+      )}
       <ErrorLine error={err} />
     </div>
   )
