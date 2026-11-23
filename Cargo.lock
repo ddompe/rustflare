@@ -1530,6 +1530,7 @@ dependencies = [
  "log",
  "png",
  "rustflare-core",
+ "rustflare-ring",
 ]
 
 [[package]]

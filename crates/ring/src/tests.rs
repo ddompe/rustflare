@@ -213,3 +213,37 @@ fn the_time_a_burst_has_left_is_the_frames_that_can_still_be_committed() {
     assert_eq!(ring.frames_until_overwritten(1), 0, "already overwritten");
     assert_eq!(ring.frames_until_overwritten(10), 7);
 }
+
+#[test]
+fn releasing_a_finished_slots_memory_leaves_the_other_frames_and_the_cursor_alone() {
+    let (ring, _fd) = Ring::create(Geometry { width: 512, height: 512, bits: 16, format: 0 }, 6).unwrap(); // 512 KB frames
+    let mut p = ring.become_producer();
+    let mut c = ring.attach_consumer("writer", true, false).unwrap();
+    let big = |i: u64| -> Vec<u8> { (0..512 * 512 * 2).map(|k| (i as usize * 13 + k) as u8).collect() };
+    for i in 1..=5 { p.push(&big(i), meta(i)).unwrap(); }
+    for i in 1..=2 {
+        let f = c.peek().unwrap_or_else(|e| panic!("frame {i} should be readable: {e:?}"));
+        assert_eq!((f.seq, f.data[0], f.data[1000]), (i, big(i)[0], big(i)[1000]));
+        let seq = f.seq;
+        c.release_slot_memory(seq);
+        c.advance(seq);
+    }
+    assert_eq!(ring.newest(), 5);
+    for i in 3..=5 {
+        let f = c.frame_at(i).unwrap_or_else(|| panic!("frame {i} was damaged by releasing frames 1 and 2"));
+        assert_eq!(f.data, &big(i)[..], "frame {i}");
+    }
+    // and the released slots are reusable: the producer wraps over them and the frames come out right
+    for i in 6..=7 { p.push(&big(i), meta(i)).unwrap(); }
+    for i in 3..=7 {
+        let f = c.peek().unwrap(); assert_eq!((f.seq, f.data), (i, &big(i)[..])); let s = f.seq; c.release_slot_memory(s); c.advance(s);
+    }
+}
+
+#[test]
+fn slots_start_on_page_boundaries_whatever_the_page_size_so_releasing_one_cannot_touch_the_next() {
+    let (ring, _fd) = Ring::create(Geometry { width: 100, height: 33, bits: 16, format: 0 }, 5).unwrap(); // an awkward frame size
+    let page = super::page_size();
+    assert!(page >= 4096 && ring.slot_stride() % page == 0, "stride {} for pages of {page}", ring.slot_stride());
+    assert!(ring.slot_stride() >= 64 + ring.frame_bytes());
+}

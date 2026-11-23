@@ -119,6 +119,16 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 impl From<std::io::Error> for Error { fn from(e: std::io::Error) -> Self { Error::Os(e) } }
 
+/// The system's memory page size (4 KB on most machines, 16 KB on a Raspberry Pi 5, 64 KB on some arm64 servers), never below 4 KB.
+fn page_size() -> usize {
+    #[cfg(unix)]
+    {
+        let p = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+        if p > 0 { return (p as usize).max(4096); }
+    }
+    4096
+}
+
 pub fn now_ns() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0) }
 
 /// The shared memory and its layout. Cheap to clone (it is shared).
@@ -137,7 +147,8 @@ impl Ring {
     pub fn create(geometry: Geometry, n_slots: usize) -> Result<(Ring, OwnedFd), Error> {
         assert!(n_slots >= 2, "a ring needs at least two slots");
         let slot_payload = geometry.frame_bytes();
-        let slot_stride = (SLOT_HEADER + slot_payload + 4095) & !4095;
+        let page = page_size();
+        let slot_stride = (SLOT_HEADER + slot_payload + page - 1) & !(page - 1); // slots start on page boundaries (needed to release their memory)
         let total = CONTROL_BYTES + slot_stride * n_slots;
         let (fd, map) = Mapping::create(total)?;
         let epoch = now_ns();
@@ -181,6 +192,8 @@ impl Ring {
     pub fn geometry(&self) -> Geometry { self.geometry }
     pub fn n_slots(&self) -> usize { self.n_slots as usize }
     pub fn frame_bytes(&self) -> usize { self.slot_payload }
+    /// Bytes from the start of one slot to the next (a multiple of the system page size).
+    pub fn slot_stride(&self) -> usize { self.slot_stride }
     /// Identifies this ring; a different value after a restart means the shared memory was replaced.
     pub fn epoch(&self) -> u64 { self.epoch }
     /// Bytes of shared memory in use.
@@ -285,6 +298,28 @@ impl Ring {
         let h = self.header();
         let pid = h.producer_pid.load(Ordering::Acquire);
         pid != 0 && process_exists(pid) && now_ns().saturating_sub(h.producer_heartbeat_ns.load(Ordering::Acquire)) <= timeout_ns
+    }
+
+    /// Gives the memory behind frame `seq`'s slot back to the system (Linux: `MADV_REMOVE` on the shared memory). Without this a ring
+    /// that cycles through all its slots keeps all its memory resident even when only one burst is in flight. After this the frame
+    /// reads as gone. Only safe while nothing can be writing to or reading the slot: call it for a frame a must-not-lose consumer has
+    /// finished with and has not yet advanced past (the producer cannot reuse the slot until it does).
+    pub fn release_slot_memory(&self, seq: u64) {
+        #[cfg(target_os = "linux")]
+        {
+            // whole pages only: a slot that does not start and end on a page boundary would take its neighbour's memory with it (the
+            // Raspberry Pi 5's kernel has 16 KB pages, not 4 KB)
+            let page = page_size();
+            let p = self.slot_ptr(seq);
+            if self.slot_stride % page != 0 || (p as usize) % page != 0 {
+                return;
+            }
+            unsafe {
+                libc::madvise(p as *mut libc::c_void, self.slot_stride, libc::MADV_REMOVE);
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = seq;
     }
 
     /// Reads frame `seq` in place if it is still in the ring. `None` if it is not committed yet or has been overwritten.
@@ -432,6 +467,7 @@ pub struct Consumer {
 impl Consumer {
     fn entry(&self) -> &ConsumerEntry { &self.ring.header().consumers[self.index] }
     pub fn ring(&self) -> &Ring { &self.ring }
+    pub fn must_not_lose(&self) -> bool { self.entry().flags.load(Ordering::Relaxed) & 1 == 1 }
     pub fn heartbeat(&self) { self.entry().heartbeat_ns.store(now_ns(), Ordering::Release); }
     /// The sequence number up to which this consumer is finished.
     pub fn read_seq(&self) -> u64 { self.entry().read_seq.load(Ordering::Acquire) }
@@ -476,6 +512,10 @@ impl Consumer {
     }
 
     pub fn unpin(&self) { self.entry().pin_seq.store(0, Ordering::Release); }
+
+    /// See `Ring::release_slot_memory`: only for a must-not-lose consumer, before it advances past `seq`, and only if no other consumer
+    /// needs the frame.
+    pub fn release_slot_memory(&self, seq: u64) { self.ring.release_slot_memory(seq) }
 
     /// Frame `seq` in place, for random access while pinned.
     pub fn frame_at(&self, seq: u64) -> Option<FrameRef<'_>> { self.ring.frame(seq) }

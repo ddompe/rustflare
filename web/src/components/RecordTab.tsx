@@ -18,6 +18,8 @@ export function Progress({ status, onStop }: { status: Status; onStop: () => voi
       <div className="prog-title"><b>{c.state}</b>: {c.phase}</div>
       {c.burst != null && <div className="muted">burst {c.burst}{c.bursts_total ? ` of ${c.bursts_total}` : ''}{c.next_in_s != null ? ` · next in ${c.next_in_s.toFixed(0)} s` : ''}</div>}
       {c.eta_s != null && c.eta_s > 0 && <div className="muted">Ends {endsText(c.eta_s)}</div>}
+      {c.frames_lost && <div className="err" role="alert">{c.frames_lost}</div>}
+      {c.stopped_early && <div className="err" role="alert">{c.stopped_early}</div>}
       {c.total != null && c.state !== 'flushing' && <progress max={c.total} value={c.done} aria-label="Frames captured" />}
       {c.state !== 'flats' && c.buffer_capacity > 0 && (
         <>

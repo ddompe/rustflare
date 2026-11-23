@@ -14,7 +14,6 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TryRecvError};
 use std::sync::Arc;
-use std::io::Write;
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, watch};
 
@@ -1192,7 +1191,15 @@ impl Engine {
             (_, Some(d)) => (d.queued(), d.rate_bytes_per_s()),
             _ => (0, 0.0),
         };
+        let dropped_now = match (&self.job, &self.draining) {
+            (Job::Capture(j), _) => Some(j.sink.dropped()),
+            (_, Some(d)) => Some(d.dropped()),
+            _ => None,
+        };
         let c = &mut self.status.capture;
+        if let Some(d) = dropped_now {
+            c.dropped = d;
+        }
         c.buffer_queued = queued;
         c.buffer_capacity = self.buffer_cap;
         c.buffer_mb = self.buffer_mb;
@@ -1664,6 +1671,7 @@ impl Engine {
                 self.buffer_cap = cap;
                 let kind = if interval.is_some() { "burst" } else { "seq" };
                 self.status.capture.stopped_early = None;
+                self.status.capture.frames_lost = None;
                 self.event("capture_start", json!({ "kind": "sequence" }));
                 self.last_capture = Some(rs);
                 self.job = Job::Capture(Box::new(CaptureJob {
@@ -1679,7 +1687,7 @@ impl Engine {
                     phase: CapPhase::Waiting { next_at: Instant::now() },
                     max_file: self.storage.info().max_file_bytes,
                     last_check: Instant::now(),
-                    sink: FrameSink::new(cap),
+                    sink: FrameSink::with_policy(cap, drop_when_full),
                     drop_when_full,
                     home_when_done,
                     bursts_done: 0,
@@ -1743,6 +1751,7 @@ impl Engine {
                 let total = cycles.map(|c| c * lanes.len() as u32);
                 let n_lanes = lanes.len();
                 self.status.capture.stopped_early = None;
+                self.status.capture.frames_lost = None;
                 self.event("capture_start", json!({ "kind": "lanes" }));
                 self.last_capture = Some(rs);
                 self.job = Job::Capture(Box::new(CaptureJob {
@@ -1758,7 +1767,7 @@ impl Engine {
                     phase: CapPhase::Waiting { next_at: Instant::now() },
                     max_file: self.storage.info().max_file_bytes,
                     last_check: Instant::now(),
-                    sink: FrameSink::new(cap),
+                    sink: FrameSink::with_policy(cap, drop_when_full),
                     drop_when_full,
                     home_when_done,
                     bursts_done: 0,
@@ -3045,6 +3054,20 @@ impl Engine {
             }
         }
         for f in finished {
+            if f.dropped > 0 {
+                // never quiet: an event, a persistent note, an error line now, and the burst's sidecar says so
+                let file = rel(&self.data_dir(), &f.path);
+                let note = format!("{} of the frames of {file} were lost: the drive could not keep up with the camera and the RAM buffer was full, so the oldest waiting frames were overwritten (\"drop frames\" mode). The file holds {} frames.", f.dropped, f.frames);
+                self.event("frames_dropped", json!({ "file": file, "dropped": f.dropped, "written": f.frames }));
+                self.status.error = Some(note.clone());
+                self.status.capture.frames_lost = Some(note);
+                let side = f.path.with_extension("json");
+                if let Some(mut v) = std::fs::read_to_string(&side).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) {
+                    v["details"]["dropped_frames"] = json!(f.dropped);
+                    v["details"]["frames_written"] = json!(f.frames);
+                    self.alog.replace(side, serde_json::to_string_pretty(&v).unwrap_or_default());
+                }
+            }
             self.status.capture.last_file = Some(rel(&self.data_dir(), &f.path));
             if f.parts > 1 {
                 log::info!("{} was split into {} files (filesystem size limit)", f.path.display(), f.parts);

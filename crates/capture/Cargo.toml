@@ -8,6 +8,7 @@ license.workspace = true
 rustflare-core.workspace = true
 png = "0.17"
 libc = "0.2"
+rustflare-ring.workspace = true
 log.workspace = true
 
 [dev-dependencies]

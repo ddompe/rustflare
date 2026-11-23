@@ -75,6 +75,14 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 |---|---|
 | A renamed mount is followed | Eject the stick (More > Storage), replug it; if the desktop mounts it under another name (`...1`), More > Storage still shows it available with the same folder and a recording starts (checked once on 2026-11-22: `ASTRODRIVE` became `ASTRODRIVE1` and the saved choice followed it after the upgrade) |
 
+## Frame ring and raw writer (ADR 0019, stage 3)
+
+| Check | How |
+|---|---|
+| Files are intact | Record bursts and a long sequence with the real camera: every SER has the requested frame count, size = 178 + frames x (frame + 8), increasing timestamps, split at 750 frames on FAT32 (done 2026-11-22, Pi 5, Apollo-M Mini) |
+| Wait mode | A recording longer than the buffer with *Wait for the disk*: nothing lost, the camera slows to disk speed (done: 57 fps down to 11 fps, 1200 of 1200 frames) |
+| Drop mode | The same with *Drop frames*: a note on the Record tab, an entry in the event log, the burst's `.json` says how many were lost, and written + dropped = captured (done: 1053 + 147 = 1200) |
+
 ## Recorder priority and stalls
 
 | Check | How |

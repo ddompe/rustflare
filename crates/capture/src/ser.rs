@@ -67,13 +67,18 @@ impl SerWriter {
     }
 
     pub fn write_frame(&mut self, f: &Frame) -> Result<()> {
-        if (f.width, f.height, f.format) != self.format {
+        self.write_frame_data(f.width, f.height, f.format, &f.data, f.captured_at)
+    }
+
+    /// The same from the frame's bytes and metadata, for a frame that lives in shared memory and should not be copied first.
+    pub fn write_frame_data(&mut self, width: u32, height: u32, format: PixelFormat, data: &[u8], captured_at: SystemTime) -> Result<()> {
+        if (width, height, format) != self.format {
             return Err(Error::Invalid(format!(
-                "frame {}x{} {:?} differs from sequence format {:?}", f.width, f.height, f.format, self.format
+                "frame {}x{} {:?} differs from sequence format {:?}", width, height, format, self.format
             )));
         }
-        self.w.write_all(&f.data)?;
-        self.stamps.push(ticks(f.captured_at));
+        self.w.write_all(data)?;
+        self.stamps.push(ticks(captured_at));
         if self.stamps.len() % CHECKPOINT_FRAMES == 0 {
             self.checkpoint()?;
         }

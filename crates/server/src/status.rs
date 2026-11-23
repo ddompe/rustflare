@@ -88,6 +88,8 @@ pub struct CaptureStatus {
     /// Why the last recording stopped on its own (drive removed, disk full, write error) and what was lost. It stays until the
     /// next recording starts, unlike `error`, which any later command clears.
     pub stopped_early: Option<String>,
+    /// Set when a finished recording lost frames (drop mode, the drive could not keep up): says how many, in which file; kept until the next recording starts.
+    pub frames_lost: Option<String>,
     /// Seconds until the running recording ends, as far as can be told (None: it runs until stopped).
     pub eta_s: Option<f64>,
 }
@@ -350,7 +352,7 @@ impl Default for Status {
             mount: None,
             tracking: None,
             guiding: GuidingStatus { state: "off", calibration: None, target: None, error_px: None, held: false, dead_reckoning: false },
-            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0, paused: false, paused_reason: None, stopped_early: None, eta_s: None },
+            capture: CaptureStatus { state: "idle", phase: String::new(), done: 0, total: None, file: None, last_file: None, burst: None, bursts_total: None, next_in_s: None, dropped: 0, buffer_queued: 0, buffer_capacity: 0, buffer_mb: 1024, ram_available_mb: None, disk_mb_s: 0.0, paused: false, paused_reason: None, stopped_early: None, frames_lost: None, eta_s: None },
             error: None,
             seq: 0,
         }

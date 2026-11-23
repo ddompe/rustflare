@@ -1,0 +1,24 @@
+{"capture":"idle","detail":{},"event":"guiding_stop","exposure_us":2000.0,"gain":100.0,"guide":"calibrating","mount_tracking":true,"t":"2026-11-23T01:45:09.096Z"}
+{"capture":"single","detail":{"file":"2026-11-23/frame_014537Z_smoke.png","note":"saved"},"event":"capture_end","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:45:37.344Z"}
+{"capture":"idle","detail":{"kind":"sequence"},"event":"capture_start","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:45:39.369Z"}
+{"capture":"sequence","detail":{"file":null,"note":"captured; writing buffered frames to disk"},"event":"capture_end","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:45:40.693Z"}
+{"capture":"idle","detail":{"kind":"sequence"},"event":"capture_start","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:45:45.411Z"}
+{"capture":"bursts","detail":{"file":null,"note":"captured; writing buffered frames to disk"},"event":"capture_end","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:45:54.338Z"}
+{"capture":"idle","detail":{"kind":"sequence"},"event":"capture_start","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:46:01.528Z"}
+{"capture":"sequence","detail":{"file":null,"note":"captured; writing buffered frames to disk"},"event":"capture_end","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:46:01.953Z"}
+{"capture":"flats","detail":{"us":2133.7316101241872},"event":"exposure","exposure_us":300.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:46:07.837Z"}
+{"capture":"flats","detail":{"us":300.0},"event":"exposure","exposure_us":2133.7316101241872,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:46:08.397Z"}
+{"capture":"flats","detail":{"file":"2026-11-23/flat_014607Z_smoke.ser","note":"saved"},"event":"capture_end","exposure_us":300.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:46:08.397Z"}
+{"capture":"idle","detail":{"estimate":{"r":300.0095582629375,"since_measured_s":1.031071666,"x":866.8929161291534,"y":625.1235857150477},"measurement":null},"event":"sun_predicted","exposure_us":300.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T01:46:08.606Z"}
+{"capture":"idle","detail":{},"event":"guiding_stop","exposure_us":2000.0,"gain":100.0,"guide":"calibrating","mount_tracking":true,"t":"2026-11-23T02:37:42.862Z"}
+{"capture":"single","detail":{"file":"2026-11-23/frame_023811Z_smoke.png","note":"saved"},"event":"capture_end","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:11.141Z"}
+{"capture":"idle","detail":{"kind":"sequence"},"event":"capture_start","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:13.155Z"}
+{"capture":"sequence","detail":{"file":null,"note":"captured; writing buffered frames to disk"},"event":"capture_end","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:14.349Z"}
+{"capture":"idle","detail":{"kind":"sequence"},"event":"capture_start","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:19.210Z"}
+{"capture":"bursts","detail":{"file":null,"note":"captured; writing buffered frames to disk"},"event":"capture_end","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:28.071Z"}
+{"capture":"idle","detail":{"kind":"sequence"},"event":"capture_start","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:35.325Z"}
+{"capture":"sequence","detail":{"file":null,"note":"captured; writing buffered frames to disk"},"event":"capture_end","exposure_us":2000.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:35.716Z"}
+{"capture":"flats","detail":{"us":2133.854331961584},"event":"exposure","exposure_us":300.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:41.818Z"}
+{"capture":"flats","detail":{"us":300.0},"event":"exposure","exposure_us":2133.854331961584,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:42.364Z"}
+{"capture":"flats","detail":{"file":"2026-11-23/flat_023841Z_smoke.ser","note":"saved"},"event":"capture_end","exposure_us":300.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:42.364Z"}
+{"capture":"idle","detail":{"estimate":{"r":299.9911414369015,"since_measured_s":1.103925458,"x":869.3591107076219,"y":626.8802943850412},"measurement":null},"event":"sun_predicted","exposure_us":300.0,"gain":100.0,"guide":"off","mount_tracking":true,"t":"2026-11-23T02:38:42.775Z"}
