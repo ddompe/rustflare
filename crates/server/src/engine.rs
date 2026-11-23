@@ -3057,7 +3057,11 @@ impl Engine {
             if f.dropped > 0 {
                 // never quiet: an event, a persistent note, an error line now, and the burst's sidecar says so
                 let file = rel(&self.data_dir(), &f.path);
-                let note = format!("{} of the frames of {file} were lost: the drive could not keep up with the camera and the RAM buffer was full, so the oldest waiting frames were overwritten (\"drop frames\" mode). The file holds {} frames.", f.dropped, f.frames);
+                let note = if f.frames == 0 {
+                    format!("All {} frames of {file} were lost and no file was written: the drive could not keep up with the camera and the RAM buffer was full, so the oldest waiting frames were overwritten (\"drop frames\" mode).", f.dropped)
+                } else {
+                    format!("{} of the frames of {file} were lost: the drive could not keep up with the camera and the RAM buffer was full, so the oldest waiting frames were overwritten (\"drop frames\" mode). The file holds {} frames.", f.dropped, f.frames)
+                };
                 self.event("frames_dropped", json!({ "file": file, "dropped": f.dropped, "written": f.frames }));
                 self.status.error = Some(note.clone());
                 self.status.capture.frames_lost = Some(note);
@@ -3068,7 +3072,9 @@ impl Engine {
                     self.alog.replace(side, serde_json::to_string_pretty(&v).unwrap_or_default());
                 }
             }
-            self.status.capture.last_file = Some(rel(&self.data_dir(), &f.path));
+            if f.frames > 0 {
+                self.status.capture.last_file = Some(rel(&self.data_dir(), &f.path));
+            }
             if f.parts > 1 {
                 log::info!("{} was split into {} files (filesystem size limit)", f.path.display(), f.parts);
             }

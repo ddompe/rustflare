@@ -72,6 +72,31 @@ struct Shared {
     rate: AtomicU64,
     error: Mutex<Option<String>>,
     finished: Mutex<Vec<Finished>>,
+    /// The sequence numbers each burst owns, written by the producer at `begin` and `end` (before any frame of the burst is committed),
+    /// so that a lost range of frames can be charged to the bursts it belonged to exactly.
+    ranges: Mutex<Vec<BurstRange>>,
+    /// Tests only: holds the writer still so that losses can be provoked deterministically.
+    #[cfg(test)]
+    pause: std::sync::atomic::AtomicBool,
+}
+
+/// Frames `first..=last` of the ring belong to burst `id` (`last` is None while the burst is open).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BurstRange {
+    id: u64,
+    first: u64,
+    last: Option<u64>,
+}
+
+/// How many of the frames `from..=to` belong to each burst: pure, so it can be tested on its own.
+fn attribute(ranges: &[BurstRange], from: u64, to: u64) -> Vec<(u64, u64)> {
+    ranges
+        .iter()
+        .filter_map(|r| {
+            let (a, b) = (r.first.max(from), r.last.unwrap_or(u64::MAX).min(to));
+            (a <= b).then(|| (r.id, b - a + 1))
+        })
+        .collect()
 }
 
 /// The producer's side of the ring, made when the first frame shows what the frames look like.
@@ -133,8 +158,8 @@ struct Writer {
     quit: bool,
     /// A private copy of a frame for a consumer that can be overwritten (drop mode): copied out, checked, then written.
     scratch: Vec<u8>,
-    /// Frames lost while no burst was open, charged to the next burst that starts.
-    lost: u64,
+    /// Frames lost so far, per burst, until the burst is reported.
+    lost: std::collections::HashMap<u64, u64>,
 }
 
 /// What happened when the writer tried to write the frame it had chosen.
@@ -144,8 +169,8 @@ enum Outcome {
     Discarded,
     /// The camera overwrote the frame while the writer was taking it (drop mode).
     Overwritten,
-    /// The writer was lapped between choosing the frame and reading it: this many frames were lost (and the cursor has moved).
-    Lapped(u64),
+    /// The writer was lapped between choosing the frame and reading it: these frames were lost (and the cursor has moved).
+    Lapped(u64, u64),
     /// Nothing to do after all (the frame is not visible yet).
     Retry,
 }
@@ -164,17 +189,28 @@ impl Writer {
         }
     }
 
-    /// Charges frames lost in the ring to the burst being written (or to the next one if none is open).
-    fn note_lost(&mut self, n: u64) {
-        self.sh.dropped.fetch_add(n, Ordering::Relaxed);
-        match self.active.as_mut() {
-            Some((_, a)) => a.dropped += n,
-            None => self.lost += n,
+    /// Frames `from..=to` were lost (overwritten before the writer took them): counted in the total and charged to the bursts they
+    /// belonged to, exactly, from the producer's table of sequence ranges.
+    fn note_lost(&mut self, from: u64, to: u64) {
+        if to < from {
+            return;
+        }
+        self.sh.dropped.fetch_add(to - from + 1, Ordering::Relaxed);
+        let owners = attribute(&self.sh.ranges.lock().unwrap(), from, to);
+        for (id, n) in owners {
+            *self.lost.entry(id).or_insert(0) += n;
         }
     }
 
+    /// Takes a burst's lost-frame count (and its place in the producer's table) once it is reported.
+    fn take_lost(&mut self, id: u64) -> u64 {
+        self.sh.ranges.lock().unwrap().retain(|r| r.id != id);
+        self.lost.remove(&id).unwrap_or(0)
+    }
+
     fn finish_active(&mut self) {
-        if let Some((id, a)) = self.active.take() {
+        if let Some((id, mut a)) = self.active.take() {
+            a.dropped = self.take_lost(id);
             if let Some(p) = self.pending.iter_mut().find(|p| p.id == id) {
                 p.finished = true; // it must not be completed a second time when its End is reached
             }
@@ -204,11 +240,12 @@ impl Writer {
             // which frame is next, and which burst does it belong to
             let (seq, burst) = {
                 let Some(c) = self.consumer.as_mut() else { break };
+                let before = c.read_seq();
                 match c.peek() {
                     Ok(f) => (f.seq, f.burst_id),
                     Err(Next::Empty) => break,
                     Err(Next::Lapped(n)) => {
-                        self.note_lost(n);
+                        self.note_lost(before + 1, before + n);
                         self.sh.queued.fetch_sub(n as usize, Ordering::Relaxed);
                         progressed = true;
                         continue;
@@ -223,15 +260,14 @@ impl Writer {
                 };
                 let spec = self.pending[pos].spec.clone();
                 self.finish_active();
-                let mut a = Active::new(spec);
-                a.dropped = std::mem::take(&mut self.lost);
-                self.active = Some((burst, a));
+                self.active = Some((burst, Active::new(spec)));
             }
             // write it; only fields are touched while the frame is borrowed
             let outcome = {
                 let c = self.consumer.as_mut().unwrap();
                 let g = c.ring().geometry();
                 let hold = c.must_not_lose(); // a held frame cannot be overwritten, so it is written straight from the ring
+                let before = c.read_seq();
                 match c.peek() {
                     Ok(f) if f.seq == seq => {
                         if self.sh.error.lock().unwrap().is_some() {
@@ -257,14 +293,14 @@ impl Writer {
                         }
                     }
                     Ok(_) | Err(Next::Empty) => Outcome::Retry,
-                    Err(Next::Lapped(n)) => Outcome::Lapped(n),
+                    Err(Next::Lapped(n)) => Outcome::Lapped(before + 1, before + n),
                 }
             };
             match outcome {
                 Outcome::Retry => break,
-                Outcome::Lapped(n) => {
-                    self.note_lost(n);
-                    self.sh.queued.fetch_sub(n as usize, Ordering::Relaxed);
+                Outcome::Lapped(from, to) => {
+                    self.note_lost(from, to);
+                    self.sh.queued.fetch_sub((to - from + 1) as usize, Ordering::Relaxed);
                     progressed = true;
                     continue;
                 }
@@ -277,7 +313,7 @@ impl Writer {
                     self.sh.rate.store(ema as u64, Ordering::Relaxed);
                 }
                 Outcome::Written(Err(e), _, _) => *self.sh.error.lock().unwrap() = Some(e),
-                Outcome::Overwritten => self.note_lost(1),
+                Outcome::Overwritten => self.note_lost(seq, seq),
                 Outcome::Discarded => {}
             }
             let c = self.consumer.as_ref().unwrap();
@@ -305,12 +341,15 @@ impl Writer {
             let p = self.pending.pop_front().unwrap();
             if !p.finished {
                 match self.active.take() {
-                    Some((id, a)) if id == p.id => self.complete(a),
+                    Some((id, mut a)) if id == p.id => {
+                        a.dropped = self.take_lost(id);
+                        self.complete(a)
+                    }
                     other => {
                         self.active = other;
                         let mut a = Active::new(p.spec);
-                        a.dropped = std::mem::take(&mut self.lost);
-                        self.complete(a); // a burst with no frames: still finalised and reported
+                        a.dropped = self.take_lost(p.id);
+                        self.complete(a); // a burst with no frames, or one that lost them all: still finalised and reported
                     }
                 }
             }
@@ -328,10 +367,14 @@ impl FrameSink {
     pub fn with_policy(capacity_frames: usize, drop_when_full: bool) -> FrameSink {
         let (tx, rx) = channel::<Msg>();
         let shared = Arc::new(Shared::default());
-        let mut w = Writer { sh: shared.clone(), consumer: None, pending: VecDeque::new(), active: None, quit: false, scratch: Vec::new(), lost: 0 };
+        let mut w = Writer { sh: shared.clone(), consumer: None, pending: VecDeque::new(), active: None, quit: false, scratch: Vec::new(), lost: Default::default() };
         let handle = std::thread::Builder::new()
             .name("frame-writer".into())
             .spawn(move || loop {
+                #[cfg(test)]
+                while w.sh.pause.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
                 loop {
                     match rx.try_recv() {
                         Ok(m) => w.on_msg(m),
@@ -365,6 +408,9 @@ impl FrameSink {
 
     pub fn begin(&self, spec: BurstSpec) {
         let id = self.burst_id.fetch_add(1, Ordering::Relaxed) + 1;
+        // the first frame this burst can have, recorded before any of its frames is committed
+        let first = self.feed.lock().unwrap().as_ref().map_or(1, |f| f.ring.newest() + 1);
+        self.shared.ranges.lock().unwrap().push(BurstRange { id, first, last: None });
         let _ = self.tx.send(Msg::Begin { id, spec });
     }
 
@@ -446,6 +492,9 @@ impl FrameSink {
     pub fn end(&self) {
         let id = self.burst_id.load(Ordering::Relaxed);
         let last_seq = self.feed.lock().unwrap().as_ref().map_or(0, |f| f.ring.newest());
+        if let Some(r) = self.shared.ranges.lock().unwrap().iter_mut().find(|r| r.id == id) {
+            r.last = Some(last_seq);
+        }
         let _ = self.tx.send(Msg::End { id, last_seq });
     }
 
@@ -593,7 +642,9 @@ impl Active {
             Format::Ser => self.part_path(1),
             Format::Png | Format::Fits => self.spec.stem.clone(),
         };
-        write_ready_marker(&path, self.frames, self.parts.max(1));
+        if self.frames > 0 {
+            write_ready_marker(&path, self.frames, self.parts.max(1)); // a burst that lost every frame has no file to mark
+        }
         Ok((Finished { path, frames: self.frames, parts: self.parts.max(1), dropped: self.dropped }, rate))
     }
 }
@@ -850,6 +901,53 @@ mod tests {
             assert!(marker.contains("\"frames\":3"), "burst {b}: {marker}");
             assert_eq!(std::fs::metadata(dir.join(format!("b{b:02}.ser"))).unwrap().len(), 178 + 3 * (32 + 8));
         }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_lost_range_is_charged_to_the_bursts_it_belonged_to() {
+        let r = |id, first, last| BurstRange { id, first, last };
+        let ranges = [r(1, 1, Some(10)), r(2, 11, Some(20)), r(3, 21, None)];
+        assert_eq!(attribute(&ranges, 4, 6), vec![(1, 3)]);
+        assert_eq!(attribute(&ranges, 8, 14), vec![(1, 3), (2, 4)]);
+        assert_eq!(attribute(&ranges, 1, 25), vec![(1, 10), (2, 10), (3, 5)]);
+        assert_eq!(attribute(&ranges, 20, 21), vec![(2, 1), (3, 1)]);
+        assert_eq!(attribute(&ranges, 30, 30), vec![(3, 1)], "the open burst owns everything after its first frame");
+        assert!(attribute(&[r(1, 5, Some(4))], 1, 100).is_empty(), "a burst without frames owns nothing");
+    }
+
+    #[test]
+    fn losses_across_several_bursts_are_each_charged_to_the_right_burst_exactly() {
+        let dir = tmp("lossattr");
+        let sink = FrameSink::with_policy(10, true); // 11 slots
+        sink.shared.pause.store(true, Ordering::Relaxed); // the writer is stalled while the camera keeps going
+        let per = [7usize, 12, 5, 9]; // bursts of different sizes; 33 frames in all
+        for (b, n) in per.iter().enumerate() {
+            sink.begin(BurstSpec { stem: dir.join(format!("b{b}")), format: Format::Ser, instrument: "cam".into(), max_file_bytes: None, fits_meta: Default::default() });
+            for i in 0..*n { assert_eq!(sink.try_push(numbered((b * 20 + i) as u8)), Some(true)); }
+            sink.end();
+        }
+        sink.close();
+        sink.shared.pause.store(false, Ordering::Relaxed);
+        while !sink.is_finished() { std::thread::sleep(Duration::from_millis(5)); }
+        assert!(sink.error().is_none(), "{:?}", sink.error());
+        // the ring holds the newest 11 of the 33 frames, so frames 1 to 22 were overwritten: all 7 of burst 0, all 12 of burst 1, frames
+        // 20 to 22 of burst 2 (3 of its 5) and none of burst 3
+        let total: usize = per.iter().sum();
+        let lost_total = total - 11;
+        assert_eq!(sink.dropped(), lost_total as u64);
+        let mut start = 1usize;
+        let mut expected = vec![];
+        for n in per { let (a, b) = (start, start + n - 1); expected.push((a..=b).filter(|&q| q <= lost_total).count() as u64); start += n; }
+        let mut fin = sink.take_finished();
+        fin.sort_by(|a, b| a.path.cmp(&b.path)); // bursts that wrote frames are reported before those that lost them all
+        assert_eq!(fin.len(), 4, "every burst is reported, also those that lost every frame");
+        let got: Vec<u64> = fin.iter().map(|f| f.dropped).collect();
+        assert_eq!(got, expected, "frames lost per burst");
+        assert_eq!(fin.iter().map(|f| f.frames as u64 + f.dropped).sum::<u64>(), total as u64, "written + dropped = pushed, burst by burst");
+        for (f, n) in fin.iter().zip(per) { assert_eq!(f.frames as u64 + f.dropped, n as u64); }
+        assert!(!dir.join("b0.ser.ready").exists() && !dir.join("b1.ser.ready").exists(), "no marker for a file that was never written");
+        assert!(dir.join("b2.ser.ready").exists() && dir.join("b3.ser.ready").exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 }
