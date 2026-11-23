@@ -24,9 +24,9 @@ Close the ZWO phone app first (the mount accepts only one connection), press the
 
 Set your site (More > Site), check that the Sun is above the horizon, and check the clock (below). It also refuses while a recording is running.
 
-### Solar tracking is off after a restart
+### Tracking is off after a restart
 
-On purpose: RustFlare never switches the mount's tracking on by itself. Use Go to Sun or tick *Solar tracking*.
+On purpose: RustFlare never switches the mount's tracking on by itself. Use Go to Sun (or Go to a planet or the Moon) or tick the tracking switch on the Aim tab; it keeps the rate you last used (solar, lunar or star).
 
 ## Tracking
 

@@ -41,7 +41,7 @@ Do these once, at home (all in the **More** tab, see [More](more.md)):
 
 The service starts at boot; there is nothing to launch. It reconnects the last camera and mount automatically, retrying for a couple of minutes while USB devices come up. Untick *reconnect camera & mount* in the Camera tab to turn that off. Closing the camera or disconnecting the mount on purpose makes it forget them.
 
-It never switches on the mount's tracking by itself, because that moves the mount. After a restart, use **Go to Sun** or tick *Solar tracking* again. Tracking targets and the guider calibration are not remembered between sessions.
+It never switches on the mount's tracking by itself, because that moves the mount. After a restart, use **Go to Sun** or tick the tracking switch again (Aim tab; the rate buttons under it choose solar, lunar or star). Tracking targets and the guider calibration are not remembered between sessions.
 
 ## Try it without hardware
 

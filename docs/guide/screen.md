@@ -34,7 +34,7 @@ The round **Prominence view** button in the picture's tool column blacks out the
 
 ![Hide controls](../img/manual/hide-controls.png)
 
-**Hide controls** (top right) hides the header, the panel and the tabs so only the live view and its tools remain. **Show controls** brings them back. Rotate the phone to landscape for the largest picture, and pinch to zoom.
+**Hide controls** (top right) hides the header, the panel and the tabs so only the live view and its tools remain. The status line stays at the bottom (a lost Sun or a message you have not dismissed must not be hidden), and while a recording runs a red **Recording · Stop** button stays too. **Show controls** brings everything back. Rotate the phone to landscape for the largest picture, and pinch to zoom.
 
 ## The status bar
 
@@ -46,4 +46,4 @@ One line at the bottom of the screen, always there, so a message appearing never
 
 ## Quick capture
 
-On every tab except Aim and Record, below the picture, **● Rec** starts the recording exactly as set up on the [Record tab](record.md) (sequence, prominence or HDR lanes) and **Snap** saves a single frame. While recording, the strip shows progress and a Stop button.
+On every tab except Aim and Record, below the picture, **▶ Start** starts the recording exactly as set up on the [Record tab](record.md) (sequence, prominence or HDR lanes; the button says which, and how many frames) and **Snap** saves a single frame. While recording, the strip shows progress and a Stop button.

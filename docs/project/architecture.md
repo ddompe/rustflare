@@ -7,7 +7,8 @@
      └───── MJPEG /stream.mjpg ◄── preview thread ◄──────┤  Mount
                           (1-slot, drops frames)         │  Tracker → Guider/Calibrator
                                                          │  Capture job (single / bursts / flats)
-                                                         │      └─► RAM buffer ─► writer thread ─► files
+                                                         │      └─► frame ring (shared memory) ─┬─► writer thread ─► files
+                                                         │                                      └─► stacker (other process, via stack.sock)
                                                          └─  Storage (chosen drive, free space, safety)
 ```
 
@@ -19,8 +20,10 @@ Crates:
 | `rustflare-camera` | `simulator`; `playerone` (feature) |
 | `rustflare-mount` | `zwo` (serial), `simulator` |
 | `rustflare-tracking` | `Tracker` (disc, limb, anchor), `Calibrator`, `Guider` — pure, time-injected |
-| `rustflare-capture` | `FrameSink` (RAM buffer + writer thread, SER/PNG, FAT32 rollover), `SerWriter`, `write_png`, flats logic — pure, tested |
-| `rustflare-server` | `engine` (state machine), `api` (axum), `preview` (JPEG thread, auto-stretch), `storage` (drive selection and safety), `config` (settings file), `status` |
+| `rustflare-ring` | the shared frame ring: one producer, any number of consumers, in memory that another process can map (ADR 0019); `ipc` passes its descriptor over a unix socket |
+| `rustflare-capture` | `FrameSink` (the frame ring and a writer thread that is one consumer of it: SER/PNG/FITS, FAT32 rollover, wait or drop when full, deferred bursts), `SerWriter`, `write_png`, flats logic — pure, tested |
+| `rustflare-stack` | the stacker; `serve` takes bursts from the recorder's ring over `stack.sock`, `watch` stacks finished recordings from disk |
+| `rustflare-server` | `engine` (state machine; after each burst it hands the burst to the stacker through `stackbridge` and decides what is written), `api` (axum), `preview` (JPEG thread, auto-stretch), `storage` (drive selection and safety), `config` (settings file), `status` |
 
 The engine loop: *apply commands → capture one frame → (at ~10 Hz) statistics, Sun location, tracker, guider/calibrator → preview (throttled) → capture job (the frame is moved into the RAM buffer) → throttled status publish*.
 Anything that needs the hardware goes through the engine, so there is exactly one place where camera, mount and jobs interact.

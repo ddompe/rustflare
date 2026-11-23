@@ -2,7 +2,7 @@
 
 ![Record tab](../img/manual/record.png)
 
-Frames go into a RAM buffer and are written to disk in the background, so the camera does not slow down for the disk until the buffer is full.
+Frames go into a RAM buffer and are written to disk in the background, so the camera does not slow down for the disk until the buffer is full. Under **After each burst** you can also have each burst stacked from memory, and choose whether the video is kept: see [After each burst](recording-modes.md).
 
 ## What to record
 
@@ -35,7 +35,7 @@ The automatic [meridian flip](aim.md#meridian-flip) pauses a running recording t
 ## Format
 
 - **SER** video (default), **PNG** or **FITS**. PNG and FITS write one file per frame into a folder. FITS headers carry time, exposure, gain and instrument.
-- *When the RAM buffer is full*: **Wait for the disk** never loses a frame (a fast camera slows to disk speed). **Drop frames** keeps the camera at full speed and counts the dropped frames, shown in the buffer overlay and the notes file.
+- *When the RAM buffer is full*: **Wait for the disk** never loses a frame (a fast camera slows to disk speed). **Drop frames** keeps the camera at full speed and counts the dropped frames, shown in the buffer overlay and the notes file; a recording that lost frames also leaves a message in the status bar until you dismiss it.
 
 The buffer size (default 1 GB) is set here. The panel shows whether a burst fits and the disk load of the schedule. File layout and sizes: [Capture formats and storage](../reference/capture-formats.md).
 
