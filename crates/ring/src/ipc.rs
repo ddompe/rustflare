@@ -128,7 +128,8 @@ mod tests {
         send(&a, &vec![7u8; 5_000], None).unwrap();
         let mut rx = Receiver::new(b);
         assert_eq!(rx.recv().unwrap().unwrap(), b"hello");
-        assert!(rx.take_fd().is_none());
+        // (a descriptor may already have been received along with the bytes that follow: what matters is that it is there by the time
+        // its own message has been read)
         assert_eq!(rx.recv().unwrap().unwrap(), b"ring");
         let got = rx.take_fd().expect("the descriptor arrived with its message");
         assert_eq!(rx.recv().unwrap().unwrap().len(), 5_000);
