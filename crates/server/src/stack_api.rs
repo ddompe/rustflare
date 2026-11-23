@@ -89,7 +89,7 @@ pub async fn stack_config_put(State(st): State<AppState>, Json(patch): Json<Valu
     let path = state_dir(&st).join("stack.json");
     let mut cur: serde_json::Map<String, Value> = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
     let Some(p) = patch.as_object() else { return (StatusCode::BAD_REQUEST, Json(json!({ "error": "send an object" }))).into_response() };
-    for key in ["enabled", "policy", "min_gap_s", "keep_percent", "multipoint", "threads", "float", "flat", "darks", "include_unmarked"] {
+    for key in ["enabled", "policy", "min_gap_s", "keep_percent", "multipoint", "threads", "float", "flat", "darks", "include_unmarked", "disc_mask", "disc_scale"] {
         if let Some(v) = p.get(key) {
             cur.insert(key.into(), v.clone());
         }
@@ -100,6 +100,7 @@ pub async fn stack_config_put(State(st): State<AppState>, Json(patch): Json<Valu
     };
     cfg.keep_percent = cfg.keep_percent.clamp(1.0, 100.0);
     cfg.threads = cfg.threads.clamp(1, 4);
+    cfg.disc_scale = cfg.disc_scale.clamp(0.8, 1.2);
     cfg.min_gap_s = cfg.min_gap_s.clamp(0.0, 600.0);
     if cfg.flat.as_deref().map_or(false, |f| !clean_relative(f)) || cfg.darks.iter().any(|d| !clean_relative(d)) {
         return (StatusCode::BAD_REQUEST, Json(json!({ "error": "flat and dark files are named relative to the storage folder" }))).into_response();
@@ -138,5 +139,53 @@ pub async fn stack_thumb(State(st): State<AppState>, UrlPath(rel): UrlPath<Strin
         },
         Ok(Err(e)) => (StatusCode::NOT_FOUND, Json(json!({ "error": e }))).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct RestackBody { path: String, #[serde(default)] confirm: bool }
+
+/// Makes the stacker do a stack (or every stack in a folder of `stacks/`) again from its recording: the finished FITS files are
+/// deleted and their lines leave the manifest, so the stacker finds the recordings unstacked. Needs `confirm: true` and a stacker
+/// that is not in the middle of a job (it keeps the manifest). A stack whose recording is gone cannot be remade and is refused.
+pub async fn stack_restack(State(st): State<AppState>, Json(b): Json<RestackBody>) -> Response {
+    let bad = |c: StatusCode, e: String| (c, Json(json!({ "error": e }))).into_response();
+    if !b.confirm {
+        return bad(StatusCode::BAD_REQUEST, "this deletes the stacks and makes them again: send {\"confirm\": true}".into());
+    }
+    let rel = b.path.trim_matches('/').strip_prefix("stacks/").map(|s| s.to_string()).or_else(|| (b.path.trim_matches('/') == "stacks").then(String::new));
+    let Some(rel) = rel.filter(|r| r.is_empty() || clean_relative(r)) else { return bad(StatusCode::BAD_REQUEST, "choose a stack or a folder inside stacks/".into()) };
+    if st.engine.status.borrow().capture.state != "idle" {
+        return bad(StatusCode::CONFLICT, "a capture is running or still writing".into());
+    }
+    let (dir, root) = (state_dir(&st), st.storage.dir());
+    match tokio::task::spawn_blocking(move || -> Result<(usize, usize), (StatusCode, String)> {
+        let status: Value = std::fs::read_to_string(dir.join("stack-status.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(Value::Null);
+        if status["state"] == "working" {
+            return Err((StatusCode::CONFLICT, "the stacker is working: wait until it is idle (it keeps the list of finished stacks)".into()));
+        }
+        let mpath = root.join("stacks/manifest.json");
+        let mut manifest: Vec<Entry> = std::fs::read_to_string(&mpath).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        let hit = |e: &Entry| rel.is_empty() || e.output == rel || e.output.starts_with(&format!("{rel}/"));
+        let (mine, keep): (Vec<Entry>, Vec<Entry>) = manifest.drain(..).partition(|e| hit(e));
+        let missing = mine.iter().filter(|e| !root.join(&e.source).is_file()).count();
+        if missing > 0 {
+            return Err((StatusCode::BAD_REQUEST, format!("{missing} of these stacks have no recording any more: they cannot be made again")));
+        }
+        let tmp = mpath.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_vec_pretty(&keep).unwrap_or_default()).and_then(|_| std::fs::rename(&tmp, &mpath)).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("could not save the list of stacks: {e}")))?;
+        let mut removed = 0;
+        for e in &mine {
+            if std::fs::remove_file(root.join("stacks").join(&e.output)).is_ok() {
+                removed += 1;
+            }
+        }
+        Ok((mine.len(), removed))
+    })
+    .await
+    {
+        Ok(Ok((n, removed))) => Json(json!({ "queued": n, "deleted": removed })).into_response(),
+        Ok(Err((c, e))) => bad(c, e),
+        Err(e) => bad(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     }
 }

@@ -27,6 +27,9 @@ pub struct Entry {
     pub seconds: f64,
     #[serde(default)]
     pub phases: Vec<(String, f64)>,
+    /// Where the Sun's disc was found in the stack (prominence lanes), and whether a black disc was drawn there.
+    #[serde(default)]
+    pub disc: Option<crate::disc::DiscInfo>,
 }
 
 /// Recordings under `root`, oldest name first. Calibration recordings, `_partN` continuations and the output folder are left out.
@@ -67,7 +70,8 @@ fn newer(a: &Path, b: &Path) -> bool {
 /// Stack one recording: write its FITS under `out` (mirroring the folder structure below `root`) and return the manifest entry.
 pub fn stack_one(root: &Path, out: &Path, src: &Path, opts: &Options, cals: &CalSet, float: bool) -> Result<Entry, String> {
     let ser = crate::ser::Ser::open(src).map_err(|e| e.to_string())?;
-    let result = stack_source(root, out, src, &ser, Settings::from_sidecar(src), opts, cals, float).map(|(e, _)| e);
+    let track = crate::disc::track_from_sidecar(src);
+    let result = stack_source(root, out, src, &ser, Settings::from_sidecar(src), track.as_deref(), opts, cals, float).map(|(e, _)| e);
     crate::source::FrameSource::release(&ser);
     result
 }
@@ -75,12 +79,31 @@ pub fn stack_one(root: &Path, out: &Path, src: &Path, opts: &Options, cals: &Cal
 /// Stack frames from any source (a SER file, a burst in the frame ring). `name` is where the recording is or would be: it names the
 /// output and goes into the FITS header and the manifest. Returns the entry and the ranking score of every frame (higher is better),
 /// which tells a recorder which frames are worth keeping.
-pub fn stack_source(root: &Path, out: &Path, name: &Path, src: &dyn crate::source::FrameSource, settings: Settings, opts: &Options, cals: &CalSet, float: bool) -> Result<(Entry, Vec<f64>), String> {
+pub fn stack_source(root: &Path, out: &Path, name: &Path, src: &dyn crate::source::FrameSource, settings: Settings, disc_track: Option<&[crate::disc::Pos]>, opts: &Options, cals: &CalSet, float: bool) -> Result<(Entry, Vec<f64>), String> {
     let target = output_path(root, out, name);
     let rel = name.strip_prefix(root).unwrap_or(name).to_string_lossy().to_string();
-    let (cal, notes) = cals.for_settings(settings);
+    let (cal, mut notes) = cals.for_settings(settings);
     let t0 = std::time::Instant::now();
-    let stacked = crate::stack::stack_frames(src, opts, &cal)?;
+    let mut stacked = crate::stack::stack_frames(src, opts, &cal)?;
+    // prominence lanes: find the disc in the stack and, if asked, black it out (the frames themselves are raw)
+    if let Some(track) = disc_track.filter(|t| !t.is_empty()) {
+        if track.len() != src.frames() {
+            notes.push(format!("the recorded disc positions ({}) do not match the frames ({}): no disc drawn", track.len(), src.frames()));
+        } else {
+            match crate::disc::locate(&stacked, track) {
+                Ok(mut d) => {
+                    if d.how != "fitted" {
+                        notes.push("the disc's edge could not be found in the stack: its recorded position was used".into());
+                    }
+                    if opts.disc_mask {
+                        crate::disc::blank(&mut stacked, &mut d, opts.disc_scale);
+                    }
+                    stacked.disc = Some(d);
+                }
+                Err(e) => notes.push(format!("no disc drawn: {e}")),
+            }
+        }
+    }
     write_fits(&target, &stacked, name, opts, float, settings).map_err(|e| format!("{}: {e}", target.display()))?;
     let r = &stacked.report;
     let entry = Entry {
@@ -99,6 +122,7 @@ pub fn stack_source(root: &Path, out: &Path, name: &Path, src: &dyn crate::sourc
         notes,
         seconds: t0.elapsed().as_secs_f64(),
         phases: r.phases.clone(),
+        disc: stacked.disc.clone(),
     };
     Ok((entry, stacked.report.score.clone()))
 }

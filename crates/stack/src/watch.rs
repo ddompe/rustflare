@@ -46,11 +46,14 @@ pub struct Config {
     pub include_unmarked: bool,
     /// Keep telemetry (CPU, priority, throttling, temperature, what the recorder was doing) in `logs/<date>/stack.jsonl`.
     pub telemetry: bool,
+    /// Prominence lanes: draw a black disc over the Sun after stacking (the recorded frames are raw), and its size as a multiple of the radius.
+    pub disc_mask: bool,
+    pub disc_scale: f64,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { enabled: true, policy: Policy::BetweenBursts, min_gap_s: 15.0, keep_percent: 25.0, multipoint: true, threads: 2, float: true, flat: None, darks: Vec::new(), include_unmarked: false, telemetry: true }
+        Config { enabled: true, policy: Policy::BetweenBursts, min_gap_s: 15.0, keep_percent: 25.0, multipoint: true, threads: 2, float: true, flat: None, darks: Vec::new(), include_unmarked: false, telemetry: true, disc_mask: true, disc_scale: 1.03 }
     }
 }
 
@@ -60,7 +63,7 @@ impl Config {
     }
 
     pub fn options(&self) -> Options {
-        Options { keep: (self.keep_percent / 100.0).clamp(0.01, 1.0), multipoint: self.multipoint, threads: self.threads.max(1), ..Options::default() }
+        Options { keep: (self.keep_percent / 100.0).clamp(0.01, 1.0), multipoint: self.multipoint, threads: self.threads.max(1), disc_mask: self.disc_mask, disc_scale: self.disc_scale.clamp(0.8, 1.2), ..Options::default() }
     }
 }
 

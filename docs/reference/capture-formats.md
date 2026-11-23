@@ -4,6 +4,8 @@ How recordings are stored and what is in them. For the controls, see the [Record
 
 ## Output
 
+Every file format in detail (SER layout, notes file, stack FITS headers, manifest, logs): [File formats](file-formats.md).
+
 `<data-dir>/<UTC date>/<kind>_<UTC time>[_name].<ext>` with a `.json` sidecar (camera controls, mount and tracker state, details).
 
 | Kind | Files | Notes |
@@ -15,7 +17,7 @@ How recordings are stored and what is in them. For the controls, see the [Record
 | `dark_…` | `.ser`, `_master.png` | the raw dark frames (kept since 0.4.1; earlier darks have only the master), and their 16-bit mean |
 | `*.fits` | one file per frame in a folder | header has time, exposure, gain, instrument |
 
-Download from the **Captures** panel (see [Record](../guide/record.md#captures-file-manager)) or `/files/<date>/<name>`.
+Download from the **Files** screen (see [Record](../guide/record.md#files-file-manager)) or `/files/<date>/<name>`.
 
 ## Bursts and the RAM buffer
 

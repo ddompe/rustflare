@@ -2,6 +2,7 @@
 
 pub mod align;
 pub mod calib;
+pub mod disc;
 pub mod fft2;
 pub mod fits;
 pub mod image;

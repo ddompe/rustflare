@@ -69,6 +69,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/files", get(files))
         .route("/api/stack", get(crate::stack_api::stack_get))
         .route("/api/stack/config", put(crate::stack_api::stack_config_put))
+        .route("/api/stack/restack", post(crate::stack_api::stack_restack))
         .route("/api/stack/thumb/*path", get(crate::stack_api::stack_thumb))
         .route("/stream.mjpg", get(mjpeg))
         .route("/snapshot.jpg", get(snapshot))

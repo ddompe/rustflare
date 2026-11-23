@@ -28,6 +28,8 @@ export interface StackConfig {
   flat: string | null
   darks: string[]
   include_unmarked: boolean
+  disc_mask: boolean
+  disc_scale: number
 }
 interface Calibration { path: string; kind: 'dark' | 'flat'; frames: number; exposure_us: number | null; gain: number | null }
 export interface StackInfo {
@@ -130,6 +132,12 @@ export function Stacking({ info, reload }: { info: StackInfo | null; reload: () 
         {(id) => <input id={id} type="number" inputMode="numeric" min={1} max={100} step={5} value={keep} onChange={(e) => setKeep(e.target.value)} onBlur={() => { const n = parseFloat(keep); if (n >= 1 && n <= 100 && n !== c.keep_percent) save({ keep_percent: n }) }} />}
       </Field>
       <Switch label="Multi-point alignment" hint="A shift for each patch of the picture, not one per frame: sharper, a little slower." checked={c.multipoint} disabled={busy} onChange={(v) => save({ multipoint: v })} />
+      <Switch label="Black disc on prominence stacks" hint="Prominence lanes recorded with the coronagraph are saved raw. With this on, the stacker finds the Sun's disc in the finished stack and draws a black disc over it; off keeps the disc as it was recorded. Applies to stacks made from now on (Files has Re-stack for the others)." checked={c.disc_mask} disabled={busy} onChange={(v) => save({ disc_mask: v })} />
+      {c.disc_mask && (
+        <Field label="Black disc size (% of the Sun's radius)" hint="Slightly over 100 hides the bright limb ring.">
+          {(id) => <input id={id} type="number" inputMode="numeric" min={90} max={120} step={1} defaultValue={Math.round(c.disc_scale * 100)} key={c.disc_scale} onBlur={(e) => { const n = parseFloat(e.target.value); if (n >= 90 && n <= 120 && Math.abs(n / 100 - c.disc_scale) > 1e-6) save({ disc_scale: n / 100 }) }} />}
+        </Field>
+      )}
       <Switch label="Also stack older recordings" hint="Recordings on the drive that were made before the stacker was switched on (without the finished-marker). Off: only new recordings are stacked." checked={c.include_unmarked} disabled={busy} onChange={(v) => save({ include_unmarked: v })} />
       <Field label="Flat" hint={flats.length ? 'The raw flat-field recording (Camera tab, Flats). The stacker builds its own master from it.' : 'No flat recordings on this drive yet.'}>
         {(id) => (

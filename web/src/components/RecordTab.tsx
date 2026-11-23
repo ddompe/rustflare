@@ -140,7 +140,7 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
         {kind === 'prominence' && (
           <>
             <Field label="Prominence exposure, times the disc">{(id) => <input id={id} inputMode="decimal" value={factor} onChange={(e) => setFactor(e.target.value)} />}</Field>
-            <Switch label="Coronagraph: black out the disc in the prominence lane" checked={mask} onChange={setMask} hint={mask ? 'The saved frames of that lane have the disc masked (not raw there). Needs the Sun in view; the disc lane stays raw.' : 'Off: both lanes are saved raw. Turn on to record the prominence lane with the disc hidden.'} />
+            <Switch label="Coronagraph: black disc on the prominence stacks" checked={mask} onChange={setMask} hint={mask ? 'Both lanes are saved raw. The Sun\'s position is saved with every frame of the prominence lane, and the stacker draws the black disc on the finished stack (switch it off in More, Stacking). Needs the Sun in view.' : 'Off: no disc positions are saved for the prominence lane.'} />
           </>
         )}
         <div className="grid2">

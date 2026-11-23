@@ -17,6 +17,7 @@ scripts/sim/<name>.sh
 | `lane-follow.sh` | the Sun model follows the Sun while the mount moves during a lane recording |
 | `flip.sh` | the meridian flip assist: record, GoTo, re-centre |
 | `autoflip.sh`, `autoflip-resume.sh` | the automatic flip, with guiding (recalibrates) and with a running lane recording (pauses, then resumes) |
+| `disc-mask.sh` | prominence lane with the coronagraph: frames stay raw, disc positions are saved, the stacker finds the disc in the stack and draws the black disc only if asked, Re-stack remakes a stack |
 | `focus.sh` | focus assist: sharp scores higher than defocused |
 | `mask.sh` | the coronagraph mask only affects the prominence lane |
 

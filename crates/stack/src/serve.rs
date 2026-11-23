@@ -128,7 +128,8 @@ fn burst(state_dir: &Path, v: &Value, rings: &HashMap<u64, Ring>, tlog: &Log, ca
     let _one_at_a_time = WORK.lock().unwrap();
     let (before, t) = (Counters::take(), Instant::now());
     let out = root.join("stacks");
-    let result = session::stack_source(&root, &out, &root.join(stem), &src, settings, &opts, &cals.as_ref().unwrap().1, cfg.float);
+    let track = crate::disc::parse(&v["disc"]);
+    let result = session::stack_source(&root, &out, &root.join(stem), &src, settings, track.as_deref(), &opts, &cals.as_ref().unwrap().1, cfg.float);
     // frames the camera overwrote while we worked make the stack unusable: say so rather than hand back a torn one
     let result = result.and_then(|r| if src.intact() { Ok(r) } else { Err("part of the burst was overwritten in the ring while it was being stacked".to_string()) });
     let mut job = before.delta(&Counters::take());

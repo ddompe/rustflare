@@ -90,6 +90,8 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
   const [q, setQ] = useState('')
   const [checking, setChecking] = useState(false)
   const [ask, setAsk] = useState(false)
+  const [rs, setRs] = useState<Entry | null>(null)
+  const [rsMsg, setRsMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -176,6 +178,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
           {f.from && <div className="muted fm-sub">From <button type="button" className="linklike" onClick={() => go(parentOf(f.from!.source))}>{f.from.source.split('/').pop()}</button></div>}
         </div>
         <div className="fm-actions">
+          {f.path.startsWith('stacks/') && f.files > 0 && !busy && <button type="button" className="small" onClick={() => { setRs(f); setErr(null) }}>Re-stack</button>}
           {f.type === 'recording' && <button type="button" className="small" onClick={() => check(f.path)}>{st ? 'Re-check' : 'Check'}</button>}
           {f.dir
             ? (f.files === 0 ? <span className="muted">Empty</span> : <a className="btn small" href={`/api/files/archive?path=${encodeURIComponent(f.path)}`} download aria-label={`Download ${f.name} as one .tar file, ${size(f.size)}`}>Download all · {size(f.size)}</a>)
@@ -230,6 +233,20 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
 
       <footer className="fm-foot">
         <ErrorLine error={err} />
+        {rsMsg && <div className="hint-text" role="status">{rsMsg}</div>}
+        {rs && (
+          <div className="confirm" role="alertdialog" aria-label="Confirm re-stack">
+            <p>Delete {rs.dir ? `the ${plural(rs.files, 'stack')} in ${rs.name}` : rs.name} and make {rs.dir || rs.files > 1 ? 'them' : 'it'} again from the recording with the current stacker settings?</p>
+            <div className="btnrow tight">
+              <button type="button" className="grow" onClick={() => setRs(null)}>Keep</button>
+              <button type="button" className="danger grow" onClick={async () => {
+                try { const r = await api<{ queued: number }>('POST', '/stack/restack', { path: rs.path, confirm: true }); setRsMsg(`${plural(r.queued, 'stack')} will be made again by the stacker.`); load() }
+                catch (e) { setErr(e instanceof Error ? e.message : String(e)) }
+                setRs(null)
+              }}>Re-stack</button>
+            </div>
+          </div>
+        )}
         {busy && <div className="hint-text">Deleting is disabled while recording or writing.</div>}
         {!ask ? (
           <button type="button" className="danger wide" disabled={sel.size === 0 || busy} onClick={() => setAsk(true)}>

@@ -61,10 +61,14 @@ pub struct Options {
     pub register: f64,
     /// A point needs this fraction of the 90th-percentile detail of all points.
     pub min_structure: f64,
+    /// Draw a black disc over the Sun in stacks whose recording carries disc positions (prominence lanes), after stacking.
+    pub disc_mask: bool,
+    /// Size of that black disc as a multiple of the disc's radius.
+    pub disc_scale: f64,
 }
 
 impl Default for Options {
-    fn default() -> Self { Options { keep: 0.25, align: true, threads: 2, bin: 2, whiten: 0.7, erode: 8, rank: Rank::Reference, cache_mb: 1024, integer_shifts: false, clip: 0.0, refine: 0.10, multipoint: true, ap_half: 24, search: 14, register: 0.5, min_structure: 0.05 } }
+    fn default() -> Self { Options { keep: 0.25, align: true, threads: 2, bin: 2, whiten: 0.7, erode: 8, rank: Rank::Reference, cache_mb: 1024, integer_shifts: false, clip: 0.0, refine: 0.10, multipoint: true, ap_half: 24, search: 14, register: 0.5, min_structure: 0.05, disc_mask: true, disc_scale: 1.03 } }
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -104,6 +108,8 @@ pub struct Stacked {
     pub height: usize,
     pub data: Vec<f32>,
     pub report: Report,
+    /// Where the Sun's disc is in this stack, when the recording carried its positions (see `disc`).
+    pub disc: Option<crate::disc::DiscInfo>,
 }
 
 fn run_parallel<T: Send>(n: usize, threads: usize, work: impl Fn(usize) -> T + Sync) -> Vec<T> {
@@ -590,5 +596,5 @@ pub fn stack_frames(src: &dyn FrameSource, opts: &Options, cal: &Calibration) ->
         flat_applied: cal.flat.is_some(),
         dark_applied: cal.dark.is_some(),
     };
-    Ok(Stacked { width: w, height: h, data, report })
+    Ok(Stacked { width: w, height: h, data, report, disc: None })
 }

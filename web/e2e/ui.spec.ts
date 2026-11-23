@@ -165,7 +165,7 @@ test('Record offers sequence, prominence and HDR lanes in one form', async ({ pa
   await page.getByRole('button', { name: 'Diamond ring' }).click()
   await expect(page.getByLabel('Lane 3 name')).toHaveValue('e3')
   await page.getByRole('radio', { name: '+ Prominence' }).check()
-  await expect(page.getByText('Coronagraph: black out the disc')).toBeVisible()
+  await expect(page.getByText('Coronagraph: black disc')).toBeVisible()
   await page.getByRole('radio', { name: 'Sequence' }).check()
   await expect(page.getByRole('button', { name: 'Start recording' })).toBeVisible()
 })

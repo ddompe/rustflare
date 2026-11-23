@@ -114,5 +114,6 @@ The stacker (`rustflare-stack`, see [Stacking](../guide/stacking.md)) is a separ
 | Endpoint | |
 |---|---|
 | `GET /api/stack` | `{service, status, config, stacks, total, calibration}`: whether the `rustflare-stack` service is active, its `stack-status.json`, its settings, the newest 48 stacks (source, output, frames kept, thumbnail name, `path` to download under `/files/`) and the raw dark and flat recordings on the drive |
-| `PUT /api/stack/config` | any of `enabled`, `policy` (`when_idle`, `between_bursts`, `always`), `min_gap_s`, `keep_percent` (1 to 100), `multipoint`, `threads` (1 to 4), `float`, `flat`, `darks` (paths relative to the storage folder); returns the settings now in force |
+| `PUT /api/stack/config` | any of `enabled`, `policy` (`when_idle`, `between_bursts`, `always`), `min_gap_s`, `keep_percent` (1 to 100), `multipoint`, `threads` (1 to 4), `float`, `flat`, `darks` (paths relative to the storage folder), `include_unmarked`, `disc_mask` (black disc on prominence stacks), `disc_scale` (0.8 to 1.2); returns the settings now in force |
+| `POST /api/stack/restack` | `{"path":"stacks/...","confirm":true}`: deletes the stack (or every stack in the folder) and removes it from the manifest so the stacker makes it again from its recording with the current settings. 409 while capturing or while the stacker is working; 400 if a recording is gone. Returns `{queued, deleted}` |
 | `GET /api/stack/thumb/<path>` | a PNG preview (at most 640 px wide, auto-stretched, display only) of a stack under `stacks/`, made on first request |

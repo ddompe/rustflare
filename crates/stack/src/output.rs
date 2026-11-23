@@ -33,6 +33,16 @@ pub fn write_fits(target: &Path, s: &Stacked, source: &Path, opts: &Options, flo
         ("DARKCORR".into(), flag(r.dark_applied), "master dark applied".into()),
         ("ORIGFILE".into(), fits::quoted(&source.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()), "source recording".into()),
     ];
+    if let Some(d) = &s.disc {
+        extra.push(("DISCX".into(), format!("{:.2}", d.x), "Sun disc centre x in this stack, pixels from 0".into()));
+        extra.push(("DISCY".into(), format!("{:.2}", d.y), "Sun disc centre y in this stack, pixels from 0".into()));
+        extra.push(("DISCR".into(), format!("{:.2}", d.r), "Sun disc radius, pixels".into()));
+        extra.push(("DISCHOW".into(), fits::quoted(&d.how), "fitted to the edge, or recorded position".into()));
+        extra.push(("DISCMASK".into(), flag(d.masked), "black disc drawn over the Sun".into()));
+        if d.masked {
+            extra.push(("DISCSCAL".into(), format!("{:.3}", d.scale), "black disc radius / Sun radius".into()));
+        }
+    }
     if let Some(t) = r.first_timestamp {
         extra.push(("DATE-OBS".into(), fits::quoted(&iso_utc(t)), "first frame, UTC".into()));
     }

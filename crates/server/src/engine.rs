@@ -282,6 +282,9 @@ struct CaptureJob {
     cur: Option<CurStack>,
     /// The "stacker is not available" warning has been shown for this recording.
     warned_no_stacker: bool,
+    /// Prominence lane with the coronagraph: where the Sun's model put the disc in each saved frame of the burst (x, y, radius; radius 0 = Sun not in view).
+    /// The frames themselves stay raw; the stacker draws the black disc after stacking (docs/guide/stacking.md).
+    disc_track: Vec<[f32; 3]>,
     /// Send the mount home when this recording finishes by itself (not when stopped, paused or failed).
     home_when_done: bool,
     /// Bursts finished so far and their total time, to estimate when the recording will end.
@@ -1754,6 +1757,7 @@ impl Engine {
                     sink_no: self.next_sink_no(),
                     cur: None,
                     warned_no_stacker: false,
+                    disc_track: Vec::new(),
                     home_when_done,
                     bursts_done: 0,
                     burst_time_sum: 0.0,
@@ -1838,6 +1842,7 @@ impl Engine {
                     sink_no: self.next_sink_no(),
                     cur: None,
                     warned_no_stacker: false,
+                    disc_track: Vec::new(),
                     home_when_done,
                     bursts_done: 0,
                     burst_time_sum: 0.0,
@@ -3020,6 +3025,7 @@ impl Engine {
             self.status.capture.next_in_s = None;
             self.status.capture.done = 0;
             self.status.capture.file = Some(rel(&self.data_dir(), &stem));
+            job.disc_track.clear();
             job.phase = CapPhase::Capturing { stem, started: now, taken: 0 };
         }
         if let Some(l) = job.lanes.as_mut() {
@@ -3028,14 +3034,11 @@ impl Engine {
                 return Job::Capture(job);
             }
         }
-        if job.lanes.as_ref().is_some_and(|l| l.specs[l.current].mask_disc) {
-            // coronagraph recording: the disc is blacked out in the saved frames of this lane
-            let scale = self.corona.lock().unwrap().scale;
-            match self.status.sun.as_ref() {
-                Some(s) => preview::mask_disc(&mut frame, s.pos.x, s.pos.y, s.radius * scale),
-                None => log::warn!("coronagraph lane: the Sun is not in view, frame saved unmasked"),
-            }
-        }
+        // coronagraph lane: the frame is saved raw; remember where the model puts the disc in it (blacked out after stacking)
+        let disc_pos = job.lanes.as_ref().filter(|l| l.specs[l.current].mask_disc).map(|_| match self.status.sun.as_ref() {
+            Some(s) => [(s.pos.x * 10.0).round() as f32 / 10.0, (s.pos.y * 10.0).round() as f32 / 10.0, (s.radius * 10.0).round() as f32 / 10.0],
+            None => [0.0, 0.0, 0.0],
+        });
         let CapPhase::Capturing { stem, started, taken } = &mut job.phase else { unreachable!() };
         if job.drop_when_full {
             match job.sink.try_push(frame) {
@@ -3050,6 +3053,9 @@ impl Engine {
             return self.fail_capture(job, "the disk writer stopped unexpectedly".into());
         }
         *taken += 1;
+        if let Some(p) = disc_pos {
+            job.disc_track.push(p);
+        }
         self.status.capture.done = *taken;
         self.status.capture.phase = format!("burst {}{total_txt}: capturing", job.burst_no);
 
@@ -3066,6 +3072,11 @@ impl Engine {
         }
 
         let (stem, taken, started) = (stem.clone(), *taken, *started);
+        let unseen = job.disc_track.iter().filter(|p| p[2] <= 0.0).count();
+        if unseen > 0 {
+            self.event("disc_position_missing", json!({ "frames": unseen, "of": job.disc_track.len() }));
+            log::warn!("coronagraph lane: the Sun was not in view in {unseen} of {} frames: those have no disc position", job.disc_track.len());
+        }
         let in_ram = job.sink.queued(); // frames still waiting for the disk: gone if the drive is
         let (end_id, end_first, end_last) = job.sink.end();
         if let Some(cur) = job.cur.take() {
@@ -3083,7 +3094,8 @@ impl Engine {
             json!({ "name": job.name, "burst": job.burst_no, "of": job.total_bursts, "frames": taken,
                     "format": match job.format { Format::Png => "png", Format::Fits => "fits", Format::Ser => "ser" },
                     "dropped_frames": job.sink.dropped(),
-                    "duration_s": started.elapsed().as_secs_f64(), "stopped_early": stop }),
+                    "duration_s": started.elapsed().as_secs_f64(), "stopped_early": stop,
+                    "disc_track": if job.disc_track.is_empty() { Value::Null } else { json!(job.disc_track) } }),
         );
         self.write_sidecar(&stem, &sc);
         if let Some(why) = stop {
@@ -3660,7 +3672,8 @@ impl Engine {
                 ok
             }))
             && self.bridge.send_burst(&json!({ "t": "burst", "ring": job.sink_no, "id": no, "first": first, "count": count, "stem": rel_name,
-                "keep_percent": self.after.stack_keep_percent, "exposure_us": exposure, "gain": gain }));
+                "keep_percent": self.after.stack_keep_percent, "exposure_us": exposure, "gain": gain,
+                "disc": if job.disc_track.is_empty() { Value::Null } else { json!(job.disc_track) } }));
         if !sent {
             self.fallback(no, if count < 4 { "the burst has too few frames" } else { "the stacker could not be reached" }, Some(&job.sink));
         }
