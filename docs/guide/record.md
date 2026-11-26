@@ -56,6 +56,10 @@ These are captured from the [Camera tab](camera.md#flats). Recordings always sta
 - **Filter** narrows the folder by name; **Sort** by name, newest or largest.
 - **Delete** works on files and folders (several at once) and asks first, with the number of files and the size. It removes the notes file too. The day folders, `stacks` and `logs` themselves, and the stacker's `manifest.json`, cannot be deleted. Deleting a stack does not make the stacker redo it.
 
+## Recording to the Pi's own SD card
+
+More > Storage > *Store on* lists **Internal storage (SD card)** next to your USB drives. It is useful when you need a short event at high speed without a drive, or when the drive misbehaves. It is slower than a good USB drive (roughly 30 to 90 MB/s), so a full-rate recording fills the RAM buffer in seconds and then drops frames or slows the camera; stack-only and best-frames modes need almost no disk. **Keep this much free** (8 GB by default) is never used by a recording: it will not start without it and stops itself before using it. Choosing a USB drive again switches back.
+
 ## Safe eject
 
 Use **Eject drive safely** (More > Storage) before pulling a USB drive. It is refused while recording.

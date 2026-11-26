@@ -77,6 +77,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/snapshot.jpg", get(snapshot))
         .route("/files/*path", get(download))
         .route("/api/storage", get(storage_get).put(storage_put))
+        .route("/api/storage/reserve", put(storage_reserve))
         .route("/api/storage/eject", post(storage_eject))
         .route("/api/flats/applied", put(flats_applied))
         .route("/api/guiding/params", put(guide_params))
@@ -413,6 +414,16 @@ async fn storage_put(State(st): State<AppState>, Json(b): Json<StoragePath>) -> 
         Ok(Ok(info)) => Json(json!(info)).into_response(),
         Ok(Err(e)) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct ReserveBody { gb: f64 }
+/// How much of the internal disk is always kept free (2 to 100 GB).
+async fn storage_reserve(State(st): State<AppState>, Json(b): Json<ReserveBody>) -> Res {
+    match st.storage.set_reserve_gb(b.gb) {
+        Ok(gb) => Json(json!({ "reserve_gb": gb })).into_response(),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
     }
 }
 

@@ -580,3 +580,19 @@ test('auto-stretch is a button on the live view and stays in step with More > Di
   await expect(btn).toHaveAttribute('aria-pressed', 'false')
   await expect.poll(stretch).toBe(false)
 })
+
+test('the Pi\'s own disk can be recorded to, and always keeps a reserve free', async ({ page }) => {
+  const get = async () => (await (await page.request.get('/api/storage')).json()) as { current: { internal?: boolean; reserve_bytes?: number; label: string }; candidates: { internal?: boolean }[] }
+  const s = await get()
+  expect(s.current.internal).toBe(true) // the test server records to its own data folder
+  expect(s.candidates.some((c) => c.internal)).toBe(true)
+  expect((await put(page, '/storage/reserve', { gb: 1 })).status()).toBe(400)
+  expect((await put(page, '/storage/reserve', { gb: 5 })).status()).toBe(200)
+  expect((await get()).current.reserve_bytes).toBe(5_000_000_000)
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^More/ }).click()
+  await page.getByText('Storage', { exact: true }).first().click()
+  await expect(page.getByRole('note')).toContainText("Pi's SD card")
+  await expect(page.getByLabel('Keep this much free (GB)')).toHaveValue('5')
+  await put(page, '/storage/reserve', { gb: 8 })
+})

@@ -30,3 +30,23 @@ fn bench_analysis() {
         println!("tracker(limb) could not start on this frame");
     }
 }
+
+/// Where the Sun's centre is in a series of raw frames (`RF_BENCH_DIR` holds `<name>.u16` 1944x1472 little-endian and `<name>.t` unix seconds).
+#[test]
+#[ignore]
+fn bench_sun_positions() {
+    let Ok(dir) = std::env::var("RF_BENCH_DIR") else { return };
+    let mut names: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().map_or(false, |e| e == "u16")).collect();
+    names.sort();
+    let mut first: Option<(f64, f64, f64)> = None;
+    for p in names {
+        let data = std::fs::read(&p).unwrap();
+        let frame = rustflare_core::Frame::new(1944, 1472, rustflare_core::PixelFormat::Mono16, data);
+        let t: f64 = std::fs::read_to_string(p.with_extension("t")).unwrap().trim().parse().unwrap();
+        let locked = locate_sun(&frame, Some(1228.46));
+        let free = locate_sun(&frame, None);
+        let f = |l: &Option<rustflare_tracking::SunLocation>| l.as_ref().map_or("none".to_string(), |s| format!("({:7.1},{:7.1}) r {:7.1}", s.pos.x, s.pos.y, s.radius));
+        let t0 = *first.get_or_insert((t, 0.0, 0.0));
+        println!("{} t+{:6.1}s  radius-locked {}  free {}  mean {:.3}", p.file_stem().unwrap().to_string_lossy().chars().skip(6).take(14).collect::<String>(), t - t0.0, f(&locked), f(&free), frame.mean_fraction());
+    }
+}

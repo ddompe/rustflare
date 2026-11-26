@@ -9,6 +9,8 @@ use std::sync::Mutex;
 pub const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
 /// Stop a running capture when free space drops below this.
 pub const STOP_FREE_BYTES: u64 = 50 * 1024 * 1024;
+/// The default reserve kept free on the internal disk.
+const DEFAULT_RESERVE_GB: f64 = 8.0;
 const FAT_MAX_FILE: u64 = 4 * 1024 * 1024 * 1024 - 1;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -117,6 +119,10 @@ pub struct Info {
     /// Usable now: exists, mounted (if it was on a removable mount), writable.
     pub available: bool,
     pub problem: Option<String>,
+    /// The Pi's own disk (the SD card), where recording is allowed but a reserve is always kept free for the system.
+    pub internal: bool,
+    /// Bytes kept free on an internal disk (0 for a removable drive).
+    pub reserve_bytes: u64,
 }
 
 struct State {
@@ -168,11 +174,14 @@ pub fn renamed_mount(old_root: &Path, mounts: &[Mount]) -> Option<Mount> {
 pub struct Storage {
     state: Mutex<State>,
     config_file: PathBuf,
+    /// The Pi's own data folder (the default): recording here is allowed, with a reserve kept free.
+    internal_dir: PathBuf,
 }
 
 impl Storage {
     /// Uses the saved choice in `config_file` if there is one, otherwise `default_dir`.
     pub fn load(config_file: PathBuf, default_dir: PathBuf) -> Storage {
+        let internal_dir = default_dir.clone();
         let saved = crate::config::read(&config_file).get("data_dir").and_then(|v| v.as_str()).map(PathBuf::from);
         let (dir, from_saved) = match saved {
             Some(d) => (d, true),
@@ -210,7 +219,7 @@ impl Storage {
         if !dir.exists() && required_mount.is_none() {
             let _ = std::fs::create_dir_all(&dir);
         }
-        Storage { state: Mutex::new(State { dir, required_mount, uuid, rel, checked: None }), config_file }
+        Storage { state: Mutex::new(State { dir, required_mount, uuid, rel, checked: None }), config_file, internal_dir }
     }
 
     pub fn config_file(&self) -> &Path {
@@ -252,7 +261,32 @@ impl Storage {
     pub fn info(&self) -> Info {
         self.follow_drive();
         let s = self.state.lock().unwrap();
-        describe(&s.dir, s.required_mount.as_deref(), &read_mounts())
+        let mut i = describe(&s.dir, s.required_mount.as_deref(), &read_mounts());
+        self.mark_internal(&mut i, &s.dir);
+        i
+    }
+
+    /// Marks `i` as the Pi's own disk and gives it its reserve (the label says what it is, whatever the folder is called).
+    fn mark_internal(&self, i: &mut Info, dir: &Path) {
+        if dir == self.internal_dir && i.mount_point.is_none() {
+            i.internal = true;
+            i.reserve_bytes = self.reserve_bytes();
+            i.label = "Internal storage (SD card)".into();
+        }
+    }
+
+    /// How much of the internal disk is always kept free (the system, its logs and the settings live there): 2 to 100 GB, 8 by default.
+    pub fn reserve_bytes(&self) -> u64 {
+        let gb = crate::config::read(&self.config_file).get("internal_reserve_gb").and_then(|v| v.as_f64()).unwrap_or(DEFAULT_RESERVE_GB);
+        (gb.clamp(2.0, 100.0) * 1e9) as u64
+    }
+
+    pub fn set_reserve_gb(&self, gb: f64) -> Result<f64, String> {
+        if !(2.0..=100.0).contains(&gb) {
+            return Err("keep between 2 and 100 GB free".into());
+        }
+        crate::config::set(&self.config_file, "internal_reserve_gb", serde_json::json!(gb))?;
+        Ok(gb)
     }
 
     /// Fails with a user-facing message unless captures can safely be written now.
@@ -260,6 +294,13 @@ impl Storage {
         let i = self.info();
         if !i.available {
             return Err(format!("storage not available: {}", i.problem.unwrap_or_default()));
+        }
+        if i.internal {
+            if let Some(f) = i.free {
+                if f < i.reserve_bytes + MIN_FREE_BYTES {
+                    return Err(format!("the internal disk has {:.1} GB free and RustFlare keeps {:.0} GB of it free for the system: free some space, or lower the reserve in More > Storage", f as f64 / 1e9, i.reserve_bytes as f64 / 1e9));
+                }
+            }
         }
         if i.free.is_some_and(|f| f < MIN_FREE_BYTES) {
             return Err(format!("storage almost full ({} MB free)", i.free.unwrap_or(0) / 1_000_000));
@@ -270,27 +311,28 @@ impl Storage {
     }
 
     /// Cheap check used while recording.
-    pub fn running_problem(&self) -> Option<String> {
+    /// `pending` is what is still in memory waiting to be written: it will use space too.
+    pub fn running_problem(&self, pending: u64) -> Option<String> {
         let i = self.info();
         if !i.available {
             return Some(format!("storage not available: {}", i.problem.unwrap_or_default()));
         }
-        i.free.filter(|f| *f < STOP_FREE_BYTES).map(|f| format!("disk full ({} MB left)", f / 1_000_000))
+        guard(i.free, i.internal, i.reserve_bytes, pending)
     }
 
     /// Drives and other mounted volumes that could hold captures (target folder: `<mount>/rustflare`).
     pub fn candidates(&self) -> Vec<Info> {
         let mounts = read_mounts();
-        mounts
-            .iter()
-            .filter(|m| ["/media", "/mnt", "/run/media", "/Volumes"].iter().any(|p| m.point.starts_with(p)))
-            .map(|m| {
-                // judged on the drive itself: the `rustflare` folder is created when selected
-                let mut i = describe(&m.point, Some(&m.point), &mounts);
-                i.path = m.point.join("rustflare").display().to_string();
-                i
-            })
-            .collect()
+        let mut internal = describe(&self.internal_dir, None, &mounts);
+        self.mark_internal(&mut internal, &self.internal_dir);
+        let mut out = vec![internal];
+        out.extend(mounts.iter().filter(|m| ["/media", "/mnt", "/run/media", "/Volumes"].iter().any(|p| m.point.starts_with(p))).map(|m| {
+            // judged on the drive itself: the `rustflare` folder is created when selected
+            let mut i = describe(&m.point, Some(&m.point), &mounts);
+            i.path = m.point.join("rustflare").display().to_string();
+            i
+        }));
+        out
     }
 
     /// Safely removes a drive: flushes it, unmounts it and (where possible) powers the port down. `mount_point` must
@@ -359,7 +401,21 @@ impl Storage {
         s.uuid = uuid;
         s.rel = rel;
         s.checked = Some(std::time::Instant::now());
-        Ok(describe(&s.dir, s.required_mount.as_deref(), &mounts))
+        let mut i = describe(&s.dir, s.required_mount.as_deref(), &mounts);
+        self.mark_internal(&mut i, &s.dir);
+        Ok(i)
+    }
+}
+
+/// Should a running recording stop for lack of space? On a removable drive when under 50 MB would be left; on the internal disk when
+/// what is left after the frames still in memory are written would eat into the reserve kept for the system.
+pub fn guard(free: Option<u64>, internal: bool, reserve: u64, pending: u64) -> Option<String> {
+    let f = free?;
+    if internal {
+        let need = reserve + pending.min(f);
+        (f < need + STOP_FREE_BYTES).then(|| format!("the internal disk is down to {:.1} GB free (keeping {:.0} GB for the system, and {:.1} GB still has to be written from memory)", f as f64 / 1e9, reserve as f64 / 1e9, pending as f64 / 1e9))
+    } else {
+        (f < STOP_FREE_BYTES).then(|| format!("disk full ({} MB left)", f / 1_000_000))
     }
 }
 
@@ -423,6 +479,8 @@ fn describe(dir: &Path, required_mount: Option<&Path>, mounts: &[Mount]) -> Info
         free,
         available: problem.is_none(),
         problem,
+        internal: false,
+        reserve_bytes: 0,
     }
 }
 
@@ -508,6 +566,34 @@ mod tests {
         assert!(drive_trouble(&ro).unwrap().contains("fsck.vfat"));
         let fine = Mount { device: "/dev/null".into(), point: "/media/x/OK".into(), fstype: "vfat".into(), read_only: false };
         assert_eq!(drive_trouble(&fine), None);
+    }
+
+    #[test]
+    fn the_internal_disk_keeps_a_reserve_for_the_system_and_counts_what_is_still_in_memory() {
+        const GB: u64 = 1_000_000_000;
+        // a removable drive stops at 50 MB
+        assert_eq!(guard(Some(10 * GB), false, 0, 4 * GB), None);
+        assert!(guard(Some(40_000_000), false, 0, 0).is_some());
+        // the internal disk: 8 GB kept, plus what is queued
+        assert_eq!(guard(Some(20 * GB), true, 8 * GB, 4 * GB), None);
+        assert!(guard(Some(11 * GB), true, 8 * GB, 4 * GB).is_some(), "11 GB free, 4 GB still to write: the reserve would be eaten");
+        assert!(guard(Some(8 * GB), true, 8 * GB, 0).is_some());
+        assert_eq!(guard(None, true, 8 * GB, 0), None);
+    }
+
+    #[test]
+    fn the_internal_disk_is_offered_as_a_place_to_record_with_its_reserve() {
+        let d = std::env::temp_dir().join(format!("rf-internal-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let s = Storage::load(d.join("cfg.json"), d.join("captures"));
+        let c = s.candidates();
+        let i = c.iter().find(|i| i.internal).expect("the internal disk is a candidate");
+        assert_eq!(i.reserve_bytes, 8_000_000_000);
+        assert!(s.info().internal, "the default folder is the internal disk");
+        s.set_reserve_gb(12.0).unwrap();
+        assert_eq!(s.reserve_bytes(), 12_000_000_000);
+        assert!(s.set_reserve_gb(1.0).is_err() && s.set_reserve_gb(500.0).is_err());
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

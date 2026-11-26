@@ -32,6 +32,7 @@ Frames are captured at camera speed into a **RAM buffer** and written to disk by
 
 Choose where captures go in the **Storage** panel: detected USB drives are listed with free space and the recording time left at the current frame rate. The choice is saved.
 
+- **The Pi's own SD card** is offered in the Storage panel as *Internal storage (SD card)*. Use it for a short, fast event or for the stack-only and best-frames modes, not for long full-rate recordings: it writes at roughly 30 to 90 MB/s, so the RAM buffer fills in seconds. A **reserve** (8 GB by default, 2 to 100 GB, set in the panel) is always kept free for the system, its logs and settings: a recording will not start without it and stops cleanly before it would use it, counting the frames still in memory that have yet to be written (`PUT /api/storage/reserve`).
 - A removed drive is **never silently replaced by the SD card**: captures refuse to start until it is back, and a running capture stops cleanly and keeps its frames.
 - Capturing stops (cleanly) when less than 50 MB is free; starting needs 200 MB.
 - **FAT32** (most factory-formatted sticks): a file cannot exceed 4 GB. RustFlare detects this and **splits SER files into `_part2`, `_part3`…**; PNG folders are unaffected. For long sequences exFAT or ext4 is better (RustFlare never formats a drive).

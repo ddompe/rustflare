@@ -12,6 +12,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `GET /snapshot.jpg` | latest preview frame |
 | `GET /api/files`, `GET /files/<path>` | list / download captures (a PNG burst is listed as a folder with its frame count) |
 | `GET /api/storage` | current storage location (free space, filesystem, availability) and candidate drives |
+| `PUT /api/storage/reserve` | `{"gb": 2 to 100}`: how much of the internal disk a recording must leave free (default 8). `GET /api/storage` marks the internal disk with `internal: true` and its `reserve_bytes`, and lists it among the candidates |
 | `PUT /api/storage` | `{"path"}`: choose a location (a folder on a drive); refused while capturing |
 | `PUT /api/optics` | `{"focal_length_mm"?,"pixel_size_um"?,"binning"}` |
 | `GET/PUT /api/preview` | `{"stretch"}`: auto-stretch of the live view |

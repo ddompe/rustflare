@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, Status, StorageInfo, reportError } from '../api'
-import { ErrorLine, Switch, useAction } from './ui'
+import { ErrorLine, Field, Switch, useAction } from './ui'
 
 const gb = (b: number | null) => (b == null ? '?' : b >= 1e12 ? `${(b / 1e12).toFixed(2)} TB` : `${(b / 1e9).toFixed(b >= 1e10 ? 0 : 1)} GB`)
 
@@ -23,9 +23,20 @@ function recordingMinutes(cur: StorageInfo, status: Status | null) {
   const bytesPerSec = cam && cam.fps > 0 ? cam.width * cam.height * (cam.bits / 8) * cam.fps : 0
   return {
     bytesPerSec,
-    minutes: cur.free != null && bytesPerSec > 0 ? cur.free / bytesPerSec / 60 : null,
+    // the internal disk keeps a reserve for the system: only what is above it can be recorded
+    minutes: cur.free != null && bytesPerSec > 0 ? Math.max(0, cur.free - (cur.reserve_bytes ?? 0)) / bytesPerSec / 60 : null,
     limit: cur.max_file_bytes != null && bytesPerSec > 0 ? cur.max_file_bytes / bytesPerSec / 60 : null,
   }
+}
+
+/** The Pi's own SD card: fine for a short burst at full speed, slow for a long recording; always keeps a reserve free. */
+function InternalNote({ cur }: { cur: StorageInfo }) {
+  if (!cur.internal) return null
+  return (
+    <div className="hint-text" role="note">
+      Recording to the Pi's SD card. It writes at roughly 30 to 90 MB/s, so a full-rate recording fills the RAM buffer in seconds and then drops frames (or slows the camera, if you chose to wait for the disk). It suits a short, fast event up to the buffer size, and the stack-only and best-frames modes. {gb(cur.reserve_bytes ?? 0)} always stay free for the system: a recording stops before it would use them.
+    </div>
+  )
 }
 
 function Fat32Warning({ cur, limit }: { cur: StorageInfo; limit: number | null }) {
@@ -55,6 +66,7 @@ export function StorageLine({ status, onChange }: { status: Status | null; onCha
         <button type="button" className="quiet small" onClick={onChange}>Change</button>
       </div>
       <Fat32Warning cur={cur} limit={limit} />
+      <InternalNote cur={cur} />
     </div>
   )
 }
@@ -84,13 +96,19 @@ export function StorageSettings({ status }: { status: Status | null }) {
         <div className="err">Not available: {cur.problem}</div>
       )}
       <Fat32Warning cur={cur} limit={limit} />
+      <InternalNote cur={cur} />
+      {cur.internal && (
+        <Field label="Keep this much free (GB)" hint="What a recording to the SD card may never use: the system, the logs and the settings live there too.">
+          {(id) => <input id={id} type="number" inputMode="numeric" min={2} max={100} step={1} defaultValue={Math.round((cur.reserve_bytes ?? 8e9) / 1e9)} key={cur.reserve_bytes} onBlur={(e) => { const n = parseFloat(e.target.value); if (n >= 2 && n <= 100 && Math.abs(n * 1e9 - (cur.reserve_bytes ?? 0)) > 1e6) run(async () => { await api('PUT', '/storage/reserve', { gb: n }); await load() }) }} />}
+        </Field>
+      )}
       <div className="field">
         <label htmlFor="store-sel">Store on</label>
         <select id="store-sel" value={sel} onChange={(e) => setSel(e.target.value)}>
           <option value="">{others.length ? 'choose a drive…' : 'no other drives found'}</option>
           {others.map((c) => (
             <option key={c.path} value={c.path} disabled={!c.available}>
-              {c.label} · {c.fstype ?? '?'} · {gb(c.free)} free{c.problem ? ` · ${c.problem}` : ''}
+              {c.label} · {c.fstype ?? '?'} · {gb(c.free)} free{c.internal ? ` (${gb(c.reserve_bytes ?? 0)} kept)` : ''}{c.problem ? ` · ${c.problem}` : ''}
             </option>
           ))}
         </select>

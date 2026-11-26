@@ -3153,6 +3153,7 @@ impl Engine {
             }
         }
         // coronagraph lane: the frame is saved raw; remember where the model puts the disc in it (blacked out after stacking)
+        let frame_bytes = frame.data.len() as u64;
         let disc_pos = job.lanes.as_ref().filter(|l| l.specs[l.current].mask_disc).map(|_| match self.status.sun.as_ref() {
             Some(s) => [(s.pos.x * 10.0).round() as f32 / 10.0, (s.pos.y * 10.0).round() as f32 / 10.0, (s.radius * 10.0).round() as f32 / 10.0],
             None => [0.0, 0.0, 0.0],
@@ -3180,7 +3181,7 @@ impl Engine {
         let mut stop: Option<String> = job.sink.error().map(|e| format!("writing failed: {e}"));
         if stop.is_none() && job.last_check.elapsed() >= Duration::from_secs(2) {
             job.last_check = now;
-            stop = self.storage.running_problem();
+            stop = self.storage.running_problem(job.sink.queued() as u64 * frame_bytes);
         }
         let burst_done = stop.is_some()
             || job.burst_frames.is_some_and(|n| *taken >= n)
