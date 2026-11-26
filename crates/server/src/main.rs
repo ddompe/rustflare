@@ -1,6 +1,8 @@
 //! Rustflare server: camera + mount + tracking + capture, controlled from a web page.
 
 mod api;
+#[cfg(test)]
+mod bench;
 mod asynclog;
 mod config;
 mod engine;

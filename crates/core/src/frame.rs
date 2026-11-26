@@ -69,6 +69,14 @@ pub struct Frame {
     pub bayer: Option<BayerPattern>,
 }
 
+/// What the live view and the exposure helpers need from every frame: see `Frame::stats`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FrameStats {
+    pub mean: f64,
+    pub saturated: f64,
+    pub histogram: Vec<f32>,
+}
+
 impl Frame {
     pub fn new(width: u32, height: u32, format: PixelFormat, data: Vec<u8>) -> Frame {
         assert_eq!(data.len(), width as usize * height as usize * format.bytes_per_pixel());
@@ -82,6 +90,42 @@ impl Frame {
             PixelFormat::Mono8 => self.data[i] as u16,
             PixelFormat::Mono16 => u16::from_le_bytes([self.data[2 * i], self.data[2 * i + 1]]),
         }
+    }
+
+    /// Mean, saturated fraction and a normalised histogram in ONE pass over every 4th pixel of every 4th row (the three separate
+    /// functions below read the same pixels three times). Same numbers as them.
+    pub fn stats(&self, bins: usize) -> FrameStats {
+        let bins = bins.max(1);
+        let (w, h) = (self.width as usize, self.height as usize);
+        let full = self.format.full_scale();
+        let max = full as u16;
+        let scale = bins as f64 / (full + 1.0);
+        let mut hist = vec![0u32; bins];
+        let (mut sum, mut sat, mut n) = (0u64, 0u64, 0u64);
+        let mut tally = |v: u16| {
+            sum += v as u64;
+            sat += (v >= max) as u64;
+            hist[((v as f64 * scale) as usize).min(bins - 1)] += 1;
+            n += 1;
+        };
+        match self.format {
+            PixelFormat::Mono8 => {
+                for y in (0..h).step_by(4) {
+                    for &b in self.data[y * w..(y + 1) * w].iter().step_by(4) {
+                        tally(b as u16);
+                    }
+                }
+            }
+            PixelFormat::Mono16 => {
+                for y in (0..h).step_by(4) {
+                    for c in self.data[2 * y * w..2 * (y + 1) * w].chunks_exact(2).step_by(4) {
+                        tally(u16::from_le_bytes([c[0], c[1]]));
+                    }
+                }
+            }
+        }
+        let nn = n.max(1) as f64;
+        FrameStats { mean: if n == 0 { 0.0 } else { sum as f64 / nn / full }, saturated: if n == 0 { 0.0 } else { sat as f64 / nn }, histogram: hist.into_iter().map(|c| c as f32 / nn as f32).collect() }
     }
 
     /// Mean pixel value as a fraction of full scale (0..1). Subsamples for speed.
@@ -162,5 +206,29 @@ mod tests {
         assert_eq!(BayerPattern::Rggb.shifted(1, 1), BayerPattern::Bggr);
         assert_eq!(BayerPattern::Rggb.shifted(2, 2), BayerPattern::Rggb);
         assert_eq!(BayerPattern::Bggr.ser_color_id(), 11);
+    }
+}
+
+#[cfg(test)]
+mod stats_tests {
+    use super::*;
+
+    #[test]
+    fn the_one_pass_statistics_equal_the_three_separate_ones() {
+        for (w, h, fmt) in [(37u32, 29u32, PixelFormat::Mono16), (64, 48, PixelFormat::Mono8), (1944, 1472, PixelFormat::Mono16)] {
+            let bpp = fmt.bytes_per_pixel();
+            let mut data = vec![0u8; w as usize * h as usize * bpp];
+            let mut s = 12345u32;
+            for px in data.chunks_exact_mut(bpp) {
+                s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+                let v = ((s >> 8) % if bpp == 2 { 65536 } else { 256 }) as u32;
+                if bpp == 2 { px.copy_from_slice(&(v as u16).to_le_bytes()) } else { px[0] = v as u8 }
+            }
+            let f = Frame::new(w, h, fmt, data);
+            let st = f.stats(64);
+            assert!((st.mean - f.mean_fraction()).abs() < 1e-12, "{w}x{h}");
+            assert!((st.saturated - f.saturated_fraction()).abs() < 1e-12);
+            assert_eq!(st.histogram, f.histogram(64));
+        }
     }
 }

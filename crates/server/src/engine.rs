@@ -458,6 +458,10 @@ pub struct Engine {
     last_analysis: Instant,
     last_mean: f64,
     last_frame: Option<Frame>,
+    /// When `last_frame` was taken: it is refreshed at most twice a second (a 5.7 MB copy), which is plenty for snapshots and flats.
+    last_frame_saved: Instant,
+    /// Counts analyses, to run the Sun detector now and then while the tracker is on.
+    analysis_n: u32,
     storage: Arc<Storage>,
     optics: OpticsSettings,
     startup: Startup,
@@ -597,6 +601,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         last_analysis: Instant::now() - Duration::from_secs(1),
         last_mean: 0.0,
         last_frame: None,
+        last_frame_saved: Instant::now(),
+        analysis_n: 0,
         optics: rustflare_config_optics(&storage),
         startup: crate::config::read(storage.config_file()).get("startup").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         camera_controls: crate::config::read(storage.config_file()).get("camera_controls").and_then(|v| v.as_object().cloned()).unwrap_or_default(),
@@ -2411,7 +2417,10 @@ impl Engine {
         if now.duration_since(self.last_analysis) >= Duration::from_millis(100) {
             self.last_analysis = now;
             let t_an = Instant::now();
-            mean = frame.mean_fraction();
+            let t_st = Instant::now();
+            let fs = frame.stats(64);
+            self.status.perf.stats_ms = ema(self.status.perf.stats_ms, t_st.elapsed().as_secs_f64() * 1000.0);
+            mean = fs.mean;
             self.last_mean = mean;
             let refresh_temp = self.last_temp.elapsed() > Duration::from_secs(3);
             if refresh_temp {
@@ -2423,8 +2432,8 @@ impl Engine {
                 c.height = frame.height;
                 c.bits = (frame.format.bytes_per_pixel() * 8) as u32;
                 c.mean = mean;
-                c.saturated = frame.saturated_fraction();
-                c.histogram = frame.histogram(64);
+                c.saturated = fs.saturated;
+                c.histogram = fs.histogram;
                 if refresh_temp {
                     c.temperature_c = temp;
                 }
@@ -2442,18 +2451,30 @@ impl Engine {
             if !analyse {
                 self.status.perf.analysis_ms = ema(self.status.perf.analysis_ms, t_an.elapsed().as_secs_f64() * 1000.0);
             }
+            // The tracker measures the Sun on every analysis once it runs; the detector is then only needed when the tracker fails (it is
+            // asked for then, see `step_tracking`) and now and then to keep the radius estimate current. Running both every time
+            // doubled the work of the engine thread.
+            let tracker_on = self.tracker.as_ref().is_some_and(|t| t.mode() != "anchor");
+            self.analysis_n = self.analysis_n.wrapping_add(1);
+            let need_detect = analyse && (!tracker_on || self.analysis_n % 20 == 0);
+            let hint = self.radius_hint();
             let t_loc = Instant::now();
-            let sun = if analyse { locate_sun(&frame, self.radius_hint()) } else { None };
-            self.status.perf.locate_ms = ema(self.status.perf.locate_ms, t_loc.elapsed().as_secs_f64() * 1000.0);
+            let sun = if need_detect { locate_sun(&frame, hint) } else { None };
+            if need_detect {
+                self.status.perf.locate_ms = ema(self.status.perf.locate_ms, t_loc.elapsed().as_secs_f64() * 1000.0);
+            }
             if analyse {
-                self.learn_radius(sun.as_ref());
+                if need_detect {
+                    self.learn_radius(sun.as_ref());
+                }
                 // ONE model of where the Sun is: the tracker's measurement feeds it while tracking (known radius, robust fit),
                 // the detector otherwise. The Sun outline, the tracking circle, the coronagraph mask and the guider all use it.
-                let tracker_on = self.tracker.as_ref().is_some_and(|t| t.mode() != "anchor");
                 if !tracker_on {
                     self.feed_sun_model(sun, now, (frame.width, frame.height));
                 }
-                self.step_tracking(&frame, now, sun);
+                let t_tr = Instant::now();
+                self.step_tracking(&frame, now, if tracker_on { None } else { sun }, hint);
+                self.status.perf.track_ms = ema(self.status.perf.track_ms, t_tr.elapsed().as_secs_f64() * 1000.0);
                 self.was_analysing = true;
                 self.lane_prev = None;
             } else if sparse && matches!(&self.job, Job::Capture(j) if j.lanes.as_ref().is_some_and(|l| l.skip == 0)) && self.sun_model.current().is_some() {
@@ -2489,7 +2510,10 @@ impl Engine {
             }
             self.log_session(&frame, now);
             let t_cl = Instant::now();
-            self.last_frame = Some(frame.clone());
+            if self.last_frame.is_none() || self.last_frame_saved.elapsed() >= Duration::from_millis(500) {
+                self.last_frame = Some(frame.clone());
+                self.last_frame_saved = Instant::now();
+            }
             self.status.perf.clone_ms = ema(self.status.perf.clone_ms, t_cl.elapsed().as_secs_f64() * 1000.0);
             self.status.perf.analysis_ms = ema(self.status.perf.analysis_ms, t_an.elapsed().as_secs_f64() * 1000.0);
         }
@@ -2539,7 +2563,7 @@ impl Engine {
         est
     }
 
-    fn step_tracking(&mut self, frame: &Frame, now: Instant, detector: Option<SunLocation>) {
+    fn step_tracking(&mut self, frame: &Frame, now: Instant, detector: Option<SunLocation>, hint: Option<f64>) {
         let Some(t) = self.tracker.as_mut() else { return };
         // frames still in flight after an exposure change (or a lane switch) are over- or under-exposed: not a real loss
         let settling = self.last_exposure_change.elapsed() < Duration::from_secs(3);
@@ -2549,7 +2573,7 @@ impl Engine {
         let dims = (frame.width, frame.height);
         match res {
             Err(_) if settling && !self.lost => {
-                if !anchor { self.feed_sun_model(detector, now, dims); }
+                if !anchor { let d = detector.or_else(|| locate_sun(frame, hint)); self.feed_sun_model(d, now, dims); }
             }
             Ok(p) => {
                 self.fail_since = None;
@@ -2595,7 +2619,8 @@ impl Engine {
             }
             Err(e) => {
                 if !anchor {
-                    if let Some(est) = self.feed_sun_model(detector, now, dims) {
+                    let d = detector.or_else(|| locate_sun(frame, hint));
+                    if let Some(est) = self.feed_sun_model(d, now, dims) {
                         if let Some(ts) = self.status.tracking.as_mut() { ts.x = est.sun.pos.x; ts.y = est.sun.pos.y; ts.radius = Some(est.sun.radius); }
                     }
                 }

@@ -272,6 +272,10 @@ pub struct PerfStatus {
     /// The ~10 Hz analysis block: statistics, histogram, Sun location, tracking.
     pub analysis_ms: f64,
     pub locate_ms: f64,
+    /// Mean, saturation and histogram of the frame (one pass).
+    pub stats_ms: f64,
+    /// The tracker's measurement and the guider's step.
+    pub track_ms: f64,
     /// Cloning the frame for the preview thread and for `last_frame`.
     pub clone_ms: f64,
     /// Recording path (`step_job`).
