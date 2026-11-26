@@ -228,12 +228,15 @@ test('quick Rec and Snap are on the Camera tab and use the saved recipe', async 
   await page.request.post('/api/capture/stop')
 })
 
+/** A longitude in [-180, 180): the meridian arithmetic below runs past the date line at some times of day. */
+const wrapLon = (l: number) => ((((l + 180) % 360) + 360) % 360) - 180
+
 test('automatic meridian flip: needs a site, switches on with its timing, and off again', async ({ page }) => {
   // a site where the Sun crosses the meridian in about three hours, whatever the time of day: the automatic flip acts from 35 minutes before
   // the meridian to 90 minutes after it, and this test only switches it on and off again
   await put(page, '/site', { latitude: 40, longitude: 0 })
   const m0 = ((await (await page.request.get('/api/status')).json()) as { sky_sun: { minutes_to_meridian: number } }).sky_sun.minutes_to_meridian
-  await put(page, '/site', { latitude: 40, longitude: (m0 - 180) / 4 })
+  await put(page, '/site', { latitude: 40, longitude: wrapLon((m0 - 180) / 4) })
   await page.goto('/')
   await page.getByRole('tab', { name: /^Aim/ }).click()
   await page.getByText(/Meridian flip/i).first().click()
@@ -618,7 +621,7 @@ test('the automatic flip switched on after the meridian does nothing: a mount al
   // a site where the Sun crossed the meridian an hour ago, whatever the time of day
   await put(page, '/site', { latitude: 40, longitude: 0 })
   const m0 = ((await (await page.request.get('/api/status')).json()) as { sky_sun: { minutes_to_meridian: number } }).sky_sun.minutes_to_meridian
-  await put(page, '/site', { latitude: 40, longitude: (m0 + 60) / 4 })
+  await put(page, '/site', { latitude: 40, longitude: wrapLon((m0 + 60) / 4) })
   const status = async () => (await (await page.request.get('/api/status')).json()) as { auto_flip: { stage: string; message: string }; flip: unknown; last_flip: unknown }
   const before = (await status()).last_flip
   await put(page, '/mount/autoflip', { enabled: true, record_min: 5, flip_min: 1 })

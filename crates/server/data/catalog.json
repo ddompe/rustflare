@@ -782,6 +782,116 @@
       ],
       "image": "zwo-am3.webp",
       "image_source": "https://www.zwoastro.com/product/am3n/"
+    },
+    {
+      "match": "iOptron CEM70",
+      "vendor": "iOptron",
+      "model": "CEM70 series (CEM70, CEM70G, -EC)",
+      "modes": [
+        "Equatorial (center-balanced)"
+      ],
+      "tracking_rates": [
+        "Sidereal",
+        "Lunar",
+        "Solar",
+        "King",
+        "Custom"
+      ],
+      "ports": [
+        "USB (serial, 115200 baud)",
+        "RS-232"
+      ],
+      "notes": "Driven with the iOptron RS-232 command language 2014 v3.10. Written from the protocol document and tested on a mock only: not yet run on a real mount.",
+      "sources": [
+        "https://www.ioptron.com/v/ASCOM/RS-232_Command_Language2014V310.pdf",
+        "https://www.ioptron.com/v/Manuals/C70_CEM70_Manual.pdf"
+      ]
+    },
+    {
+      "match": "HAE69",
+      "vendor": "iOptron",
+      "model": "HAE69C",
+      "modes": [
+        "Alt-azimuth or equatorial (strain wave, both axes)"
+      ],
+      "tracking_rates": [
+        "Sidereal",
+        "Lunar",
+        "Solar",
+        "King",
+        "Custom"
+      ],
+      "ports": [
+        "USB (firmware upgrade and computer control)",
+        "ST-4 guide port",
+        "Wi-Fi (built in)"
+      ],
+      "notes": "Payload 31 kg without a counterweight, 36 kg with the optional one; reduction 800:1 on both axes; highest slew speed 4.5 deg/s. Driven with the iOptron CEM70-style RS-232 command language (as AsiAir does). Not yet run on a real mount.",
+      "sources": [
+        "https://www.firstlightoptics.com/harmonic-drive-mounts/ioptron-hae69c-hybrid-harmonic-drive-equatorial-goto-mount-without-imate.html",
+        "https://www.ioptron.com/v/ASCOM/RS-232_Command_Language2014V310.pdf"
+      ],
+      "payload_kg": 31,
+      "weight_kg": 8.6,
+      "power": "12 V DC, 5 A (0.6 A tracking, 1.6 A Go to)",
+      "image": "ioptron-hae69c.webp",
+      "image_source": "https://www.firstlightoptics.com/harmonic-drive-mounts/ioptron-hae69c-hybrid-harmonic-drive-equatorial-goto-mount-without-imate.html"
+    },
+    {
+      "match": "Wave 150i",
+      "vendor": "Sky-Watcher",
+      "model": "Wave 150i",
+      "modes": [
+        "Equatorial or alt-azimuth (strain wave)"
+      ],
+      "payload_kg": 15,
+      "weight_kg": 5.8,
+      "tracking_rates": [
+        "Sidereal",
+        "Lunar",
+        "Solar"
+      ],
+      "power": "12 V DC, 2 A",
+      "ports": [
+        "USB-B",
+        "Autoguider",
+        "SynScan handset",
+        "DC power input"
+      ],
+      "notes": "Payload 15 kg without a counterweight, 25 kg with the optional one; belt-driven stepper motors with a harmonic reducer (300:1 on both axes); highest speed 2400x sidereal (10 deg/s); dimensions 156 x 184 x 252 mm. RustFlare has no driver for the Wave yet (research: docs/project/research-skywatcher.md).",
+      "image": "sky-watcher-wave-150i.webp",
+      "image_source": "https://skywatcher.com/product/wave-150i/",
+      "sources": [
+        "https://skywatcher.com/product/wave-150i/"
+      ]
+    },
+    {
+      "match": "Wave 100i",
+      "vendor": "Sky-Watcher",
+      "model": "Wave 100i",
+      "modes": [
+        "Equatorial or alt-azimuth (strain wave)"
+      ],
+      "payload_kg": 10,
+      "weight_kg": 4.3,
+      "tracking_rates": [
+        "Sidereal",
+        "Lunar",
+        "Solar"
+      ],
+      "power": "12 V DC, 2 A",
+      "ports": [
+        "USB-B",
+        "Autoguider",
+        "SynScan handset",
+        "DC power input"
+      ],
+      "notes": "Payload 10 kg without a counterweight, 15 kg with the optional one; belt-driven stepper motors with a harmonic reducer (300:1 on both axes); highest speed 2400x sidereal (10 deg/s); dimensions 235.5 x 128.5 x 171 mm. RustFlare has no driver for the Wave yet (research: docs/project/research-skywatcher.md).",
+      "image": "sky-watcher-wave-100i.webp",
+      "image_source": "https://skywatcher.com/product/wave-100i/",
+      "sources": [
+        "https://skywatcher.com/product/wave-100i/"
+      ]
     }
   ]
 }

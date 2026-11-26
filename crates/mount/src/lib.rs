@@ -1,7 +1,8 @@
 //! Mount drivers. Add a new mount by implementing `rustflare_core::Mount`
-//! and adding a case to [`connect`].
+//! and adding a case to [`connect`]. Drivers: `zwo` (AM3/AM5, serial or Bluetooth), `ioptron` (CEM70 series and relatives, serial), `simulator`.
 
 pub mod ble;
+pub mod ioptron;
 pub mod simulator;
 pub mod trace;
 pub mod zwo;
@@ -9,7 +10,7 @@ pub mod zwo;
 use rustflare_core::{sim::SimSky, Error, Mount, Result};
 
 /// Names accepted by [`connect`].
-pub const DRIVERS: &[&str] = &["zwo", "simulator"];
+pub const DRIVERS: &[&str] = &["zwo", "ioptron", "simulator"];
 
 /// Prefix of a `device` string that selects the Bluetooth transport: `ble:<address>` (stored that way in the
 /// startup settings, so old settings files with plain serial paths keep working).
@@ -38,6 +39,10 @@ pub fn connect_with(driver: &str, device: Option<&str>, sky: &SimSky, opts: &Con
                 return Ok(Box::new(zwo::Zwo::with_link(t, "Bluetooth", "ble", Some(alive))?));
             }
             Ok(Box::new(zwo::Zwo::open(dev)?))
+        }
+        "ioptron" => {
+            let dev = device.ok_or_else(|| Error::Invalid("an iOptron mount needs a serial device path (its USB port)".into()))?;
+            Ok(Box::new(ioptron::Ioptron::open(dev)?))
         }
         "simulator" => Ok(Box::new(simulator::SimMount::new(sky.clone()))),
         other => Err(Error::NotFound(format!("mount driver {other}"))),

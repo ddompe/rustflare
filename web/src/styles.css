@@ -661,3 +661,29 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--info, #6
 }
 
 .qr-play { margin-right: .4rem; vertical-align: -1px; }
+
+/* The picture takes the space that is left; the strip under it (Start, Stop, the warning chips) is always on screen and the view never
+   scrolls. The slot is a size container, so the picture is as big as fits in its width and height at its own aspect ratio. */
+.view { overflow: hidden; }
+.live-slot { flex: 1 1 0; min-height: 5rem; min-width: 0; container-type: size; display: grid; place-items: center; }
+.live-slot > .live { max-width: 100%; width: auto; height: min(100cqh, calc(100cqw / var(--ar, 1.333))); aspect-ratio: var(--ar, 1.333); margin: 0; }
+.strip { flex: none; }
+@media (max-width: 699px) and (orientation: portrait) {
+  .app { --view-h: 38dvh; grid-template-rows: auto var(--view-h) minmax(0, 1fr) auto auto; }
+  .app[data-tab='camera'] { --view-h: 46dvh; }
+  .app[data-tab='track'] { --view-h: 42dvh; }
+}
+.app[data-full] .live-slot { flex: 1 1 auto; }
+
+/* Bluetooth scan results: a picker of mounts, not browser radio dots */
+.mount-found { list-style: none; margin: .6rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.mount-pick { width: 100%; display: flex; align-items: center; gap: .75rem; text-align: left; padding: .5rem .8rem; background: var(--surface); }
+.mount-pick[aria-checked='true'] { border-color: var(--accent); border-width: 2px; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.mp-icon { flex: none; color: var(--muted); }
+.mount-pick[aria-checked='true'] .mp-icon { color: var(--accent); }
+.mp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.mp-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 20px; }
+.mp-bars i { width: 4px; border-radius: 1px; background: var(--line); }
+.mp-bars i.on { background: var(--fg); }
+.mp-state { flex: none; font-size: .85rem; color: var(--muted); min-width: 4.6rem; text-align: right; }
+.mount-pick[aria-checked='true'] .mp-state { color: var(--accent); font-weight: 700; }

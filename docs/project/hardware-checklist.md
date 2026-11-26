@@ -121,3 +121,17 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 | Issue | Check |
 |---|---|
 | #30 | ASI174MM Mini on a USB 3 cable and blue port: open, set exposure/gain, fps at full frame and ROI |
+
+## iOptron mount driver (new, 0.7, mock only)
+
+| Check | How |
+|---|---|
+| Connect | Aim > Mount `ioptron`, the mount's USB serial port: the card names the model (`:MountInfo#`). CEM70 expected `0070`; **write down what the HAE69 answers** |
+| State | `GET /api/debug/mount-query?what=GLS` while tracking, slewing and parked: the status digit matches what the mount does |
+| Site and time | Go to Sun sends them; the mount's hand controller shows the right place and UTC time |
+| Go to Sun | Slews to the Sun, then tracks by itself; `:RT2#` (solar) is selected first |
+| Pad | N, S, E, W move the image the way the buttons say (if not, the RA and Dec signs in `ioptron.rs` `slew` are swapped) |
+| Guide | Calibrate and Hold position: pulses of 2.5 s, rate `:RGrrdd#`, no runaway |
+| Send home | `:MH#` goes to the zero position; `state` then reports at home |
+| Meridian | Past the meridian: a new Go to flips (the mount's `:GMT#` setting decides) |
+

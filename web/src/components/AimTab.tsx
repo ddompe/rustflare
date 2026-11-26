@@ -55,10 +55,15 @@ function MountConnect() {
             <button type="button" className="grow" disabled={busy || scanning} onClick={scanBle}>{scanning ? 'Scanning (about 6 s)...' : 'Scan for mounts'}</button>
           </div>
           {found && found.length > 0 && (
-            <ul className="list" aria-label="Mounts found">
+            <ul className="mount-found" role="radiogroup" aria-label="Mounts found">
               {found.map((d) => (
                 <li key={d.address}>
-                  <label><input type="radio" name="ble-mount" checked={bleAddr === d.address} onChange={() => setBleAddr(d.address)} /> {d.name}{d.rssi != null ? ` (signal ${d.rssi} dBm)` : ''}</label>
+                  <button type="button" role="radio" aria-checked={bleAddr === d.address} className="mount-pick" onClick={() => setBleAddr(d.address)}>
+                    <MountMark />
+                    <span className="mp-name">{d.name}</span>
+                    <SignalBars rssi={d.rssi} />
+                    <span className="mp-state">{bleAddr === d.address ? 'Selected' : 'Select'}</span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -67,6 +72,7 @@ function MountConnect() {
           <div className="hint-text">Press the mount's pairing button, close the ZWO phone app (the mount talks to one device at a time) and keep the mount within a few metres.</div>
         </div>
       )}
+      {driver === 'ioptron' && <div className="hint-text">iOptron mounts (CEM70 series and relatives, HAE69): connect the mount's USB port to the Pi. It appears as a serial port; the 115200 baud setting is applied for you. Set the mount's own time zone and site once on its hand controller, or let RustFlare send them with Go to Sun. Not yet tried on a real mount.</div>}
       {driver !== 'simulator' && !(driver === 'zwo' && transport === 'ble') && (
         <div className="field">
           <label htmlFor="mount-device">Serial device</label>
@@ -219,6 +225,25 @@ function Pad({ status, locked }: { status: Status; locked: boolean }) {
       <div className="hint-text">Hold a direction to move, release to stop.</div>
       <ErrorLine error={err} />
     </div>
+  )
+}
+
+/** A plain equatorial mount, drawn: tripod stub, head, counterweight bar and the telescope saddle. */
+function MountMark() {
+  return (
+    <svg className="mp-icon" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 28h10M13 28l1.5-6h3L19 28" /><path d="M14.5 22l-2.5-8 8-3 3 8z" /><path d="M9 9l14-4M11 5.5l12-3.5" /><circle cx="22" cy="12" r="1.6" />
+    </svg>
+  )
+}
+
+/** Signal strength as four bars; the dBm is in the label for screen readers, the picture is for people. */
+function SignalBars({ rssi }: { rssi: number | null }) {
+  const n = rssi == null ? 0 : rssi >= -60 ? 4 : rssi >= -70 ? 3 : rssi >= -80 ? 2 : 1
+  return (
+    <span className="mp-bars" role="img" aria-label={rssi == null ? 'signal unknown' : `signal ${rssi} dBm, ${n} of 4`}>
+      {[1, 2, 3, 4].map((i) => <i key={i} className={i <= n ? 'on' : ''} style={{ height: `${i * 4 + 2}px` }} />)}
+    </span>
   )
 }
 

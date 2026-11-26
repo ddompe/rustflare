@@ -38,6 +38,16 @@ The mount can also be connected over **Bluetooth** (Aim tab: Connection > Blueto
 !!! note "Status"
     Verified on a real ZWO AM3 over USB and Bluetooth: connect, tracking, nudge, Send home and Go to Sun. Other models (AM3N, AM5, AM5N) probably behave the same but have not been tried. Guiding on a real sky and the meridian flip assist are not yet verified.
 
+
+## iOptron mounts (CEM70 series, HAE69 and relatives)
+
+Driver name `ioptron` (Aim tab > Mount). Connect the mount's USB port to the Pi; it appears as a serial port (`/dev/ttyACM0` or `/dev/ttyUSB0`). RustFlare speaks the **iOptron RS-232 command language 2014 version 3.10** at 115200 baud, 8N1 (the settings are applied for you). The document lists the CEM120, CEM70, GEM45, CEM40, GEM28 and CEM26 series; the HAE69 is driven with the same language (that is how AsiAir treats it). The first thing sent is `:MountInfo#`, which names the model; a port that does not answer says so.
+
+What works through the protocol: Go to (`:MS1#`, falling back to the counterweight-up position `:MS2#`), tracking on and off, sidereal, lunar and **solar** tracking rates, manual slews (rates from 1x to 512x sidereal and the mount's maximum), timed guide pulses (`:ZS`, `:ZQ`, `:ZE`, `:ZC`), sending the site and time, reading the pointing and the state (tracking, slewing, parked, at the zero position), and Send home (`:MH#`). A meridian flip is a new Go to to the same place: the mount's own *meridian treatment* setting (stop or flip, and how many degrees past the meridian) decides what it does near the meridian.
+
+!!! warning "Status: written from the protocol document, never run on a real mount"
+    Everything above is tested against a mock only (`cargo test -p rustflare-mount`). Expect small surprises on the first connection and report them (Aim tab, or `GET /api/debug/mount`, which logs every command and reply). To check first, with a person at the mount: the connection and model name; Go to Sun and that it tracks at the solar rate afterwards; the slew pad directions (the signs of RA and Dec in the document are ambiguous, calibration absorbs them for guiding but the pad does not); a guide pulse; Send home; what the HAE69 answers to `:MountInfo#` (any four digits are accepted). The checklist rows are in the [hardware checklist](../project/hardware-checklist.md).
+
 ## Simulators
 
 `simulator` camera and mount are always available. The simulated Sun drifts, responds to mount motion, and has a *Sim scene* control (0 = Sun, 1 = vignetted flat field) for testing flats.
