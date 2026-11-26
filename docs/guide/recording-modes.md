@@ -35,7 +35,7 @@ Each of these puts a message in the **status bar** at the bottom, which stays un
 
 ## Where things end up
 
-Stacks go to `stacks/` on the drive, mirroring the folders, and are listed in More > Stacking like any other. Each burst's `.json` says what happened (`stack`: output file, frames kept, seconds, whether the video was written). The disk watcher does not stack again a video whose burst was already stacked from memory.
+Stacks go to `stacks/` on the drive, mirroring the folders, and are shown in the file manager (Files > stacks) like any other. The stacker's own settings (on/off, multi-point, the black disc of prominence stacks) are under *Stacker settings* in the same panel, so you can set them with the mode. Each burst's `.json` says what happened (`stack`: output file, frames kept, seconds, whether the video was written). The disk watcher does not stack again a video whose burst was already stacked from memory.
 
 ## Disk and time, roughly
 

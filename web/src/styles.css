@@ -536,12 +536,6 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 .stacking .checks { display: flex; flex-direction: column; gap: .35rem; }
 .stacking .check { display: flex; gap: .5rem; align-items: center; }
 .stacking code { font-size: .85em; }
-.stack-head { margin: 1.1rem 0 .5rem; font-size: 1rem; }
-.stack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: .6rem; margin-bottom: .75rem; }
-.stack-card { margin: 0; background: var(--panel, #1b1b1d); border-radius: .5rem; overflow: hidden; }
-.stack-card img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #000; }
-.stack-card figcaption { padding: .4rem .5rem .5rem; }
-.stack-name { font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* notices: stay in the status bar until dismissed */
 .sbar-dismiss { flex: none; min-height: 0; border: 0; border-left: 1px solid #fff3; border-radius: 0; background: #fff1; color: inherit; font-size: .85rem; font-weight: 700; padding: 0 .9rem; }

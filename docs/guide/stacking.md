@@ -13,7 +13,7 @@ For each recording (a burst of frames), it applies your dark and flat, aligns ev
 
 ## The page: More > Stacking
 
-More > Stacking shows what the stacker is doing (stacking a recording, paused and why, nothing to do), a grid of the finished stacks with thumbnails (tap one to download its FITS), and, under *Settings*, the same options as `stack.json`: on/off, when to stack, frames kept, multi-point, the flat, and which darks to use (it lists the raw flat and dark recordings on the drive, with exposure and gain). If the stacker service is not running (unusual: it is enabled with the package), the page says so and shows the command to start it: a web page cannot start a system service.
+More > Stacking shows what the stacker is doing (stacking a recording, paused and why, nothing to do), how many stacks there are with an **Open the stacks in Files** button (the stacks themselves, with thumbnails, previews and downloads, are looked at in the [file manager](record.md#files-file-manager), in the `stacks` folder), and, under *Settings*, the same options as `stack.json`: on/off, when to stack, frames kept, multi-point, the black disc of prominence stacks, the flat, and which darks to use. The main ones (on/off, multi-point, frames kept, the black disc and its size) are also on the Record tab, under *After each burst > Stacker settings*, so they can be set while you set up a recording (it lists the raw flat and dark recordings on the drive, with exposure and gain). If the stacker service is not running (unusual: it is enabled with the package), the page says so and shows the command to start it: a web page cannot start a system service.
 
 ## Prominence stacks and the black disc
 

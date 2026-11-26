@@ -25,6 +25,8 @@ export function App() {
   const { status, connected } = useStatus()
   const [anchorPick, setAnchorPick] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
+  // Files opens in the folder it was last in, or in `path` when a screen sends you to one (the stacks)
+  const openFiles = (path?: string) => { if (path !== undefined) sessionStorage.setItem('rf-fm-cwd', path); setFilesOpen(true) }
   const [display, setDisplay, resetDisplay] = useDisplay()
   const [savedTab, setSavedTab] = useSetting<TabId>('ui.tab', 'camera')
   const [tab, setTabState] = useState<TabId>(TABS.some((x) => x.id === savedTab) ? savedTab : 'camera')
@@ -111,7 +113,7 @@ export function App() {
         {tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} />}
         {tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} />}
         {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={() => setFilesOpen(true)} />}
-        {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} />}
+        {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} openFiles={openFiles} />}
       </main>
       <StatusBar status={status} connected={connected} />
       {full && status && status.capture.state !== 'idle' && (

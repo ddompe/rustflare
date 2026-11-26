@@ -78,18 +78,16 @@ const POLICY_HINT: Record<string, string> = {
 
 const label = (c: Calibration) => `${c.path.split('/').slice(-1)[0].replace('.ser', '')} · ${c.frames} frames${c.exposure_us ? ` · ${(c.exposure_us / 1000).toFixed(c.exposure_us < 10000 ? 1 : 0)} ms` : ''}${c.gain != null ? ` · gain ${c.gain}` : ''}`
 
-export function Stacking({ info, reload }: { info: StackInfo | null; reload: () => void }) {
+export function Stacking({ info, reload, onOpenFiles }: { info: StackInfo | null; reload: () => void; onOpenFiles: () => void }) {
   const { err, busy, run } = useAction()
   const [keep, setKeep] = useState('')
   useEffect(() => { if (info) setKeep(String(info.config.keep_percent)) }, [info?.config.keep_percent]) // eslint-disable-line react-hooks/exhaustive-deps
-  const [more, setMore] = useState(false)
   if (!info) return <div className="hint-text">Loading…</div>
   const c = info.config
   const save = (patch: Partial<StackConfig>) => run(async () => { await api('PUT', '/stack/config', patch); reload() })
   const s = info.status
   const flats = info.calibration.filter((x) => x.kind === 'flat')
   const darks = info.calibration.filter((x) => x.kind === 'dark')
-  const shown = more ? info.stacks : info.stacks.slice(0, 6)
   return (
     <div className="stacking">
       {info.service === 'active' ? (
@@ -102,27 +100,10 @@ export function Stacking({ info, reload }: { info: StackInfo | null; reload: () 
           The stacker service is not running{info.service === 'failed' ? ' (it stopped with an error)' : ''}. It is installed and enabled with RustFlare, so this is unusual; on the Pi try <code>sudo systemctl enable --now rustflare-stack</code>. It runs at the lowest priority and never starts while frames are being written, unless you choose Always.
         </div>
       )}
-      <h4 className="stack-head">Stacks{info.total ? ` (${info.total})` : ''}</h4>
-      {info.stacks.length === 0 ? (
-        <div className="hint-text">No stacks yet. They appear here as recordings finish, and are saved as FITS in the <code>stacks</code> folder of the drive.</div>
-      ) : (
-        <>
-          <div className="stack-grid">
-            {shown.map((e) => (
-              <figure key={e.path} className="stack-card">
-                <a href={`/files/${e.path}`} download title="Download the FITS">
-                  <img src={`/api/stack/thumb/${e.thumb}?m=${e.mtime}`} alt={`Stack of ${e.source}`} loading="lazy" />
-                </a>
-                <figcaption>
-                  <div className="stack-name">{e.source.replace(/^.*\//, '').replace('.ser', '')}</div>
-                  <div className="hint-text">{e.kept} of {e.frames} frames{e.flat_applied ? ' · flat' : ''}{e.dark_applied ? ' · dark' : ''}{e.notes.length ? ` · ${e.notes[0]}` : ''}</div>
-                </figcaption>
-              </figure>
-            ))}
-          </div>
-          {info.stacks.length > 6 && <button type="button" className="wide" onClick={() => setMore(!more)}>{more ? 'Show fewer' : `Show ${info.stacks.length - 6} more`}</button>}
-        </>
-      )}
+      <div className="hint-text">
+        {info.total ? `${info.total} stacks so far.` : 'No stacks yet.'} They are saved as FITS in the <code>stacks</code> folder of the drive, by day. To look at them, preview them and download them, use the file manager.
+      </div>
+      <button type="button" className="wide" onClick={onOpenFiles}>Open the stacks in Files</button>
       <Disclosure title="Settings" summary={`${c.keep_percent} % kept · ${c.policy === 'when_idle' ? 'when idle' : c.policy === 'always' ? 'always' : 'between bursts'}${c.enabled ? '' : ' · off'}`}>
       <Switch label="Stack finished recordings" checked={c.enabled} disabled={busy} onChange={(v) => save({ enabled: v })} />
       <Field label="When" hint={POLICY_HINT[c.policy]}>

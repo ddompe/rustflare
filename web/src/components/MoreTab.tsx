@@ -188,7 +188,7 @@ function Startup({ status }: { status: Status | null }) {
 }
 
 /** Everything that is set once and left alone, one collapsed line each. */
-export function MoreTab({ status, display, setDisplay, resetDisplay, focus }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; resetDisplay: () => void; focus: { id: string; nonce: number } | null }) {
+export function MoreTab({ status, display, setDisplay, resetDisplay, focus, openFiles }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; resetDisplay: () => void; focus: { id: string; nonce: number } | null; openFiles: (path?: string) => void }) {
   const [saved, setSaved] = useSetting('ui.more_open', '')
   const [open, setOpen] = useState<string | null>(focus?.id ?? (saved || null))
   useEffect(() => { if (focus) setOpen(focus.id) }, [focus?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -205,7 +205,7 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus }: { 
       {item('display', 'Display', `${display.tint === 'none' ? 'grayscale' : display.tint === 'orange' ? 'H-alpha orange' : 'deep red'} · ${display.rings ? `${display.rings} rings` : 'no rings'}`, <DisplaySettings d={display} set={setDisplay} reset={resetDisplay} status={status} />)}
       {item('optics', 'Optics', o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set', <OpticsSettings status={status} />)}
       {item('site', 'Site', status?.site ? `${status.site.latitude.toFixed(2)}°, ${status.site.longitude.toFixed(2)}°` : 'not set', <SiteSettings status={status} />)}
-      {item('stacking', 'Stacking', stackSummary(stackInfo), <Stacking info={stackInfo} reload={reloadStack} />)}
+      {item('stacking', 'Stacking', stackSummary(stackInfo), <Stacking info={stackInfo} reload={reloadStack} onOpenFiles={() => openFiles('stacks')} />)}
       {item('storage', 'Storage', 'drive for captures', <StorageSettings status={status} />)}
       {item('buffer', 'RAM buffer', status?.capture ? `${status.capture.buffer_mb} MB` : '', <BufferSettings status={status} />)}
       {item('sessionlog', 'Session log', status?.session_log?.enabled ? 'recording' : 'off', <SessionLog status={status} />)}

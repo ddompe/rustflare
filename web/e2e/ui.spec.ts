@@ -354,7 +354,7 @@ test('the mount goes home when a recording finishes, only if asked', async ({ pa
   await post(page, '/mount/tracking', { enabled: true })
 })
 
-test('Stacking: the stacker, its settings and the stacks it made, with thumbnails', async ({ page }) => {
+test('Stacking: the stacker, its settings, and the stacks it made are looked at in Files', async ({ page }) => {
   // record a short burst on the simulator and stack it the way the stacker service would (the recorder's folder, a stacks/ subfolder)
   await expect.poll(async () => (await post(page, '/capture/sequence', { name: 'stackme', frames: 12, format: 'ser' })).text(), { timeout: 10_000 }).toContain('buffer_frames')
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
@@ -367,11 +367,17 @@ test('Stacking: the stacker, its settings and the stacks it made, with thumbnail
   await section.locator('summary').click()
   // not running here (no service): says how to start it
   await expect(section.getByText(/systemctl enable --now rustflare-stack/)).toBeVisible()
-  // the stack is listed with a thumbnail that really loads
-  const card = section.locator('.stack-card').first()
-  await expect(card).toBeVisible({ timeout: 10_000 })
-  await expect(card.getByText(/ of 12 frames|of \d+ frames/)).toBeVisible()
-  await expect.poll(async () => card.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true)
+  // the panel does not list the stacks: it counts them and opens Files in the stacks folder, where they are shown and downloaded
+  await expect(section.locator('.stack-card')).toHaveCount(0)
+  await expect(section.getByText(/\d+ stacks so far/)).toBeVisible({ timeout: 10_000 })
+  await section.getByRole('button', { name: 'Open the stacks in Files' }).click()
+  const fm = page.getByRole('dialog', { name: 'File manager' })
+  await expect(fm.locator('.fm-crumbs')).toContainText('stacks')
+  await fm.locator('.fm-row[data-type="folder"] .fm-open, .fm-row[data-type="day"] .fm-open').first().click()
+  const cell = fm.getByRole('list', { name: 'Stacks' }).locator('li').first()
+  await expect(cell).toBeVisible({ timeout: 10_000 })
+  await expect.poll(async () => cell.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true)
+  await page.keyboard.press('Escape')
   // settings are saved by the server and survive a reload
   await section.getByText('Settings', { exact: true }).click()
   await section.getByRole('radio', { name: 'Always' }).click()
@@ -634,4 +640,21 @@ test('a drive on a USB 3 port next to a USB 3 camera shows a warning where the d
   await page.getByRole('tab', { name: /^More/ }).click()
   await page.getByText('Storage', { exact: true }).first().click()
   await expect(page.getByRole('alert').filter({ hasText: 'USB 2.0 port' }).first()).toBeVisible()
+})
+
+
+test('the stacker settings are on the Record tab too, and change the same settings', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Record/ }).click()
+  await page.getByText('After each burst', { exact: true }).first().click()
+  await page.getByText('Stacker settings', { exact: false }).first().click()
+  const cfg = async () => ((await (await page.request.get('/api/stack')).json()) as { config: { multipoint: boolean; disc_mask: boolean; disc_scale: number } }).config
+  const before = await cfg()
+  const sw = page.getByRole('switch', { name: 'Multi-point alignment' })
+  await expect(sw).toBeChecked({ checked: before.multipoint })
+  await sw.click()
+  await expect.poll(async () => (await cfg()).multipoint).toBe(!before.multipoint)
+  await sw.click()
+  await expect.poll(async () => (await cfg()).multipoint).toBe(before.multipoint)
+  await expect(page.getByRole('switch', { name: 'Black disc on prominence stacks' })).toBeVisible()
 })
