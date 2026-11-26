@@ -53,6 +53,7 @@ nav:
       - Roadmap and status: project/roadmap.md
       - Next-round plan: project/next-round.md
       - Hardware verification checklist: project/hardware-checklist.md
+      - What to test on the next sunny day: project/next-sunny-day.md
       - Field report 2026-11-22: project/field-report-2026-11-22.md
       - Proposal, on-board stacker: project/proposal-onboard-stacking.md
       - Design, recording modes and their UI: project/design-recording-modes.md
