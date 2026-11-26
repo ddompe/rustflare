@@ -211,6 +211,7 @@ input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--
 .step-main > * { margin: 0; } .step-main button.wide { justify-self: stretch; }
 .step-head { display: flex; justify-content: space-between; gap: .75rem; width: 100%; flex-wrap: wrap; }
 .step-state { color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.step-state.warn { color: var(--warn); font-weight: 700; }
 .step-state.ok { color: var(--ok); font-weight: 700; } .step-state.bad { color: var(--bad); font-weight: 800; }
 
 /* record / storage / misc */
@@ -259,7 +260,9 @@ button, .live, .live *, .pad, .tabs { -webkit-user-select: none; user-select: no
 .devcard { border-top: 1px solid var(--line); margin-top: 1rem; }
 .devcard summary { list-style: none; display: flex; align-items: center; gap: .75rem; min-height: 68px; cursor: pointer; padding: .5rem 0; }
 .devcard summary::-webkit-details-marker { display: none; }
-.dev-img { width: 72px; height: 45px; flex: none; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 8px; padding: 4px; }
+.dev-img { width: 84px; height: 60px; flex: none; object-fit: contain; background: radial-gradient(120% 120% at 50% 35%, var(--raised), var(--surface)); border: 1px solid var(--line-soft); border-radius: 10px; padding: 4px; }
+.dev-img.is-line { padding: 8px 6px; opacity: .85; }
+.dev-hero { display: block; width: min(100%, 22rem); aspect-ratio: 25 / 18; object-fit: contain; margin: .25rem auto .75rem; background: radial-gradient(70% 70% at 50% 45%, var(--raised), transparent 75%); }
 .dev-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .dev-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dev-facts { color: var(--muted); font-size: .88rem; }
@@ -390,7 +393,7 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .strip > .sr-only { position: absolute; }
 
 /* File manager: full-screen overlay */
-.fm-screen { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+.fm-screen { position: fixed; inset: 0; z-index: 50; background: var(--bg); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); display: grid; grid-template-rows: auto auto auto minmax(0, 1fr) auto; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 .fm-top { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .1rem .75rem; padding: .75rem 1rem .5rem; border-bottom: 1px solid var(--line-soft); }
 .fm-top h2 { margin: 0; font-size: 1.25rem; }
 .fm-summary { grid-column: 1; font-size: .85rem; }
@@ -418,7 +421,7 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 
 /* Image only: hide everything but the live view */
 .hidebtn { margin-left: auto; min-height: 36px; padding: 0 .7rem; font-size: .85rem; }
-.fullbtn { position: fixed; z-index: 30; right: calc(.6rem + env(safe-area-inset-right)); bottom: calc(.6rem + env(safe-area-inset-bottom)); min-height: 40px; padding: 0 .8rem; font-size: .85rem; background: #000b; border: 1px solid #fff6; color: #fff; border-radius: 8px; opacity: .8; }
+.fullbtn { position: fixed; z-index: 30; right: calc(.6rem + env(safe-area-inset-right)); bottom: calc(.6rem + env(safe-area-inset-bottom)); min-height: 44px; padding: 0 .8rem; font-size: .85rem; background: #000b; border: 1px solid #fff6; color: #fff; border-radius: 8px; opacity: .8; }
 .app[data-full] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); grid-template-areas: 'view'; }
 .app[data-full] .top, .app[data-full] .tabs, .app[data-full] .panel, .app[data-full] .sbar, .app[data-full] .strip { display: none; }
 .app[data-full] .view { display: grid; align-content: center; justify-items: center; padding: 0; }
@@ -477,6 +480,10 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 .quick button { min-height: 40px; font-size: .9rem; padding: 0 .8rem; }
 .quick-rec { flex: 1; font-weight: 800; background: var(--accent); color: var(--accent-ink); border-color: transparent; text-align: left; }
 .quick-rec .muted { color: inherit; opacity: .75; font-weight: 600; margin-left: .3rem; }
+.quick-rec { display: flex; flex-direction: column; justify-content: center; line-height: 1.15; padding-block: .3rem; }
+.qr-keep { font-size: .8rem; font-weight: 600; opacity: .8; }
+.quick-rec.warn { background: var(--warn); color: var(--bg); }
+.quick-rec.warn .qr-keep { opacity: 1; font-weight: 800; }
 .strip:has(.quick) { display: block; }
 /* live tools: one horizontal row on phones, wrapping instead of clipping */
 @media (max-width: 699px) {
@@ -499,7 +506,7 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 .autoflip { margin-bottom: .6rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line, #ffffff22); }
 
 /* Status bar: always there, fixed height, so a message appearing never shifts the layout. */
-.sbar { grid-area: sbar; position: relative; height: calc(2.5rem + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); background: var(--surface); border-top: 1px solid var(--line); display: flex; align-items: stretch; }
+.sbar { grid-area: sbar; position: relative; height: calc(2.75rem + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); background: var(--surface); border-top: 1px solid var(--line); display: flex; align-items: stretch; }
 .sbar-btn { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; gap: .5rem; padding: 0 1rem; border: 0; border-radius: 0; background: transparent; color: var(--muted); font-size: .9rem; font-weight: 600; text-align: left; }
 .sbar-btn span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .sbar-btn i { flex: none; width: .6rem; height: .6rem; border-radius: 50%; background: currentColor; }
@@ -545,7 +552,10 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 .sbar-pop .link { background: none; border: 0; padding: 0 .2rem; min-height: 0; text-decoration: underline; font-weight: 700; color: inherit; }
 .mode-cards { display: grid; gap: .5rem; margin: .5rem 0 .75rem; }
 .mode-card { text-align: left; border: 1.5px solid var(--line); border-radius: var(--radius); padding: .6rem .8rem; background: var(--bg); color: var(--fg); min-height: var(--tap); }
-.mode-card[aria-pressed="true"] { border-color: var(--accent); background: var(--raised); box-shadow: inset 4px 0 0 var(--accent); }
+.mode-card { position: relative; }
+.mode-card[aria-pressed="true"] { border-color: var(--accent); border-width: 2px; background: color-mix(in srgb, var(--accent) 10%, var(--raised)); }
+/* the chosen card says so in a drawn mark, not only in colour */
+.mode-card[aria-pressed="true"] b::after { content: ''; position: absolute; top: .7rem; right: .8rem; width: 1.1rem; height: 1.1rem; border-radius: 50%; background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='%23140a05' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 80% no-repeat; }
 .mode-card b { display: block; }
 .mode-card span { color: var(--muted); font-size: .9rem; }
 .mode-warn { display: block; margin-top: .2rem; font-style: normal; font-weight: 700; font-size: .85rem; color: var(--warn); }
@@ -560,7 +570,7 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 .strip:not(:has(> :not(.sr-only))) { padding: 0; gap: 0; min-height: 0; height: 0; border: 0; overflow: visible; }
 /* Hide controls keeps what must not be hidden: the status line (lost target, full disk) and a way to stop a recording */
 .app[data-full] .sbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 29; }
-.app[data-full] .fullbtn { bottom: calc(2.5rem + .6rem + env(safe-area-inset-bottom)); }
+.app[data-full] .fullbtn { bottom: calc(2.75rem + .6rem + env(safe-area-inset-bottom)); }
 .fullrec { position: fixed; z-index: 30; left: calc(.6rem + env(safe-area-inset-left)); bottom: calc(2.5rem + .6rem + env(safe-area-inset-bottom)); min-height: 44px; padding: 0 .9rem; background: var(--danger); color: #fff; border: 1px solid #ff8a80; border-radius: 8px; font-weight: 800; }
 /* the quiet "Ready" line is readable, not a ghost */
 .sbar-btn:disabled { opacity: 1; }
@@ -628,7 +638,7 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--info, #6
 .fm-cellname { display: block; padding: .25rem .4rem; font-size: .72rem; color: #e8e2de; background: rgba(0, 0, 0, .75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fm-cellcheck { position: absolute; top: 0; left: 0; width: 44px; height: 44px; display: grid; place-items: center; }
 .fm-cellcheck input { width: 22px; height: 22px; }
-.fm-peek { position: fixed; inset: 0; z-index: 60; background: #000; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; color: #f2ece8; padding-top: env(safe-area-inset-top); }
+.fm-peek { position: fixed; inset: 0; z-index: 60; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); background: #000; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; color: #f2ece8; padding-top: env(safe-area-inset-top); }
 .fm-peek header { display: flex; align-items: center; gap: .75rem; padding: .6rem 1rem; flex-wrap: wrap; }
 .fm-peek header b { word-break: break-all; }
 .fm-peek header button { margin-left: auto; width: 44px; padding: 0; }
@@ -636,3 +646,18 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--info, #6
 .fm-peek footer { display: flex; gap: .5rem; justify-content: space-between; padding: .6rem 1rem; padding-bottom: calc(.6rem + env(safe-area-inset-bottom)); }
 .fm-peek footer > * { flex: 1; justify-content: center; text-align: center; }
 .fm-peekhint { margin: 0; padding: 0 1rem .6rem; font-size: .8rem; text-align: center; }
+
+/* a setting that is missing, said where it is needed, with its one-tap fix */
+.needs { margin-top: .6rem; padding: .7rem .8rem; border: 1px solid var(--warn); border-radius: 10px; background: color-mix(in srgb, var(--warn) 9%, var(--surface)); }
+.needs .btnrow { margin-top: .6rem; }
+
+/* phone landscape: the Start button is one line (what it keeps goes inline), the tools sit in a row under the image, the segmented
+   controls do not wrap, and hide-controls mode spends less of the 390 px height */
+@media (max-height: 520px) {
+  .quick-rec { flex-direction: row; align-items: center; gap: .6rem; }
+  .qr-keep { font-size: .75rem; }
+  .seg button, .segmented button { white-space: nowrap; padding-inline: .6rem; }
+  .app[data-full] .fullbtn { min-height: 44px; }
+}
+
+.qr-play { margin-right: .4rem; vertical-align: -1px; }

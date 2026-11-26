@@ -34,6 +34,7 @@ export interface StackConfig {
 interface Calibration { path: string; kind: 'dark' | 'flat'; frames: number; exposure_us: number | null; gain: number | null }
 export interface StackInfo {
   service: string
+  restart?: { attempts: number; error: string }
   status: { state: string; reason: string; current: string | null; pending: number; done: number; last_error: string | null } | null
   config: StackConfig
   stacks: StackEntry[]
@@ -97,19 +98,19 @@ export function Stacking({ info, reload, onOpenFiles }: { info: StackInfo | null
         </div>
       ) : (
         <div className="hint-text" role="status">
-          The stacker service is not running{info.service === 'failed' ? ' (it stopped with an error)' : ''}. It is installed and enabled with RustFlare, so this is unusual; on the Pi try <code>sudo systemctl enable --now rustflare-stack</code>. It runs at the lowest priority and never starts while frames are being written, unless you choose Always.
+          The stacker is not running{info.service === 'failed' ? ' (it stopped with an error)' : ''}. RustFlare starts it again by itself{info.restart?.attempts ? ` (tried ${info.restart.attempts} time${info.restart.attempts === 1 ? '' : 's'})` : ''}. Until it is back, bursts are saved as video.{info.restart?.error && <span className="err"> The restart failed: {info.restart.error}. Restarting the Pi brings it back.</span>}
         </div>
       )}
       <div className="hint-text">
         {info.total ? `${info.total} stacks so far.` : 'No stacks yet.'} They are saved as FITS in the <code>stacks</code> folder of the drive, by day. To look at them, preview them and download them, use the file manager.
       </div>
       <button type="button" className="wide" onClick={onOpenFiles}>Open the stacks in Files</button>
-      <Disclosure title="Settings" summary={`${c.keep_percent} % kept · ${c.policy === 'when_idle' ? 'when idle' : c.policy === 'always' ? 'always' : 'between bursts'}${c.enabled ? '' : ' · off'}`}>
+      <Disclosure title="Stacker settings" summary={`${c.keep_percent} % kept · ${c.policy === 'when_idle' ? 'when idle' : c.policy === 'always' ? 'always' : 'between bursts'}${c.enabled ? '' : ' · off'}`}>
       <Switch label="Stack finished recordings" checked={c.enabled} disabled={busy} onChange={(v) => save({ enabled: v })} />
       <Field label="When" hint={POLICY_HINT[c.policy]}>
         {() => <Segmented label="When to stack" value={c.policy} options={POLICIES.map((p) => ({ id: p.id, label: p.label }))} disabled={busy} onChange={(v) => save({ policy: v })} />}
       </Field>
-      <Field label="Frames kept (%)" hint="The best of each recording, by sharpness. Fewer is sharper and noisier.">
+      <Field label="Best frames kept, stacked from a video file (%)" hint="The best of each recording, by sharpness. Fewer is sharper and noisier. Bursts stacked from memory use the setting under After each burst on the Record tab.">
         {(id) => <input id={id} type="number" inputMode="numeric" min={1} max={100} step={5} value={keep} onChange={(e) => setKeep(e.target.value)} onBlur={() => { const n = parseFloat(keep); if (n >= 1 && n <= 100 && n !== c.keep_percent) save({ keep_percent: n }) }} />}
       </Field>
       <Switch label="Multi-point alignment" hint="A shift for each patch of the picture, not one per frame: sharper, a little slower." checked={c.multipoint} disabled={busy} onChange={(v) => save({ multipoint: v })} />

@@ -35,13 +35,17 @@ The automatic [meridian flip](aim.md#meridian-flip) pauses a running recording t
 ## Format
 
 - **SER** video (default), **PNG** or **FITS**. PNG and FITS write one file per frame into a folder. FITS headers carry time, exposure, gain and instrument.
-- *When the RAM buffer is full*: **Wait for the disk** never loses a frame (a fast camera slows to disk speed). **Drop frames** keeps the camera at full speed and counts the dropped frames, shown in the buffer overlay and the notes file; a recording that lost frames also leaves a message in the status bar until you dismiss it.
+- *If the disk cannot keep up* (under **Advanced**, with the format and the send-the-mount-home switch): **Never lose frames** (a fast camera slows to disk speed once the RAM buffer is full) or **Keep camera speed**, which keeps the camera at full speed and counts the dropped frames, shown in the buffer overlay and the notes file; a recording that lost frames also leaves a message in the status bar until you dismiss it.
 
 The buffer size (default 1 GB) is set here. The panel shows whether a burst fits and the disk load of the schedule. File layout and sizes: [Capture formats and storage](../reference/capture-formats.md).
 
 ## Flats and darks
 
-These are captured from the [Camera tab](camera.md#flats). Recordings always stay raw.
+Flats and darks are everyday work, so they are on this tab, below the recording options (the how-to is in [Camera](camera.md#flats)). Recordings always stay raw.
+
+## One Start button
+
+There is a single **Start** button. It sits under the live picture on every tab, so a recording can be started from where you are, and it always starts the recording set up on this tab. Its second line says what happens to the frames: *keep video*, *video + stack*, *stack only, no video*, or *best frames + stack*. If the mode needs the stacker and the stacker is not running it turns amber and says *stacker off, saves video*. Site and optics, which rarely change, are in More; Go to, flats, darks and recording are on the tabs.
 
 ## Files (file manager)
 

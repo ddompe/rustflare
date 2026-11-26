@@ -40,6 +40,7 @@ export function AfterBurst({ status, nFrames, frameBytes, burstSecs, everySecs, 
 
   return (
     <Disclosure title="After each burst" summary={MODES.find((m) => m.id === a.mode)?.title}>
+      <p className="hint-text">A burst is one run of frames, the number you set above. This is what happens to it once it is captured.</p>
       <div className="mode-cards" role="group" aria-label="After each burst">
         {MODES.map((m) => (
           <button key={m.id} type="button" className="mode-card" aria-pressed={a.mode === m.id} onClick={() => set({ mode: m.id })}>
@@ -49,15 +50,15 @@ export function AfterBurst({ status, nFrames, frameBytes, burstSecs, everySecs, 
       </div>
       {stacking && (
         <div className="grid2">
-          <Field label="Frames in each stack (%)">{(id) => <input id={id} inputMode="decimal" value={keep} onChange={(e) => setKeep(e.target.value)} onBlur={() => { const v = parseFloat(keep); if (v !== a.stack_keep_percent) void set({ stack_keep_percent: v }) }} />}</Field>
-          {a.mode === 'best_frames' && <Field label="Frames kept as video (%)">{(id) => <input id={id} inputMode="decimal" value={raw} onChange={(e) => setRaw(e.target.value)} onBlur={() => { const v = parseFloat(raw); if (v !== a.raw_keep_percent) void set({ raw_keep_percent: v }) }} />}</Field>}
+          <Field label="Best frames kept, stacked from memory (%)">{(id) => <input id={id} inputMode="decimal" value={keep} onChange={(e) => setKeep(e.target.value)} onBlur={() => { const v = parseFloat(keep); if (v !== a.stack_keep_percent) void set({ stack_keep_percent: v }) }} />}</Field>
+          {a.mode === 'best_frames' && <Field label="Best frames kept as video (%)">{(id) => <input id={id} inputMode="decimal" value={raw} onChange={(e) => setRaw(e.target.value)} onBlur={() => { const v = parseFloat(raw); if (v !== a.raw_keep_percent) void set({ raw_keep_percent: v }) }} />}</Field>}
         </div>
       )}
       {stacking && (
         <p className={`hint-text ${a.stacker_connected ? '' : 'err'}`} role={a.stacker_connected ? undefined : 'alert'}>
           {a.stacker_connected
             ? `Stacker ready${a.stacking ? `, ${a.stacking} burst(s) being stacked` : ''}${a.last ? `. Last: ${a.last}` : ''}.`
-            : 'The stacker is not running, so bursts are recorded as video. Start it with “systemctl start rustflare-stack” (More > Stacking).'}
+            : 'The stacker is not running, so bursts are saved as video for now. RustFlare tries to restart it by itself; if it stays off, restart the Pi (More > Stacking has details).'}
         </p>
       )}
       {nFrames > 0 && stacking && (
@@ -71,7 +72,7 @@ export function AfterBurst({ status, nFrames, frameBytes, burstSecs, everySecs, 
         <Disclosure title="Stacker settings" summary={`${sc.enabled ? 'on' : 'off'} · ${sc.multipoint ? 'multi-point' : 'global'} · ${sc.disc_mask ? `black disc ${Math.round(sc.disc_scale * 100)} %` : 'disc kept'}`}>
           <Switch label="Stack finished recordings" checked={sc.enabled} onChange={(v) => void saveStack({ enabled: v })} hint="Off also switches off stacking from memory." />
           <Switch label="Multi-point alignment" checked={sc.multipoint} onChange={(v) => void saveStack({ multipoint: v })} hint="A shift for each patch of the picture: sharper, a little slower." />
-          <Field label="Frames in a stack made from a video file (%)" hint="Stacks from memory use the percentage above.">{(id) => <input id={id} inputMode="decimal" value={diskKeep} onChange={(e) => setDiskKeep(e.target.value)} onBlur={() => { const v = parseFloat(diskKeep); if (v >= 1 && v <= 100 && v !== sc.keep_percent) void saveStack({ keep_percent: v }) }} />}</Field>
+          <Field label="Best frames kept, stacked from a video file (%)" hint="Used for recordings stacked after they finish. Bursts stacked from memory use the percentage above.">{(id) => <input id={id} inputMode="decimal" value={diskKeep} onChange={(e) => setDiskKeep(e.target.value)} onBlur={() => { const v = parseFloat(diskKeep); if (v >= 1 && v <= 100 && v !== sc.keep_percent) void saveStack({ keep_percent: v }) }} />}</Field>
           <Switch label="Black disc on prominence stacks" checked={sc.disc_mask} onChange={(v) => void saveStack({ disc_mask: v })} hint="For a prominence lane recorded with the coronagraph: the disc is found in the finished stack and covered; off keeps it as recorded." />
           {sc.disc_mask && <Field label="Black disc size (% of the Sun's radius)" hint="100 is the edge as fitted; a few per cent more hides the limb glow and the base of a prominence.">{(id) => <input id={id} inputMode="numeric" defaultValue={Math.round(sc.disc_scale * 100)} key={sc.disc_scale} onBlur={(e) => { const n = parseFloat(e.target.value); if (n >= 90 && n <= 120 && Math.abs(n / 100 - sc.disc_scale) > 1e-6) void saveStack({ disc_scale: n / 100 }) }} />}</Field>}
           {onMoreStacking && <button type="button" className="quiet small" onClick={onMoreStacking}>More: when to stack, flat and darks (More &gt; Stacking)</button>}

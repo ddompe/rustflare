@@ -1,0 +1,9 @@
+// Lets the recorder (account "rustflare") start the stacker service again if it stopped, and nothing else.
+polkit.addRule(function (action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "rustflare-stack.service" &&
+        action.lookup("verb") == "start" &&
+        subject.user == "rustflare") {
+        return polkit.Result.YES;
+    }
+});

@@ -3,10 +3,11 @@ import { AfterBurst } from './AfterBurst'
 import { Disclosure, Empty, endsText, Field, Section, Segmented, Switch, useAction } from './ui'
 import { StorageLine } from './Storage'
 import { FileManagerButton } from './FileManager'
+import { Flats } from './Flats'
+import { Darks } from './Darks'
 import { ProminencePair } from './ProminencePair'
 import { LaneEditor, parseLanes, PRESETS } from './BracketLanes'
 import { useSetting } from '../settings'
-import { recordRequest } from '../recipe'
 
 const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`)
 
@@ -113,18 +114,13 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
     if (cycle > 0 && reps) planSecs = (reps - 1) * Math.max(every_s, cycle) + cycle
   }
 
-  const start = () => {
-    const q = recordRequest({ kind, name, format, onFull, frames, seconds, every, repeats, factor, mask, lanes, home }, cam)
-    return run(() => api('POST', q.path, q.body))
-  }
-
   return (
     <>
       <Section title="Record" error={err}>
         <Segmented label="What to record" value={kind} onChange={setKind} options={[{ id: 'plain', label: 'Sequence' }, { id: 'prominence', label: '+ Prominence' }, { id: 'hdr', label: 'HDR lanes' }]} />
         <p className="hint-text">
           {kind === 'plain' && 'Frames at the current exposure, once or repeated.'}
-          {kind === 'prominence' && `Two lanes alternate: the disc at the current exposure${exp ? ` (${(exp / 1000).toFixed(2)} ms)` : ''} and a longer exposure for the prominences. Each lane is its own raw video in its own folder.`}
+          {kind === 'prominence' && `Two lanes alternate: the disc at the current exposure${exp ? ` (${(exp / 1000).toFixed(2)} ms)` : ''} and a longer exposure for the prominences. A lane is one exposure setting recorded on its own: each lane is its own raw video in its own folder.`}
           {kind === 'hdr' && 'Several exposures in turn, each in its own lane and folder, for eclipses and the Moon. Every lane is raw video.'}
         </p>
         <Field label="Name (optional)">{(id) => <input id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. AR3842" />}</Field>
@@ -139,8 +135,8 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
         )}
         {kind === 'prominence' && (
           <>
-            <Field label="Prominence exposure, times the disc">{(id) => <input id={id} inputMode="decimal" value={factor} onChange={(e) => setFactor(e.target.value)} />}</Field>
-            <Switch label="Coronagraph: black disc on the prominence stacks" checked={mask} onChange={setMask} hint={mask ? 'Both lanes are saved raw. The Sun\'s position is saved with every frame of the prominence lane, and the stacker draws the black disc on the finished stack (switch it off in More, Stacking). Needs the Sun in view.' : 'Off: no disc positions are saved for the prominence lane.'} />
+            <Field label="Prominence exposure (times the disc exposure)">{(id) => <input id={id} inputMode="decimal" value={factor} onChange={(e) => setFactor(e.target.value)} />}</Field>
+            <Switch label="Save the disc position with every prominence frame" checked={mask} onChange={setMask} hint={mask ? 'Both lanes are saved raw. With the position saved, the stacker can draw a black disc on the finished prominence stack (Stacker settings below). Needs the Sun in view.' : 'Off: the stacker cannot black out the disc from the saved position.'} />
           </>
         )}
         <div className="grid2">
@@ -158,16 +154,24 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
           </p>
         )}
         {planSecs === 0 && (repeating || lanesMode) && !reps && <p className="hint-text">Give a number of {lanesMode ? 'cycles' : 'repeats'} to see when it will end; left empty it runs until you stop it.</p>}
+        <AfterBurst status={status} nFrames={nFrames} frameBytes={frameBytes} burstSecs={burstSecs} everySecs={every_s} bufFrames={bufFrames} onMoreStacking={() => goto('more', 'stacking')} />
+        <StorageLine status={status} onChange={() => goto('more', 'storage')} />
+        <Disclosure title="Advanced" summary={`${format === 'ser' ? 'SER' : format.toUpperCase()} · ${onFull === 'wait' ? 'never lose frames' : 'keep camera speed'}${home ? ' · mount goes home after' : ''}`}>
         <Switch label="Send the mount home when the recording finishes" checked={home} disabled={!status?.mount} onChange={setHome}
           hint={!status?.mount ? 'Connect the mount first (Aim tab).' : home ? 'Only when it finishes by itself (a set number of repeats or cycles, or a frame or time limit). Guiding stops and the mount slews to its home position: keep the cables and counterweight clear. Stopping the recording, an error or a pause does not move the mount.' : 'Off: the mount stays where it is.'} />
         <Segmented label="File format" value={format} onChange={setFormat} options={lanesMode ? [{ id: 'ser', label: 'SER video' }, { id: 'fits', label: 'FITS' }] : [{ id: 'ser', label: 'SER video' }, { id: 'png', label: 'PNG' }, { id: 'fits', label: 'FITS' }]} />
-        <Segmented label="When the RAM buffer is full" value={onFull} onChange={setOnFull} options={[{ id: 'wait', label: 'Wait for the disk' }, { id: 'drop', label: 'Drop frames' }]} />
-        <div className="hint-text">{onFull === 'drop' ? 'Keeps the camera at full speed; frames that do not fit are dropped and counted.' : 'Never loses a frame: a camera faster than the disk slows to disk speed once the buffer is full.'}{format === 'fits' ? ' FITS makes one file per frame, with exposure, gain and time in the header.' : ''}</div>
-        <AfterBurst status={status} nFrames={nFrames} frameBytes={frameBytes} burstSecs={burstSecs} everySecs={every_s} bufFrames={bufFrames} onMoreStacking={() => goto('more', 'stacking')} />
-        <StorageLine status={status} onChange={() => goto('more', 'storage')} />
-        <div className="sticky-act"><button type="button" className="primary wide big" onClick={start}>{kind === 'plain' ? (repeating ? 'Start repeating recording' : 'Start recording') : kind === 'prominence' ? 'Start prominence recording' : 'Start HDR lanes'}</button></div>
+        <Segmented label="If the disk cannot keep up" value={onFull} onChange={setOnFull} options={[{ id: 'wait', label: 'Never lose frames' }, { id: 'drop', label: 'Keep camera speed' }]} />
+        <div className="hint-text">{onFull === 'drop' ? 'The camera keeps full speed; frames the disk cannot take are dropped and counted.' : 'Never loses a frame: if the disk is slower than the camera, the camera slows to the disk\'s speed once the RAM buffer is full.'}{format === 'fits' ? ' FITS makes one file per frame, with exposure, gain and time in the header.' : ''}</div>
+        </Disclosure>
+        <p className="hint-text">The Start button above starts exactly this recording, on any tab.</p>
       </Section>
       {c.last_file && <div className="hint-text lastfile">Last: <a href={`/files/${c.last_file}`}>{c.last_file}</a> ({c.phase}{c.disk_mb_s > 0 ? `, written at ${c.disk_mb_s.toFixed(0)} MB/s` : ''})</div>}
+      <Disclosure title="Flats" summary={status?.flats?.applied ? 'applied' : 'not applied'}>
+        <Flats status={status} />
+      </Disclosure>
+      <Disclosure title="Darks" summary={status?.darks?.applied ? 'applied' : 'not applied'}>
+        <Darks status={status} />
+      </Disclosure>
       <Disclosure title="Stills" summary="single frame, prominence pair">
         <button type="button" className="wide" onClick={() => run(() => api('POST', '/capture/single', { name: nm }))}>Save a single frame (PNG)</button>
         <p className="hint-text">Prominence pair: the disc and a much longer exposure as PNGs plus a composite (processed, for a quick look; use the + Prominence recording for raw data).</p>

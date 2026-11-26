@@ -52,6 +52,52 @@ fn service_state() -> String {
     }
 }
 
+/// What the watchdog has done: how many times it started the stacker since it last saw it running, and why the last try failed.
+static RESTARTS: std::sync::Mutex<(u32, String)> = std::sync::Mutex::new((0, String::new()));
+
+/// Keeps the stacker service alive. systemd already restarts it after a crash (`Restart=on-failure`), but not after it was stopped, or
+/// after it failed too often: this starts it again, with a growing pause between tries, and says so in the log and in `/api/stack`
+/// (`restart`). It does nothing where there is no such unit (a development machine) and while the stacker is switched off in its settings.
+pub fn spawn_watchdog(state_dir: PathBuf) {
+    let has_unit = std::process::Command::new("systemctl").args(["cat", "rustflare-stack.service"]).output().map(|o| o.status.success()).unwrap_or(false);
+    if !has_unit {
+        return;
+    }
+    tokio::spawn(async move {
+        let mut next_try = std::time::Instant::now();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+            let dir = state_dir.clone();
+            let state = tokio::task::spawn_blocking(service_state).await.unwrap_or_default();
+            let enabled = tokio::task::spawn_blocking(move || Config::load(&dir).enabled).await.unwrap_or(true);
+            if state == "active" || state == "activating" || state == "unknown" || !enabled {
+                if state == "active" {
+                    *RESTARTS.lock().unwrap() = (0, String::new());
+                }
+                continue;
+            }
+            if std::time::Instant::now() < next_try {
+                continue;
+            }
+            let attempts = RESTARTS.lock().unwrap().0 + 1;
+            let out = tokio::task::spawn_blocking(|| std::process::Command::new("systemctl").args(["start", "rustflare-stack.service"]).output()).await;
+            let err = match out {
+                Ok(Ok(o)) if o.status.success() => String::new(),
+                Ok(Ok(o)) => String::from_utf8_lossy(&o.stderr).trim().to_string(),
+                Ok(Err(e)) => e.to_string(),
+                Err(e) => e.to_string(),
+            };
+            if err.is_empty() {
+                log::warn!("the stacker service was {state}: started it again (try {attempts})");
+            } else {
+                log::error!("the stacker service is {state} and could not be started (try {attempts}): {err}");
+            }
+            *RESTARTS.lock().unwrap() = (attempts, err);
+            next_try = std::time::Instant::now() + std::time::Duration::from_secs((20u64 << attempts.min(5)).min(600));
+        }
+    });
+}
+
 fn collect(st: &AppState) -> Value {
     let dir = state_dir(st);
     let root = st.storage.dir();
@@ -72,6 +118,7 @@ fn collect(st: &AppState) -> Value {
     let total = stacks.len();
     json!({
         "service": service_state(),
+        "restart": { "attempts": RESTARTS.lock().unwrap().0, "error": RESTARTS.lock().unwrap().1 },
         "status": status,
         "config": Config::load(&dir),
         "stacks": stacks.into_iter().take(48).map(|s| s.1).collect::<Vec<_>>(),

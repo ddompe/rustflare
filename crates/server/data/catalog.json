@@ -18,7 +18,9 @@
       "notes": "84 fps is the vendor figure for RAW8 at full resolution on USB 3.0; read noise 5.6 e- to 1.45 e- depending on gain; exposure 32 us to 2000 s; weight 160 g.",
       "sources": [
         "https://player-one-astronomy.com/product/apollo-m-mini-usb3-0-mono-camera/"
-      ]
+      ],
+      "image": "player-apollo-m-mini.webp",
+      "image_source": "https://player-one-astronomy.com/product/apollo-m-mini-usb3-0-mono-camera/"
     },
     {
       "match": "ASI585MC",
@@ -36,7 +38,9 @@
       "notes": "Full-resolution figure; USB 3.0; MC full well 40Ke, MM 38.7Ke.",
       "sources": [
         "https://www.zwoastro.com/product/asi585mc-mm/"
-      ]
+      ],
+      "image": "zwo-asi585mc.webp",
+      "image_source": "https://www.zwoastro.com/product/asi585mc-mm/"
     },
     {
       "match": "ASI585MM",
@@ -54,7 +58,9 @@
       "notes": "Full-resolution figure; USB 3.0; mono full well 38.7Ke.",
       "sources": [
         "https://www.zwoastro.com/product/asi585mc-mm/"
-      ]
+      ],
+      "image": "zwo-asi585mm.webp",
+      "image_source": "https://www.zwoastro.com/product/asi585mc-mm/"
     },
     {
       "match": "ASI715MC",
@@ -72,7 +78,9 @@
       "notes": "Full-resolution figure; USB 3.0.",
       "sources": [
         "https://www.zwoastro.com/product/asi715mc/"
-      ]
+      ],
+      "image": "zwo-asi715mc.webp",
+      "image_source": "https://www.zwoastro.com/product/asi715mc/"
     },
     {
       "match": "ASI676MC",
@@ -92,7 +100,9 @@
         "https://www.zwoastro.com/product/asi676/"
       ],
       "hcg_gain": 180,
-      "hcg_note": "High conversion gain switches on automatically at gain 180."
+      "hcg_note": "High conversion gain switches on automatically at gain 180.",
+      "image": "zwo-asi676mc.webp",
+      "image_source": "https://www.zwoastro.com/product/asi676/"
     },
     {
       "match": "ASI676MM",
@@ -112,7 +122,9 @@
         "https://www.zwoastro.com/product/asi676/"
       ],
       "hcg_gain": 180,
-      "hcg_note": "High conversion gain switches on automatically at gain 180."
+      "hcg_note": "High conversion gain switches on automatically at gain 180.",
+      "image": "zwo-asi676mm.webp",
+      "image_source": "https://www.zwoastro.com/product/asi676/"
     },
     {
       "match": "ASI678MC",
@@ -130,7 +142,9 @@
       "notes": "Full-resolution figure; USB 3.0.",
       "sources": [
         "https://www.zwoastro.com/product/zwo-asi678mc/"
-      ]
+      ],
+      "image": "zwo-asi678mc.webp",
+      "image_source": "https://www.zwoastro.com/product/zwo-asi678mc/"
     },
     {
       "match": "ASI678MM",
@@ -148,7 +162,9 @@
       "notes": "Full-resolution figure; USB 3.0.",
       "sources": [
         "https://www.zwoastro.com/product/zwo-asi678mc/"
-      ]
+      ],
+      "image": "zwo-asi678mm.webp",
+      "image_source": "https://www.zwoastro.com/product/zwo-asi678mc/"
     },
     {
       "match": "ASI664MC",
@@ -159,7 +175,9 @@
       "notes": "Manufacturer page only provides the product listing and no key-specification table in the fetched page.",
       "sources": [
         "https://www.zwoastro.com/product/asi664mc/"
-      ]
+      ],
+      "image": "zwo-asi664mc.webp",
+      "image_source": "https://www.zwoastro.com/product/asi664mc/"
     },
     {
       "match": "ASI174MM",
@@ -177,7 +195,9 @@
       "notes": "Full resolution: 164 fps as key-spec value; 128 fps at 12-bit and 164.5 fps at 10-bit stated in USB 3.0 text.",
       "sources": [
         "https://www.zwoastro.com/product/asi174mm-mono/"
-      ]
+      ],
+      "image": "zwo-asi174mm.webp",
+      "image_source": "https://www.zwoastro.com/product/asi174mm-mono/"
     },
     {
       "match": "ASI183MC",
@@ -194,7 +214,9 @@
       "notes": "Full-resolution 12-bit: 19 fps on USB 3.0.",
       "sources": [
         "https://www.zwoastro.com/product/asi183mm-mc/"
-      ]
+      ],
+      "image": "zwo-asi183mc.webp",
+      "image_source": "https://www.zwoastro.com/product/asi183mm-mc/"
     },
     {
       "match": "ASI183MM",
@@ -211,7 +233,9 @@
       "notes": "Full-resolution 12-bit: 19 fps on USB 3.0.",
       "sources": [
         "https://www.zwoastro.com/product/asi183mm-mc/"
-      ]
+      ],
+      "image": "zwo-asi183mm.webp",
+      "image_source": "https://www.zwoastro.com/product/asi183mm-mc/"
     },
     {
       "match": "ASI432MM",
@@ -222,7 +246,9 @@
       "notes": "No key-specification table was present in the fetched manufacturer page.",
       "sources": [
         "https://www.zwoastro.com/product/zwo-asi432mm/"
-      ]
+      ],
+      "image": "zwo-asi432mm.webp",
+      "image_source": "https://www.zwoastro.com/product/zwo-asi432mm/"
     },
     {
       "match": "ASI294MC",
@@ -242,7 +268,9 @@
         "https://www.zwoastro.com/product/asi294mm-mc/"
       ],
       "hcg_gain": 120,
-      "hcg_note": "HCG mode is on above gain 120."
+      "hcg_note": "HCG mode is on above gain 120.",
+      "image": "zwo-asi294mc.webp",
+      "image_source": "https://www.zwoastro.com/product/asi294mm-mc/"
     },
     {
       "match": "ASI294MM",
@@ -261,7 +289,9 @@
         "https://www.zwoastro.com/product/asi294mm-mc/"
       ],
       "hcg_gain": 120,
-      "hcg_note": "HCG mode is on at gain 120."
+      "hcg_note": "HCG mode is on at gain 120.",
+      "image": "zwo-asi294mm.webp",
+      "image_source": "https://www.zwoastro.com/product/asi294mm-mc/"
     },
     {
       "match": "ASI662MC",
@@ -280,7 +310,9 @@
         "https://www.zwoastro.com/product/asi662mc/"
       ],
       "hcg_gain": 200,
-      "hcg_note": "HCG mode is automatically turned on at gain 200."
+      "hcg_note": "HCG mode is automatically turned on at gain 200.",
+      "image": "zwo-asi662mc.webp",
+      "image_source": "https://www.zwoastro.com/product/asi662mc/"
     },
     {
       "match": "ASI662MM",
@@ -299,7 +331,9 @@
         "https://www.zwoastro.com/product/asi662mc/"
       ],
       "hcg_gain": 200,
-      "hcg_note": "HCG mode is automatically turned on at gain 200."
+      "hcg_note": "HCG mode is automatically turned on at gain 200.",
+      "image": "zwo-asi662mm.webp",
+      "image_source": "https://www.zwoastro.com/product/asi662mc/"
     },
     {
       "match": "ASI2600MC Pro",
@@ -317,7 +351,9 @@
         "https://www.zwoastro.com/product/asi2600/"
       ],
       "hcg_gain": 100,
-      "hcg_note": "HCG high-gain mode turns on at gain 100."
+      "hcg_note": "HCG high-gain mode turns on at gain 100.",
+      "image": "zwo-asi2600mc-pro.webp",
+      "image_source": "https://www.zwoastro.com/product/asi2600/"
     },
     {
       "match": "ASI533MC Pro",
@@ -335,7 +371,9 @@
       "notes": "Full-resolution; USB 3.0; cooled to 35°C delta.",
       "sources": [
         "https://www.zwoastro.com/product/asi533-pro-series/"
-      ]
+      ],
+      "image": "zwo-asi533mc-pro.webp",
+      "image_source": "https://www.zwoastro.com/product/asi533-pro-series/"
     },
     {
       "match": "Saturn-M SQR",
@@ -353,7 +391,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-saturn-m-sqr.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Saturn-C SQR",
@@ -371,7 +411,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-saturn-c-sqr.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Uranus-M",
@@ -389,7 +431,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-uranus-m.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Uranus-C",
@@ -407,7 +451,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-uranus-c.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Neptune 664C",
@@ -425,7 +471,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-neptune-664c.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Neptune-C II",
@@ -443,7 +491,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-neptune-c-ii.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Neptune-M",
@@ -461,7 +511,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-neptune-m.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Neptune-C",
@@ -479,7 +531,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-neptune-c.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Mars-M II",
@@ -497,7 +551,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-mars-m-ii.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Mars 662M",
@@ -515,7 +571,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-mars-662m.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Mars-C II",
@@ -533,7 +591,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-mars-c-ii.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Mars-M",
@@ -551,7 +611,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-one-mars-m.webp",
+      "image_source": "https://i.player-one-astronomy.com/wp-content/uploads/2025/11/Mars-M.png"
     },
     {
       "match": "Mars-C",
@@ -569,7 +631,9 @@
       "notes": "Full-resolution fps on the manufacturer planetary-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/planetary-camera/"
-      ]
+      ],
+      "image": "player-mars-c.webp",
+      "image_source": "https://player-one-astronomy.com/planetary-camera/"
     },
     {
       "match": "Apollo 428M MAX PRO",
@@ -587,7 +651,9 @@
       "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/solar-camera/"
-      ]
+      ],
+      "image": "player-apollo-428m-max-pro.webp",
+      "image_source": "https://player-one-astronomy.com/solar-camera/"
     },
     {
       "match": "Apollo-M MAX PRO",
@@ -605,7 +671,9 @@
       "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/solar-camera/"
-      ]
+      ],
+      "image": "player-apollo-m-max-pro.webp",
+      "image_source": "https://player-one-astronomy.com/solar-camera/"
     },
     {
       "match": "Apollo 428M MAX",
@@ -623,7 +691,9 @@
       "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/solar-camera/"
-      ]
+      ],
+      "image": "player-apollo-428m-max.webp",
+      "image_source": "https://player-one-astronomy.com/solar-camera/"
     },
     {
       "match": "Apollo-M MAX",
@@ -641,7 +711,9 @@
       "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/solar-camera/"
-      ]
+      ],
+      "image": "player-apollo-m-max.webp",
+      "image_source": "https://player-one-astronomy.com/solar-camera/"
     },
     {
       "match": "Apollo-M",
@@ -659,7 +731,9 @@
       "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/solar-camera/"
-      ]
+      ],
+      "image": "player-apollo-m.webp",
+      "image_source": "https://player-one-astronomy.com/solar-camera/"
     },
     {
       "match": "Apollo-C",
@@ -677,7 +751,9 @@
       "notes": "Full-resolution fps on the manufacturer solar-camera specification page; USB 3.0.",
       "sources": [
         "https://player-one-astronomy.com/solar-camera/"
-      ]
+      ],
+      "image": "player-apollo-c.webp",
+      "image_source": "https://player-one-astronomy.com/solar-camera/"
     }
   ],
   "mounts": [
@@ -703,7 +779,9 @@
       "notes": "Values from ZWO's serial protocol and tests with this project; mechanical specifications are not listed here because the figures found were for the AM3N.",
       "sources": [
         "https://www.zwoastro.com/product/am3n/"
-      ]
+      ],
+      "image": "zwo-am3.webp",
+      "image_source": "https://www.zwoastro.com/product/am3n/"
     }
   ]
 }

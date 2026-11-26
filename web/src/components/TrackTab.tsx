@@ -21,12 +21,12 @@ function Check({ done, bad }: { done: boolean; bad?: boolean }) {
   )
 }
 
-function Step({ done, bad, title, state, action, children }: { done: boolean; bad?: boolean; title: string; state: ReactNode; action?: ReactNode; children?: ReactNode }) {
+function Step({ done, bad, warn, title, state, action, children }: { done: boolean; bad?: boolean; warn?: boolean; title: string; state: ReactNode; action?: ReactNode; children?: ReactNode }) {
   return (
     <li className="step">
       <Check done={done} bad={bad} />
       <div className="step-main">
-        <div className="step-head"><b>{title}</b><span className={`step-state ${bad ? 'bad' : done ? 'ok' : ''}`}>{state}</span></div>
+        <div className="step-head"><b>{title}</b><span className={`step-state ${bad ? 'bad' : warn ? 'warn' : done ? 'ok' : ''}`}>{state}</span></div>
         {children}
         {action}
       </div>
@@ -35,7 +35,7 @@ function Step({ done, bad, title, state, action, children }: { done: boolean; ba
 }
 
 /** Step 3: choose what to follow, calibrate once, then hold position. */
-export function TrackTab({ status, anchorPick, setAnchorPick, goto, next }: { status: Status | null; anchorPick: boolean; setAnchorPick: (b: boolean) => void; goto: (t: 'aim') => void; next: () => void }) {
+export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: Status | null; anchorPick: boolean; setAnchorPick: (b: boolean) => void; goto: (t: 'aim') => void; next: () => void }) {
   const [mode, setMode] = useSetting<Mode>('tracking.mode', 'limb')
   const [radius, setRadius] = useSetting('tracking.radius', '')
   const { err, run } = useAction()
@@ -54,6 +54,9 @@ export function TrackTab({ status, anchorPick, setAnchorPick, goto, next }: { st
   const mountTracking = !!status.mount?.tracking
   const calibrated = !!g?.calibration
   const guiding = g?.state === 'guiding'
+  // the error as a word first, with a mark, so the colour is never the only signal: a few pixels is locked, a few tens still settling
+  const holdLevel: 'locked' | 'settling' | 'off' = g?.error_px == null ? 'settling' : g.error_px <= 10 ? 'locked' : g.error_px <= 60 ? 'settling' : 'off'
+  const holdWord = { locked: '✓ locked', settling: '… settling', off: '! off target' }
   const calibrating = g?.state === 'calibrating'
   const ready = !!t && !t.lost && calibrated && mountTracking && g?.state === 'off'
 
@@ -89,7 +92,7 @@ export function TrackTab({ status, anchorPick, setAnchorPick, goto, next }: { st
             <div className="hint-text">{t.mode} @ {t.x.toFixed(0)}, {t.y.toFixed(0)}{t.radius ? ` · r ${t.radius.toFixed(0)} px` : ''}</div>
           </Step>
           {!mountTracking && (
-            <Step done={false} title="Mount solar tracking" state="off" action={<button type="button" className="small" onClick={() => goto('aim')}>Go to Aim</button>}>
+            <Step done={false} warn title="Mount solar tracking" state="off" action={<button type="button" className="small primary" onClick={() => run(() => api('POST', '/mount/tracking', { enabled: true }))}>Turn on solar tracking</button>}>
               <div className="hint-text">Calibration and guiding need the mount's solar tracking on.</div>
             </Step>
           )}
@@ -103,9 +106,9 @@ export function TrackTab({ status, anchorPick, setAnchorPick, goto, next }: { st
               </button>
             }
           >
-            <div className="hint-text">{calibrated ? `RA+ moves the image ${angle(g!.calibration!.primary_dir)}, Dec+ ${angle(g!.calibration!.secondary_dir)}` : 'Teaches RustFlare which way each mount axis moves the image. Takes a few seconds per axis.'}</div>
+            <div className="hint-text">{calibrated ? `Calibrated. Mount directions: RA+ moves the image ${angle(g!.calibration!.primary_dir)}, Dec+ ${angle(g!.calibration!.secondary_dir)}.` : 'Teaches RustFlare which way each mount axis moves the image. Takes a few seconds per axis.'}</div>
           </Step>
-          <Step done={guiding} title="Hold position" state={guiding ? <><b className="bignum">{g?.error_px?.toFixed(1) ?? '–'}</b> px error</> : 'not holding'}>
+          <Step done={guiding && holdLevel === 'locked'} warn={guiding && holdLevel === 'settling'} bad={guiding && holdLevel === 'off'} title="Hold position" state={guiding ? <>{holdWord[holdLevel]} · <b className="bignum">{g?.error_px?.toFixed(1) ?? '–'}</b> px</> : 'not holding'}>
             {guiding ? (
               <button type="button" className="danger wide big" onClick={() => run(() => api('POST', '/guiding/stop'))}>Stop guiding</button>
             ) : (

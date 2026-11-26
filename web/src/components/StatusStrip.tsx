@@ -26,8 +26,18 @@ export function chipsFor(status: Status | null): ChipSpec[] {
 /** How big the quick recording is, so one tap's consequence is visible: "· 100 frames" or "· 30 s". */
 const quickSize = (r: ReturnType<typeof savedRecipe>) => (r.kind === 'hdr' ? '' : r.frames?.trim() ? ` · ${r.frames.trim()} frames` : r.seconds?.trim() ? ` · ${r.seconds.trim()} s` : '')
 
+/** What happens to the frames, said where you press Start: the after-burst mode, and a stacker that is not there. */
+function keepText(status: Status): { text: string; warn: boolean } {
+  const a = status.after_burst
+  if (!a || a.mode === 'video') return { text: 'keep video', warn: false }
+  const down = !a.stacker_connected
+  const base = a.mode === 'video_stack' ? 'video + stack' : a.mode === 'stack_only' ? 'stack only, no video' : 'best frames + stack'
+  return down ? { text: `${base} · stacker off, saves video`, warn: true } : { text: base, warn: a.mode === 'stack_only' }
+}
+
+/** The one Start button: always visible when the camera is open and idle, and says what one tap will do. */
 export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick }: { status: Status | null; goto: (t: TabId) => void; onStop: () => void; hideRec?: boolean; hide?: string[]; noQuick?: boolean }) {
-  const quick = !!status?.camera && status.capture.state === 'idle' && !status.capture.paused && !hideRec && !noQuick
+  const quick = !!status?.camera && status.capture.state === 'idle' && !status.capture.paused && !noQuick
   const [qerr, setQerr] = useState('')
   const quickCall = (path: string, body?: unknown) => { setQerr(''); api('POST', path, body).catch((e: Error) => setQerr(e.message)) }
   const startQuick = () => { const r = savedRecipe(); const q = recordRequest(r, status!.camera!); quickCall(q.path, q.body) }
@@ -54,7 +64,10 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
       {qerr && <div className="err" role="alert">{qerr}</div>}
       {quick && (
         <div className="quick" role="group" aria-label="Quick capture">
-          <button type="button" className="quick-rec" onClick={startQuick}>▶ Start <span className="muted">{recipeLabel(savedRecipe())}{quickSize(savedRecipe())}</span></button>
+          <button type="button" className={`quick-rec ${keepText(status!).warn ? 'warn' : ''}`} onClick={startQuick}>
+            <span className="qr-main"><svg className="qr-play" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2.5 1.5v9l8-4.5z" fill="currentColor" /></svg>Start <span className="muted">{recipeLabel(savedRecipe())}{quickSize(savedRecipe())}</span></span>
+            <span className="qr-keep">{keepText(status!).text}</span>
+          </button>
           <button type="button" onClick={() => quickCall('/capture/single', {})}>Snap</button>
         </div>
       )}

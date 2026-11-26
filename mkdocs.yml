@@ -22,6 +22,7 @@ nav:
       - Hardware: reference/hardware.md
       - Capture formats and storage: reference/capture-formats.md
       - File formats: reference/file-formats.md
+      - Device images: reference/device-images.md
       - Tracking and guiding: reference/tracking-and-guiding.md
       - Configuration: reference/configuration.md
       - HTTP API: reference/api.md

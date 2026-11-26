@@ -16,6 +16,8 @@ Use the **histogram**: the bright part of the disc should sit clear of the right
 
 ## Flats
 
+*Flats and darks are on the [Record tab](record.md#flats-and-darks)* (they are everyday work, done with the recordings); the steps are here.
+
 1. Press *Start flats*.
 2. Put the flat cap or a diffuser on and check the level.
 3. Press *Capture*.

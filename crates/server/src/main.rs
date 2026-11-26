@@ -67,6 +67,7 @@ async fn main() -> std::io::Result<()> {
     let stretch = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let demand = std::sync::Arc::new(preview::Demand::default());
     let (handle, engine_thread) = engine::spawn(storage.clone(), stretch.clone(), demand.clone());
+    stack_api::spawn_watchdog(storage.config_file().parent().map(|p| p.to_path_buf()).unwrap_or_default());
     let app = api::router(api::AppState { engine: handle, storage, stretch, demand }, args.web_dir);
 
     let app = if args.password.is_empty() {

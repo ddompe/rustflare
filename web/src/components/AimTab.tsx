@@ -282,6 +282,11 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
   const alt = planet ? planet.altitude_deg : sky?.altitude_deg
   const below = alt != null && alt < -1
   const low = alt != null && alt >= -1 && alt < 15
+  // the site is a once-only setting, so the fix is here: one tap saves where this phone is
+  const useHere = () => navigator.geolocation.getCurrentPosition(
+    (p) => { void run(() => api('PUT', '/site', { latitude: p.coords.latitude, longitude: p.coords.longitude })) },
+    (e) => reportError(new Error(`Location unavailable (${e.message}). The browser only shares it over HTTPS: use Type it in instead.`), 'Setting the site'),
+  )
   const go = () => run(async () => { await api('POST', '/mount/goto', { target: planet ? planet.id : 'sun', confirm: true, allow_unsynced_clock: clockBad, allow_below_horizon: false }); setAsk(false) })
   if (status.goto) return <div className="hint-text" role="status">Going to {bodies.find((b) => b.id === status.goto?.target)?.name ?? 'the Sun'} ({status.goto.phase}). STOP cancels.</div>
   const label = (b: { name: string; altitude_deg: number }) => `${b.name} · ${b.altitude_deg < -1 ? 'not up (below the horizon)' : `${b.altitude_deg.toFixed(0)}° up`}`
@@ -295,7 +300,16 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
               {bodies.map((b) => <option key={b.id} value={b.id}>{label(b)}</option>)}
             </select>
           )}
-          <button type="button" className="wide primary" disabled={disabled || !status.site || below} title={below ? `${planet ? planet.name : 'The Sun'} is below the horizon` : undefined} onClick={() => setAsk(true)}>Go to {planet ? planet.name : 'Sun'}</button>
+          <button type="button" className="wide primary" disabled={disabled || !status.site || below} aria-disabled={disabled || !status.site || below} title={below ? `${planet ? planet.name : 'The Sun'} is below the horizon` : undefined} onClick={() => setAsk(true)}>Go to {planet ? planet.name : 'Sun'}</button>
+          {!status.site && (
+            <div className="needs" role="note">
+              <b>Set your site first.</b> Go to works out where the Sun is from your position and the clock.
+              <div className="btnrow tight">
+                <button type="button" className="primary grow" disabled={busy} onClick={useHere}>Use my location</button>
+                {openMore && <button type="button" className="grow" onClick={() => openMore('site')}>Type it in</button>}
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <div className="confirm" role="alertdialog" aria-label={`Go to ${name}`}>
@@ -308,7 +322,6 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
           </div>
         </div>
       )}
-      {!status.site && <div className="hint-text">Go to needs your site. {openMore ? <button type="button" className="linklike" onClick={() => openMore('site')}>Set the site</button> : 'Set it in More, Site.'}</div>}
       {alt != null && !planet && sky && <div className="hint-text">Sun now: altitude {sky.altitude_deg.toFixed(1)}°, azimuth {sky.azimuth_deg.toFixed(0)}°{sky.altitude_deg < 0 ? ' (below the horizon: Go to is off until it rises)' : ''}</div>}
       {planet && <div className="hint-text">{planet.name} now: altitude {planet.altitude_deg.toFixed(1)}°, azimuth {planet.azimuth_deg.toFixed(0)}°{below ? ' (below the horizon: Go to is off until it rises)' : ''}</div>}
       <ErrorLine error={err} />

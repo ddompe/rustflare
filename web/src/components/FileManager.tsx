@@ -224,7 +224,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
         <label className="fm-sort">Sort <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
           <option value="name">Name</option><option value="new">Newest first</option><option value="big">Largest first</option>
         </select></label>
-        <button type="button" disabled={selectable.length === 0} onClick={() => setSel(sel.size === selectable.length ? new Set() : new Set(selectable.map((f) => f.path)))}>{sel.size === selectable.length && sel.size > 0 ? 'Select none' : 'Select all'}</button>
+        {selectable.length > 0 && <button type="button" onClick={() => setSel(sel.size === selectable.length ? new Set() : new Set(selectable.map((f) => f.path)))}>{sel.size === selectable.length && sel.size > 0 ? 'Select none' : 'Select all'}</button>}
         {recs.length > 0 && <button type="button" disabled={checking || busy} onClick={checkAll}>{checking ? 'Checking…' : `Check ${plural(recs.length, 'recording')}`}</button>}
         {total > 1e9 && cwd !== '' && <div className="hint-text fm-big">{size(total)} is a long download over Wi-Fi: keep this tab open until it finishes. The file is a .tar, which opens by double-click on a Mac or PC.</div>}
         {dark.length > 0 && <button type="button" onClick={() => setSel(new Set(dark.map((f) => f.path)))}>Select dark ({dark.length})</button>}
@@ -290,8 +290,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
         )}
         {busy && <div className="hint-text">Deleting is disabled while recording or writing.</div>}
         {sel.size > 0 && !ask && <a className="btn wide" href={`/api/files/archive?path=${encodeURIComponent(cwd)}&names=${encodeURIComponent(JSON.stringify(selEntries.map((e) => e.name)))}`} download>Download {plural(sel.size, 'selected item')} · {size(selSize)} (.tar)</a>}
-        {!ask ? (
-          <button type="button" className="danger wide" disabled={sel.size === 0 || busy} onClick={() => setAsk(true)}>
+        {!ask ? (selectable.length === 0 ? null : <button type="button" className="danger wide" disabled={sel.size === 0 || busy} onClick={() => setAsk(true)}>
             {sel.size === 0 ? 'Select items to delete' : `Delete ${plural(sel.size, 'item')} (${size(selSize)})…`}
           </button>
         ) : (

@@ -81,7 +81,7 @@ export function App() {
       </header>
       <section className="view" aria-label="Live view">
         <LiveView status={status} display={display} setDisplay={setDisplay} anchorPick={anchorPick} onPicked={() => setAnchorPick(false)} onDisplay={() => openMore('display')} />
-        <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} noQuick={tab === 'aim'} hide={tab === 'aim' ? ['sun'] : []} />
+        <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} hide={tab === 'aim' ? ['sun'] : []} />
       </section>
 
       <nav className="tabs" role="tablist" aria-label="Session steps" onKeyDown={onKey}>

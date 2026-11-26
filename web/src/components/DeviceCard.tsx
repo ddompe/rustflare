@@ -52,12 +52,13 @@ export function DeviceCard<K extends DeviceKind>({ kind, data }: { kind: K; data
   return (
     <details className="devcard">
       <summary>
-        <img className="dev-img" src={deviceImage(kind, cat?.image)} alt="" width="72" height="45" />
+        <img className={`dev-img ${cat?.image ? '' : 'is-line'}`} src={deviceImage(kind, cat?.image)} alt="" width="84" height="60" />
         <span className="dev-main"><b>{r.title}</b>{r.facts && <span className="dev-facts">{r.facts}</span>}</span>
         <svg className="chev" viewBox="0 0 12 12" width="14" height="14" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
         <span className="sr-only">Datasheet</span>
       </summary>
       <div className="devcard-body">
+        {cat?.image && <img className="dev-hero" src={deviceImage(kind, cat.image)} alt={r.title} loading="lazy" />}
         <Spec title="This unit" rows={r.unit} />
         <Spec title="Datasheet" rows={r.spec} />
         {!cat && <p className="hint-text">No datasheet is available for this device yet.</p>}

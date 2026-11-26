@@ -127,14 +127,17 @@ test('record a short sequence, check it, delete it', async ({ page }) => {
   await expect(fm).toHaveCount(0)
 })
 
-test('flats live in the Camera tab', async ({ page }) => {
+test('flats and darks live in the Record tab, with the other everyday work', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('tab', { name: /^Camera/ }).click()
+  await page.getByRole('tab', { name: /^Record/ }).click()
   await expect(page.getByText('Flats', { exact: true })).toBeVisible()
   await page.getByText('Flats', { exact: true }).click()
   await expect(page.getByRole('button', { name: /Start flats/ })).toBeVisible()
-  await page.getByRole('tab', { name: /^More/ }).click()
-  await expect(page.getByText('Flats', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('Darks', { exact: true })).toBeVisible()
+  for (const t of [/^Camera/, /^More/]) {
+    await page.getByRole('tab', { name: t }).click()
+    await expect(page.getByText('Flats', { exact: true })).toHaveCount(0)
+  }
 })
 
 test('Prominence view toggles from the live view tools', async ({ page }) => {
@@ -166,9 +169,9 @@ test('Record offers sequence, prominence and HDR lanes in one form', async ({ pa
   await page.getByRole('button', { name: 'Diamond ring' }).click()
   await expect(page.getByLabel('Lane 3 name')).toHaveValue('e3')
   await page.getByRole('radio', { name: '+ Prominence' }).check()
-  await expect(page.getByText('Coronagraph: black disc')).toBeVisible()
+  await expect(page.getByText('Save the disc position with every prominence frame')).toBeVisible()
   await page.getByRole('radio', { name: 'Sequence' }).check()
-  await expect(page.getByRole('button', { name: 'Start recording' })).toBeVisible()
+  await expect(page.locator('.quick-rec')).toBeVisible()
 })
 
 test('HDR lanes record into one folder per lane', async ({ page }) => {
@@ -188,9 +191,9 @@ test('the prominence recording with the coronagraph masks the disc in its lane o
   await page.getByRole('tab', { name: /^Record/ }).click()
   await page.getByRole('radio', { name: '+ Prominence' }).check()
   await page.getByLabel('Frames per lane').fill('3')
-  await page.getByRole('switch', { name: /Coronagraph/ }).check()
+  await page.getByRole('switch', { name: /Save the disc position/ }).check()
   await page.getByLabel('Number of cycles').fill('1')
-  await page.getByRole('button', { name: 'Start prominence recording' }).click()
+  await page.locator('.quick-rec').click()
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
   await page.getByRole('button', { name: /Open file manager/ }).click()
   const fm = page.getByRole('dialog', { name: 'File manager' })
@@ -338,18 +341,21 @@ test('the mount goes home when a recording finishes, only if asked', async ({ pa
   await page.getByRole('radio', { name: 'Sequence' }).check()
   await page.getByLabel('Frames', { exact: true }).fill('3')
   await page.getByLabel(/Repeat every/).fill('')
+  await page.getByText('Advanced', { exact: true }).click()
   const sw = page.getByRole('switch', { name: 'Send the mount home when the recording finishes' })
   await expect(sw).toBeEnabled()
   const mount = async () => (await (await page.request.get('/api/status')).json()).mount
   // off: nothing moves
-  await page.getByRole('button', { name: /^Start recording/ }).click()
+  await page.locator('.quick-rec').click()
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 15_000 }).toBe('idle')
   await page.waitForTimeout(1500)
   expect((await mount()).at_home).toBe(false)
-  // on: the mount is sent home after the recording ends by itself
+  // on: the mount is sent home after the recording ends by itself (the Record tab was rebuilt while recording: open Advanced again)
+  if (!(await sw.isVisible())) await page.getByText('Advanced', { exact: true }).click()
   await sw.check()
-  await page.getByRole('button', { name: /^Start recording/ }).click()
+  await page.locator('.quick-rec').click()
   await expect.poll(async () => (await mount()).at_home, { timeout: 20_000 }).toBe(true)
+  if (!(await sw.isVisible())) await page.getByText('Advanced', { exact: true }).click()
   await sw.uncheck()
   await post(page, '/mount/tracking', { enabled: true })
 })
@@ -365,8 +371,8 @@ test('Stacking: the stacker, its settings, and the stacks it made are looked at 
   await page.getByRole('tab', { name: /^More/ }).click()
   const section = page.locator('details.disc', { has: page.locator('.disc-title', { hasText: 'Stacking' }) })
   await section.locator('summary').click()
-  // not running here (no service): says how to start it
-  await expect(section.getByText(/systemctl enable --now rustflare-stack/)).toBeVisible()
+  // not running here (no service): says it restarts by itself, no shell command
+  await expect(section.getByText(/starts it again by itself/)).toBeVisible()
   // the panel does not list the stacks: it counts them and opens Files in the stacks folder, where they are shown and downloaded
   await expect(section.locator('.stack-card')).toHaveCount(0)
   await expect(section.getByText(/\d+ stacks so far/)).toBeVisible({ timeout: 10_000 })
@@ -379,7 +385,7 @@ test('Stacking: the stacker, its settings, and the stacks it made are looked at 
   await expect.poll(async () => cell.locator('img').evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0)).toBe(true)
   await page.keyboard.press('Escape')
   // settings are saved by the server and survive a reload
-  await section.getByText('Settings', { exact: true }).click()
+  await section.getByText('Stacker settings', { exact: true }).click()
   await section.getByRole('radio', { name: 'Always' }).click()
   await expect.poll(async () => (await (await page.request.get('/api/stack')).json()).config.policy).toBe('always')
   await section.getByRole('radio', { name: 'When idle' }).click()
@@ -429,7 +435,7 @@ test('After each burst: modes, a stacker that is not there is never quiet, notic
   // video + stack without a stacker: allowed, but every recording says it is video only, in the status bar, until dismissed
   await page.getByRole('button', { name: /Video and stack/ }).click()
   await expect(page.getByRole('button', { name: /Video and stack/ })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByText(/Stacker ready|The stacker is not running, so bursts are recorded as video/)).toBeVisible()
+  await expect(page.getByText(/Stacker ready|The stacker is not running, so bursts are saved as video for now/)).toBeVisible()
   expect((await post(page, '/capture/sequence', { name: 'noticetest', frames: 8, format: 'ser' })).ok()).toBe(true)
   const bar = page.locator('.sbar')
   await expect(bar).toContainText('recorded as video', { timeout: 15_000 })
