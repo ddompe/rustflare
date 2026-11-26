@@ -11,6 +11,8 @@ pub const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
 pub const STOP_FREE_BYTES: u64 = 50 * 1024 * 1024;
 /// The default reserve kept free on the internal disk.
 const DEFAULT_RESERVE_GB: f64 = 8.0;
+/// Extra room the internal disk's guard leaves over its reserve and the frames in memory.
+const INTERNAL_MARGIN: u64 = 1_000_000_000;
 const FAT_MAX_FILE: u64 = 4 * 1024 * 1024 * 1024 - 1;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -412,7 +414,8 @@ impl Storage {
 pub fn guard(free: Option<u64>, internal: bool, reserve: u64, pending: u64) -> Option<String> {
     let f = free?;
     if internal {
-        let need = reserve + pending.min(f);
+        // a margin of 1 GB: the check runs every 2 s and the disk takes a few hundred MB meanwhile
+        let need = reserve + pending.min(f) + INTERNAL_MARGIN;
         (f < need + STOP_FREE_BYTES).then(|| format!("the internal disk is down to {:.1} GB free (keeping {:.0} GB for the system, and {:.1} GB still has to be written from memory)", f as f64 / 1e9, reserve as f64 / 1e9, pending as f64 / 1e9))
     } else {
         (f < STOP_FREE_BYTES).then(|| format!("disk full ({} MB left)", f / 1_000_000))
@@ -577,6 +580,8 @@ mod tests {
         // the internal disk: 8 GB kept, plus what is queued
         assert_eq!(guard(Some(20 * GB), true, 8 * GB, 4 * GB), None);
         assert!(guard(Some(11 * GB), true, 8 * GB, 4 * GB).is_some(), "11 GB free, 4 GB still to write: the reserve would be eaten");
+        assert!(guard(Some(12_500_000_000), true, 8 * GB, 4 * GB).is_some(), "12.5 GB free is inside the 1 GB margin");
+        assert_eq!(guard(Some(13_200_000_000), true, 8 * GB, 4 * GB), None);
         assert!(guard(Some(8 * GB), true, 8 * GB, 0).is_some());
         assert_eq!(guard(None, true, 8 * GB, 0), None);
     }

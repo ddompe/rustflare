@@ -404,6 +404,9 @@ pub struct Engine {
     lost_saved: u32,
     last_lost_saved: Option<Instant>,
     last_exposure_change: Instant,
+    /// A slow average of the picture's brightness while it was normal: when the picture falls far below it (a shadow over the telescope, thick cloud)
+    /// the limb fit finds edges in noise and the Sun model followed them (2026-11-26: 400 px off in seconds, then 300 px of wrong corrections).
+    bright_ref: f64,
     auto_flip: AutoFlip,
     /// Pointing and Sun position recorded shortly before the meridian by the automatic flip.
     auto_pre: Option<Value>,
@@ -426,6 +429,9 @@ pub struct Engine {
     last_frame_work: Duration,
     /// The automatic flip has been started (or given up) for this crossing of the meridian.
     auto_done: bool,
+    /// The automatic flip was switched on after the moment to flip, with nothing recorded before it: it does nothing this crossing
+    /// (the mount may already have been flipped by hand, and flipping it back would turn the Sun away).
+    auto_late: bool,
     last_auto_check: Instant,
     last_auto_warn: Option<Instant>,
     ntp_sync: Option<bool>,
@@ -562,6 +568,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         guide_hold: None,
         last_lost_saved: None,
         last_exposure_change: Instant::now(),
+        bright_ref: 0.0,
         auto_pre: None,
         last_capture: None,
         resume_after_flip: None,
@@ -574,6 +581,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         last_gap_event: None,
         last_frame_work: Duration::ZERO,
         auto_done: false,
+        auto_late: false,
         last_auto_check: Instant::now(),
         last_auto_warn: None,
         last_flip: crate::config::read(storage.config_file()).get("last_flip").cloned(),
@@ -982,10 +990,18 @@ impl Engine {
         let Some(mins) = self.status.sky_sun.as_ref().map(|k| k.minutes_to_meridian) else { return };
         if mins > self.auto_flip.record_min + 30.0 {
             self.auto_done = false; // a new crossing is coming
+            self.auto_late = false;
             self.auto_pre = None;
             return;
         }
-        if self.auto_done || self.mount.is_none() || self.flip.is_some() || self.goto.is_some() || mins < -90.0 {
+        // Switched on after the moment to flip, with no position recorded before it: the mount cannot be told which side of the pier it is on
+        // (the same sky position reads the same either way), so a flip now could turn a mount that is already flipped back again.
+        if self.auto_pre.is_none() && mins < -self.auto_flip.flip_min && !self.auto_late && !self.auto_done {
+            self.auto_late = true;
+            self.event("auto_flip_late", json!({ "minutes_to_meridian": mins, "flip_min": self.auto_flip.flip_min }));
+            log::info!("auto flip: switched on {:.0} min after the meridian with nothing recorded: no flip this crossing", -mins);
+        }
+        if self.auto_late || self.auto_done || self.mount.is_none() || self.flip.is_some() || self.goto.is_some() || mins < -90.0 {
             return;
         }
         let now_unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -1210,7 +1226,7 @@ impl Engine {
         self.status.capture.paused = self.paused.is_some() || self.resume_after_flip.is_some();
         self.status.capture.paused_reason = if self.paused.is_some() { Some("paused by you".into()) } else if self.resume_after_flip.is_some() { Some("paused for the meridian flip".into()) } else { None };
         self.status.last_flip = self.last_flip.clone();
-        let flip_stage = if !self.auto_flip.enabled { "off" } else if self.flip.is_some() { "flipping" } else if self.auto_done { "done" } else if self.auto_pre.is_some() { "recorded" } else { "waiting" };
+        let flip_stage = if !self.auto_flip.enabled { "off" } else if self.flip.is_some() { "flipping" } else if self.auto_late { "late" } else if self.auto_done { "done" } else if self.auto_pre.is_some() { "recorded" } else { "waiting" };
         let mins = self.status.sky_sun.as_ref().map(|k| k.minutes_to_meridian);
         let resume = self.resume_after_flip.is_some();
         let message = match (flip_stage, mins) {
@@ -1226,6 +1242,7 @@ impl Engine {
                 };
                 format!("Meridian flip, {secs} s: {what}.{}", if resume { " The recording is paused and resumes afterwards." } else { "" })
             }
+            ("late", Some(m)) => format!("Switched on {:.0} min after the meridian with no position recorded before it, so there is no flip this time: the mount may already be flipped, and flipping it back would lose the Sun. It acts at the next crossing.", -m),
             ("done", _) if resume && self.resume_at.is_some() => "Meridian flip done: resuming the recording in a moment.".to_string(),
             ("recorded", Some(m)) => {
                 let when = if m + self.auto_flip.flip_min > 0.5 { format!("in {:.0} min", m + self.auto_flip.flip_min) } else { "any moment".to_string() };
@@ -1580,6 +1597,7 @@ impl Engine {
                 self.auto_flip = AutoFlip { enabled, record_min, flip_min };
                 if !enabled { self.auto_pre = None; }
                 self.auto_done = false;
+                self.auto_late = false;
                 crate::config::set(self.storage.config_file(), "auto_flip", json!(self.auto_flip))?;
                 Ok(json!({}))
             }
@@ -2382,7 +2400,10 @@ impl Engine {
         if now.duration_since(f.burst_started) >= FOCUS_BURST {
             if let Some((l, e)) = rustflare_tracking::focus::lucky_score(&f.burst) {
                 let t = now.duration_since(f.started).as_secs_f64();
-                f.history.push([t, l, e]);
+                // the error of one burst leaves out the seeing between bursts, which is several times larger: show the larger of the two
+                let mut scores: Vec<f64> = f.history.iter().map(|h| h[1]).collect();
+                scores.push(l);
+                f.history.push([t, l, e.max(rustflare_tracking::focus::between_burst_noise(&scores))]);
                 if f.history.len() > 400 {
                     f.history.remove(0);
                 }
@@ -2494,8 +2515,14 @@ impl Engine {
                 if !tracker_on {
                     self.feed_sun_model(sun, now, (frame.width, frame.height));
                 }
+                // darkness: much less light than the last minute or so, with the exposure unchanged
+                let settled = self.last_exposure_change.elapsed() > Duration::from_secs(20);
+                let dark = picture_is_dark(settled, self.bright_ref, mean);
+                if settled && !dark {
+                    self.bright_ref = if self.bright_ref == 0.0 { mean } else { 0.998 * self.bright_ref + 0.002 * mean }; // about a minute
+                }
                 let t_tr = Instant::now();
-                self.step_tracking(&frame, now, if tracker_on { None } else { sun }, hint);
+                self.step_tracking(&frame, now, if tracker_on { None } else { sun }, hint, dark);
                 self.status.perf.track_ms = ema(self.status.perf.track_ms, t_tr.elapsed().as_secs_f64() * 1000.0);
                 self.was_analysing = true;
                 self.lane_prev = None;
@@ -2585,17 +2612,17 @@ impl Engine {
         est
     }
 
-    fn step_tracking(&mut self, frame: &Frame, now: Instant, detector: Option<SunLocation>, hint: Option<f64>) {
+    fn step_tracking(&mut self, frame: &Frame, now: Instant, detector: Option<SunLocation>, hint: Option<f64>, dark: bool) {
         let Some(t) = self.tracker.as_mut() else { return };
         // frames still in flight after an exposure change (or a lane switch) are over- or under-exposed: not a real loss
         let settling = self.last_exposure_change.elapsed() < Duration::from_secs(3);
-        let res = t.update(frame);
+        let res = if dark { Err(TrackError::Dark) } else { t.update(frame) };
         let mode = t.mode();
         let anchor = mode == "anchor";
         let dims = (frame.width, frame.height);
         match res {
             Err(_) if settling && !self.lost => {
-                if !anchor { let d = detector.or_else(|| locate_sun(frame, hint)); self.feed_sun_model(d, now, dims); }
+                if !anchor && !dark { let d = detector.or_else(|| locate_sun(frame, hint)); self.feed_sun_model(d, now, dims); }
             }
             Ok(p) => {
                 self.fail_since = None;
@@ -2640,7 +2667,7 @@ impl Engine {
                 }
             }
             Err(e) => {
-                if !anchor {
+                if !anchor && !dark {
                     let d = detector.or_else(|| locate_sun(frame, hint));
                     if let Some(est) = self.feed_sun_model(d, now, dims) {
                         if let Some(ts) = self.status.tracking.as_mut() { ts.x = est.sun.pos.x; ts.y = est.sun.pos.y; ts.radius = Some(est.sun.radius); }
@@ -2851,7 +2878,7 @@ impl Engine {
             "tracker_position": self.tracker.as_ref().map(|t| { let p = t.position(); json!({ "x": p.pos.x, "y": p.pos.y, "radius": p.radius }) }),
             "dead_reckoning": self.dead.is_some(), "unguided_drift_px_s": self.drift_model.drift().map(|d| [d.x, d.y]), "sun_held": self.sun_held, "learned_drift_px_s": self.sun_model.learned_drift().map(|d| [d.x, d.y]), "sun_for_mask": self.corona.lock().ok().and_then(|c| c.sun),
             "mount_tracking": self.mount_tracking, "fps": self.fps_ema, "save_lost_frames": self.save_lost, "lost_saved": self.lost_saved,
-            "auto_flip": { "enabled": self.auto_flip.enabled, "recorded": self.auto_pre.is_some(), "done": self.auto_done },
+            "auto_flip": { "enabled": self.auto_flip.enabled, "recorded": self.auto_pre.is_some(), "done": self.auto_done, "late": self.auto_late },
             "flip_phase": self.flip.as_ref().map(|f| f.phase), "calibration_generation": self.cal_generation,
         })
     }
@@ -3576,6 +3603,25 @@ fn mem_available_mb() -> Option<u64> {
 /// (`writeback_mb`), how long tasks have waited for memory in the last 10 s (`psi_some_avg10`: some task stalled, `psi_full_avg10`:
 /// all of them), and the count of times a task had to free memory itself instead of getting it (`allocstall`, rising during a gap
 /// means direct reclaim, which is a stall inside whatever thread needed the memory). Issue #86.
+/// Is the picture far darker than it has been for the last minute (a shadow over the telescope, thick cloud), with the exposure unchanged?
+/// Then the limb fit would only find edges in noise, so nothing is measured and the Sun is reported lost at once.
+fn picture_is_dark(settled: bool, reference: f64, mean: f64) -> bool {
+    settled && reference > 0.01 && mean < 0.25 * reference
+}
+
+#[cfg(test)]
+mod dark_tests {
+    use super::picture_is_dark;
+    #[test]
+    fn a_picture_that_falls_to_a_quarter_of_its_usual_light_is_dark_but_not_while_the_exposure_just_changed() {
+        assert!(picture_is_dark(true, 0.064, 0.003), "the 2026-11-26 shadow: 0.064 to 0.003");
+        assert!(picture_is_dark(true, 0.4, 0.09));
+        assert!(!picture_is_dark(true, 0.4, 0.2), "thin cloud halving the light is not darkness");
+        assert!(!picture_is_dark(false, 0.4, 0.01), "just after an exposure change the level is meaningless");
+        assert!(!picture_is_dark(true, 0.005, 0.0001), "no reference yet, or a night sky: nothing to compare with");
+    }
+}
+
 fn memory_state() -> serde_json::Value {
     let kb = |t: &str, key: &str| t.lines().find(|l| l.starts_with(key)).and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok());
     let info = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();

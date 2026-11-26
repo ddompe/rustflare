@@ -17,6 +17,8 @@ pub enum TrackError {
     NoLimb,
     #[error("tracked feature is too close to the frame edge")]
     OutOfBounds,
+    #[error("the picture went dark (a shadow or a cloud over the telescope): nothing can be measured")]
+    Dark,
 }
 
 #[derive(Copy, Clone, Debug, Serialize)]

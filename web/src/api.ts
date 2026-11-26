@@ -18,7 +18,7 @@ export interface Status {
   goto?: { target: string; phase: string } | null
   flip?: { phase: string; elapsed_s: number; detail: string } | null
   sun_held?: boolean
-  auto_flip?: { enabled: boolean; record_min: number; flip_min: number; stage: 'off' | 'waiting' | 'recorded' | 'flipping' | 'done'; message: string; resume_pending: boolean }
+  auto_flip?: { enabled: boolean; record_min: number; flip_min: number; stage: 'off' | 'waiting' | 'recorded' | 'flipping' | 'done' | 'late'; message: string; resume_pending: boolean }
   last_flip?: unknown
   guide_params?: { window_s: number; deadband_px: number; gain: number; speed: number; fast_speed: number; fast_above_px: number }
   coronagraph?: { enabled: boolean; scale: number }

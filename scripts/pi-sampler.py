@@ -7,7 +7,8 @@ import json, os, ssl, subprocess, sys, time, urllib.request
 A = "https://localhost:8443/api/status"; ctx = ssl._create_unverified_context()
 out_dir = os.path.expanduser("~/rf-sampler"); os.makedirs(out_dir, exist_ok=True)
 hours = float(sys.argv[1]) if len(sys.argv) > 1 else 36
-pid = int(subprocess.check_output(["systemctl", "show", "-p", "MainPID", "--value", "rustflare"]).strip())
+def main_pid():
+    return int(subprocess.check_output(["systemctl", "show", "-p", "MainPID", "--value", "rustflare"]).strip())  # read again every time: a restart changes it
 def kv(path):
     d = {}
     for l in open(path):
@@ -18,6 +19,7 @@ def kv(path):
     return d
 def threads():
     o = {}
+    pid = main_pid()
     for t in os.listdir(f"/proc/{pid}/task"):
         try:
             s = open(f"/proc/{pid}/task/{t}/stat").read(); c = s[s.index("(") + 1:s.rindex(")")]; f = s[s.rindex(")") + 2:].split()

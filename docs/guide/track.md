@@ -24,6 +24,7 @@ Press **Guide** to keep the Sun at the target. *Hold position* keeps it where it
 
 - *No Sun found*: too dark (raise exposure) or no limb in view. Use the anchor tracker.
 - *Target lost* (after 2 seconds of failures, so a passing shadow does not count): the status bar says so. If guiding had been running long enough to learn how the mount drifts (about a minute), it **goes on from that drift** to keep the framing, for up to 15 minutes; otherwise guiding pauses. Either way it resumes by itself when the limb is back.
+- **A shadow or thick cloud that darkens the picture** (to less than a quarter of its usual light with the exposure unchanged) is treated as the Sun being lost at once: nothing is measured, the Sun model is not fed, and guiding carries on from the last position measured while the picture was bright, using the drift it has learned. (Before 0.6.2 the limb fit read edges in the noise and the guider followed a false position.)
 - Shadows and thin cloud: the Sun position is a smoothed model that ignores measurements that jump, and the picture of the Sun outline, the tracking and the coronagraph mask all use that one model.
 
 ## Optics

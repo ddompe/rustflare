@@ -36,6 +36,8 @@ Aim tab > Meridian flip. The panel shows how long until the Sun crosses the meri
 
 **Flip automatically** does it for you. About 5 minutes before the meridian it records where the mount points and where the Sun sits in the picture; about 1 minute after the meridian (or as soon as the mount stops tracking by itself) it:
 
+**Switch it on before the meridian.** It only acts when it recorded the position beforehand. If you switch it on after the Sun has crossed (more than the flip delay past the meridian), it says so and does nothing until the next crossing, because the mount cannot tell which side of the pier it is on: a mount you already flipped by hand would be turned back, and the Sun lost.
+
 1. **pauses a running recording** (it resumes by itself after a clean flip),
 2. sends the mount to the recorded pointing, which turns it over,
 3. switches solar tracking on and brings the Sun back to its recorded place, allowing for the image turning 180 degrees,

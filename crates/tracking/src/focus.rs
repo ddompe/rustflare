@@ -144,6 +144,21 @@ pub fn lucky_score(scores: &[f64]) -> Option<(f64, f64)> {
     Some((mean, err))
 }
 
+/// The burst-to-burst noise of the score, from the history itself: how much two bursts at the same focus differ (seeing), which the error
+/// of one burst (the scatter of its own best frames) does not include. Second differences cancel a steady trend, so a focuser turned at a
+/// steady pace does not read as noise: for independent noise of size s their spread is s * sqrt(6). Uses the last 12 bursts; 0 until there
+/// are 5. A median keeps one jump (a gust, a cloud) out of it.
+pub fn between_burst_noise(scores: &[f64]) -> f64 {
+    let tail = &scores[scores.len().saturating_sub(12)..];
+    if tail.len() < 5 {
+        return 0.0;
+    }
+    let mut d2: Vec<f64> = tail.windows(3).map(|w| (w[2] - 2.0 * w[1] + w[0]).abs()).collect();
+    d2.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let med = d2[d2.len() / 2];
+    1.4826 * med / 6f64.sqrt()
+}
+
 /// Smooths a history of `[t, score, err]` points with a 1-2-1 filter (ends use what they have) and returns the highest smoothed
 /// point: (index, smoothed score, its error).
 pub fn peak(history: &[[f64; 3]]) -> Option<(usize, f64, f64)> {
@@ -254,6 +269,19 @@ mod tests {
         assert_eq!(lucky_score(&[3.0]).unwrap().0, 3.0);
         assert_eq!(lucky_score(&[]), None);
         assert_eq!(lucky_score(&[1.0, 2.0, 3.0, 4.0]).unwrap().0, 3.0, "at least three frames count");
+    }
+
+    #[test]
+    fn the_noise_between_bursts_ignores_a_steady_trend_and_sees_the_scatter() {
+        // a steady climb: no noise
+        let climb: Vec<f64> = (0..12).map(|i| 1.0 + 0.05 * i as f64).collect();
+        assert!(between_burst_noise(&climb) < 1e-9);
+        // the scatter seen on the real Sun (about 3.6 %): recovered to within 40 %
+        let mut s = 7u64;
+        let noisy: Vec<f64> = (0..12).map(|_| { s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407); 1.1 + ((s >> 33) as f64 / (1u64 << 31) as f64 - 0.5) * 0.04 * 3.46 }).collect();
+        let n = between_burst_noise(&noisy);
+        assert!(n > 0.02 && n < 0.07, "{n}");
+        assert_eq!(between_burst_noise(&[1.0, 1.1, 1.0]), 0.0, "not enough bursts yet");
     }
 
     #[test]

@@ -601,3 +601,20 @@ test('the Pi\'s own disk can be recorded to, and always keeps a reserve free', a
   await expect(page.getByLabel('Keep this much free (GB)')).toHaveValue('5')
   await put(page, '/storage/reserve', { gb: 2 })
 })
+
+test('the automatic flip switched on after the meridian does nothing: a mount already flipped is never turned back', async ({ page }) => {
+  // a site where the Sun crossed the meridian an hour ago, whatever the time of day
+  await put(page, '/site', { latitude: 40, longitude: 0 })
+  const m0 = ((await (await page.request.get('/api/status')).json()) as { sky_sun: { minutes_to_meridian: number } }).sky_sun.minutes_to_meridian
+  await put(page, '/site', { latitude: 40, longitude: (m0 + 60) / 4 })
+  const status = async () => (await (await page.request.get('/api/status')).json()) as { auto_flip: { stage: string; message: string }; flip: unknown; last_flip: unknown }
+  const before = (await status()).last_flip
+  await put(page, '/mount/autoflip', { enabled: true, record_min: 5, flip_min: 1 })
+  await expect.poll(async () => (await status()).auto_flip.stage, { timeout: 10_000 }).toBe('late')
+  expect((await status()).auto_flip.message).toContain('no flip this time')
+  await page.waitForTimeout(3000) // it has had time to flip, if it were going to
+  const s = await status()
+  expect(s.flip).toBeFalsy()
+  expect(JSON.stringify(s.last_flip)).toBe(JSON.stringify(before))
+  await put(page, '/mount/autoflip', { enabled: false, record_min: 5, flip_min: 1 })
+})
