@@ -20,6 +20,24 @@ configure)
         install -d /etc/systemd/system/rustflare-stack.service.d
         cp /etc/systemd/system/rustflare.service.d/user.conf /etc/systemd/system/rustflare-stack.service.d/user.conf
     fi
+    # lets the recorder start the stacker service again if it stopped (and only that, only "start"): the rule names the account the
+    # recorder really runs as, which `rustflare-user` may have changed
+    RUN_USER=$(systemctl show -p User --value rustflare.service 2>/dev/null)
+    [ -n "$RUN_USER" ] || RUN_USER=rustflare
+    if [ -d /etc/polkit-1/rules.d ]; then
+        cat > /etc/polkit-1/rules.d/50-rustflare-stack.rules <<RULE
+// Lets the recorder (account "$RUN_USER") start the stacker service again if it stopped, and nothing else.
+polkit.addRule(function (action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") == "rustflare-stack.service" &&
+        action.lookup("verb") == "start" &&
+        subject.user == "$RUN_USER") {
+        return polkit.Result.YES;
+    }
+});
+RULE
+        chmod 644 /etc/polkit-1/rules.d/50-rustflare-stack.rules
+    fi
     if command -v udevadm >/dev/null 2>&1; then
         udevadm control --reload-rules 2>/dev/null || true
         udevadm trigger --subsystem-match=usb 2>/dev/null || true

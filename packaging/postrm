@@ -3,6 +3,7 @@ set -e
 case "$1" in
 remove|purge)
     systemctl daemon-reload || true
+    rm -f /etc/polkit-1/rules.d/50-rustflare-stack.rules
     ;;
 esac
 # Captures in /var/lib/rustflare and the "rustflare" user are deliberately kept, even on purge.

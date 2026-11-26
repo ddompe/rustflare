@@ -1,6 +1,6 @@
 # What to test on the next sunny day
 
-Everything below was built and tested on the simulators, and some of it was run once on the Sun on 2026-11-26. Each line says what to do, what to look at and when it counts as passed. The issue numbers are on the [board](https://github.com/ddompe/rustflare/issues). Version 0.6.4 is assumed.
+Everything below was built and tested on the simulators, and some of it was run once on the Sun on 2026-11-26. Each line says what to do, what to look at and when it counts as passed. The issue numbers are on the [board](https://github.com/ddompe/rustflare/issues). Version 0.6.5 is assumed.
 
 ## Before the Sun
 
