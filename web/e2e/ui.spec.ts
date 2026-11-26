@@ -618,3 +618,20 @@ test('the automatic flip switched on after the meridian does nothing: a mount al
   expect(JSON.stringify(s.last_flip)).toBe(JSON.stringify(before))
   await put(page, '/mount/autoflip', { enabled: false, record_min: 5, flip_min: 1 })
 })
+
+test('a drive on a USB 3 port next to a USB 3 camera shows a warning where the drive is chosen', async ({ page }) => {
+  const warning = 'This drive is on a USB 3 port, like Apollo-M MINI. Move the drive to a black USB 2.0 port.'
+  await page.route('**/api/storage', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const r = await route.fetch()
+    const j = await r.json()
+    j.current.warning = warning
+    await route.fulfill({ response: r, json: j })
+  })
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Record/ }).click()
+  await expect(page.getByRole('alert').filter({ hasText: 'USB 2.0 port' }).first()).toBeVisible()
+  await page.getByRole('tab', { name: /^More/ }).click()
+  await page.getByText('Storage', { exact: true }).first().click()
+  await expect(page.getByRole('alert').filter({ hasText: 'USB 2.0 port' }).first()).toBeVisible()
+})

@@ -125,6 +125,8 @@ pub struct Info {
     pub internal: bool,
     /// Bytes kept free on an internal disk (0 for a removable drive).
     pub reserve_bytes: u64,
+    /// Something the user should do about how the drive is connected (a USB 3 drive next to a USB 3 camera), in words.
+    pub warning: Option<String>,
 }
 
 struct State {
@@ -430,6 +432,48 @@ fn perm_hint_str(e: &str) -> &'static str {
 }
 const PERM_HINT: &str = " (permission denied: auto-mounted drives belong to your login user; run `sudo rustflare-user <your-login>` to run the service as that user)";
 
+/// The warning for a drive on a SuperSpeed (5 Gbps) USB link while other SuperSpeed devices (a USB 3 camera) share the machine. On the Pi 5,
+/// 2026-11-26: with the drive on a USB 3 port the camera and the drive both dropped off the bus again and again under load (recording,
+/// stacking, guiding); on a USB 2.0 port the same load gave no drops in three runs.
+pub fn usb3_warning(drive_mbps: u32, other_superspeed: &[String]) -> Option<String> {
+    (drive_mbps >= 5000 && !other_superspeed.is_empty()).then(|| {
+        format!("This drive is on a USB 3 port, like {}. On the Raspberry Pi 5 that made the camera and the drive drop off the USB bus under load (recording, stacking and guiding together), which can corrupt the drive. Move the drive to a black USB 2.0 port (it writes about 35 MB/s there, enough for bursts and for the stack-only modes), then wait for it to mount.", other_superspeed.join(", "))
+    })
+}
+
+/// Reads the USB link of the device behind `/dev/sdX1` and of the other devices from sysfs (Linux only).
+#[cfg(target_os = "linux")]
+fn usb_warning(device: &str) -> Option<String> {
+    let name = device.strip_prefix("/dev/")?;
+    let real = std::fs::canonicalize(format!("/sys/class/block/{name}")).ok()?;
+    if !real.to_string_lossy().contains("/usb") {
+        return None;
+    }
+    let read = |dir: &Path, f: &str| std::fs::read_to_string(dir.join(f)).ok().map(|s| s.trim().to_string());
+    // the USB device is the nearest parent that has an idVendor
+    let usb = real.ancestors().find(|a| a.join("idVendor").exists())?.to_path_buf();
+    let speed: u32 = read(&usb, "speed")?.parse().ok()?;
+    let mut others = vec![];
+    for e in std::fs::read_dir("/sys/bus/usb/devices").ok()?.flatten() {
+        let n = e.file_name().to_string_lossy().to_string();
+        if n.contains(':') || n.starts_with("usb") {
+            continue; // interfaces and root hubs
+        }
+        let p = std::fs::canonicalize(e.path()).ok()?;
+        if p == usb || read(&p, "bDeviceClass").as_deref() == Some("09") {
+            continue; // the drive itself, hubs
+        }
+        if read(&p, "speed").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0) >= 5000 {
+            others.push(read(&p, "product").unwrap_or_else(|| "another USB 3 device".into()));
+        }
+    }
+    usb3_warning(speed, &others)
+}
+#[cfg(not(target_os = "linux"))]
+fn usb_warning(_device: &str) -> Option<String> {
+    None
+}
+
 /// What is wrong with a mounted drive that is still listed: unplugged without ejecting (its device is gone but the mount is left over),
 /// or mounted read-only because the kernel found errors in the filesystem (what a pulled drive comes back as). Said in words, with what to do.
 fn drive_trouble(m: &Mount) -> Option<String> {
@@ -484,6 +528,7 @@ fn describe(dir: &Path, required_mount: Option<&Path>, mounts: &[Mount]) -> Info
         problem,
         internal: false,
         reserve_bytes: 0,
+        warning: mount.and_then(|m| usb_warning(&m.device)),
     }
 }
 
@@ -557,6 +602,15 @@ mod tests {
         let two = [mount("/dev/sda1", "/media/astropi/ASTRODRIVE1"), mount("/dev/sdb1", "/media/astropi/ASTRODRIVE2")];
         assert!(renamed_mount(&old, &two).is_none(), "two candidates: do not guess");
         assert!(renamed_mount(&old, &[mount("/dev/sda1", "/media/astropi/ASTRODRIVEX")]).is_none(), "only digits may follow the old name");
+    }
+
+    #[test]
+    fn a_usb3_drive_next_to_a_usb3_camera_is_warned_about_and_a_usb2_drive_is_not() {
+        let cam = vec!["Apollo-M MINI".to_string()];
+        let w = usb3_warning(5000, &cam).unwrap();
+        assert!(w.contains("USB 2.0") && w.contains("Apollo-M MINI"), "{w}");
+        assert_eq!(usb3_warning(480, &cam), None, "on a USB 2.0 port there is nothing to say");
+        assert_eq!(usb3_warning(5000, &[]), None, "no other SuperSpeed device: no conflict");
     }
 
     #[test]

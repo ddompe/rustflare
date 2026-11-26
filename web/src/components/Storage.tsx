@@ -39,6 +39,12 @@ function InternalNote({ cur }: { cur: StorageInfo }) {
   )
 }
 
+/** How the drive is connected: a USB 3 drive next to a USB 3 camera drops both off the bus on the Pi 5. */
+function UsbWarning({ cur }: { cur: StorageInfo }) {
+  if (!cur.warning) return null
+  return <div className="warn" role="alert">{cur.warning}</div>
+}
+
 function Fat32Warning({ cur, limit }: { cur: StorageInfo; limit: number | null }) {
   if (cur.max_file_bytes == null) return null
   return (
@@ -65,6 +71,7 @@ export function StorageLine({ status, onChange }: { status: Status | null; onCha
         </span>
         <button type="button" className="quiet small" onClick={onChange}>Change</button>
       </div>
+      <UsbWarning cur={cur} />
       <Fat32Warning cur={cur} limit={limit} />
       <InternalNote cur={cur} />
     </div>
@@ -95,6 +102,7 @@ export function StorageSettings({ status }: { status: Status | null }) {
       ) : (
         <div className="err">Not available: {cur.problem}</div>
       )}
+      <UsbWarning cur={cur} />
       <Fat32Warning cur={cur} limit={limit} />
       <InternalNote cur={cur} />
       {cur.internal && (

@@ -72,6 +72,10 @@ The Pi computes where the Sun is from its clock and your site. Without a network
 
 Browsers share location only over HTTPS. Set up [HTTPS](phone-setup.md), or type the coordinates.
 
+## The camera or the drive keeps dropping off
+
+Signs: "camera error" now and then, a recording that stops, guiding that stops by itself, `usb 2-1: USB disconnect` in `journalctl -k`, a drive that comes back read-only. On the Raspberry Pi 5 the first thing to check is the ports: **the capture drive belongs on a black USB 2.0 port**, the camera on a blue USB 3 port. With both on USB 3 they dropped repeatedly under load; with the drive on USB 2.0 they did not (see [Pi setup](pi-setup.md#1-the-capture-drive)). The Storage panel shows a warning when it sees that arrangement. Next, power: `vcgencmd get_throttled` should say `0x0` and `journalctl -k | grep -i undervolt` should be empty; a weak supply or a long thin cable causes the same symptoms.
+
 ## The drive was pulled without ejecting
 
 Pulling the USB drive during a recording stops the recording cleanly and keeps what was already written (the SER header is updated every 50 frames, so the file opens; `scripts/ser-repair.py` repairs a file that was cut earlier). The frames still in memory are lost, and the app says so until you dismiss it. Afterwards More > Storage names the problem in words:
