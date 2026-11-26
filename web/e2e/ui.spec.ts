@@ -563,3 +563,20 @@ test('direct writes can be switched on, are used for a recording, and the file i
     await put(page, '/capture/direct-io', { enabled: false })
   }
 })
+
+test('auto-stretch is a button on the live view and stays in step with More > Display', async ({ page }) => {
+  const stretch = async () => ((await (await page.request.get('/api/preview')).json()) as { stretch: boolean }).stretch
+  await page.request.put('/api/preview', { data: { stretch: false } })
+  await page.goto('/')
+  const btn = page.getByRole('button', { name: 'Auto-stretch' })
+  await expect(btn).toHaveAttribute('aria-pressed', 'false')
+  await btn.click()
+  await expect(btn).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(stretch).toBe(true)
+  await page.getByRole('tab', { name: /^More/ }).click()
+  await page.getByText('Display', { exact: true }).first().click() // the section that holds the switch
+  await expect(page.getByRole('switch', { name: 'Auto-stretch' })).toBeChecked()
+  await page.getByRole('switch', { name: 'Auto-stretch' }).uncheck()
+  await expect(btn).toHaveAttribute('aria-pressed', 'false')
+  await expect.poll(stretch).toBe(false)
+})

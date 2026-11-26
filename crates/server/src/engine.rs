@@ -389,6 +389,9 @@ pub struct Engine {
     lane_prev: Option<(Instant, Vec2)>,
     pulse_settle_until: Instant,
     manual_slew_until: Instant,
+    /// The mount reports tracking off and no move of ours explains it: since when, and whether the user has been told.
+    tracking_off_since: Option<Instant>,
+    tracking_off_noticed: bool,
     sun_held: bool,
     /// Mean frame brightness (0..1) seen while the Sun was being measured well: what "good light" means for this setup.
     good_level: Option<f64>,
@@ -547,6 +550,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         lane_prev: None,
         pulse_settle_until: Instant::now(),
         manual_slew_until: Instant::now(),
+        tracking_off_since: None,
+        tracking_off_noticed: false,
         sun_held: false,
         good_level: None,
         fail_since: None,
@@ -1430,6 +1435,7 @@ impl Engine {
                 self.stop_guiding_quietly();
                 self.mount.as_mut().ok_or("no mount connected")?.go_home().map_err(s)?;
                 self.mount_tracking = false; // the mount stops tracking to go home; the next poll confirms
+                self.manual_slew_until = Instant::now() + Duration::from_secs(60); // going home takes about 30 s and the mount reports "not tracking" meanwhile
                 Ok(json!({}))
             }
             Command::SetFlatApplied { enabled } => {
@@ -2017,21 +2023,37 @@ impl Engine {
             Some(Ok(st)) => {
                 self.mount_poll_failures = 0;
                 if let Some(t) = st.tracking {
-                    if t != self.mount_tracking {
-                        log::info!("mount tracking is now {} (changed outside RustFlare)", if t { "on" } else { "off" });
-                        if !t && !matches!(self.guide, GuideState::Off) {
-                            self.stop_guiding_quietly();
-                            self.status.error = Some("the mount stopped tracking (changed on the mount itself): guiding stopped".into());
-                        }
-                        if !t {
-                            // the mount knows why it stopped (below the horizon, past its meridian limit, ...): say it, once
-                            let why = self.mount.as_mut().and_then(|m| m.why_not_tracking());
-                            self.event("mount_stopped_tracking", json!({ "why": why }));
-                            if self.mount_tracking {
-                                self.notice("warning", format!("The mount stopped tracking by itself: {}.", why.unwrap_or_else(|| "it gave no reason".into())));
-                            }
+                    // A move we made ourselves (the slew pad, a Go to, a flip, going home, guiding pulses, calibration) makes the AM3 report
+                    // "not tracking" for as long as it lasts, and it tracks again by itself afterwards. That is not "the mount stopped":
+                    // follow it silently. A stop with no move of ours behind it is reported after a few seconds, with the mount's reason.
+                    let now = Instant::now();
+                    let moving = now < self.manual_slew_until || self.goto.is_some() || self.flip.is_some() || self.pulsing || now < self.pulse_settle_until
+                        || matches!(self.guide, GuideState::Calibrating(_));
+                    if t == self.mount_tracking || t || moving {
+                        if t != self.mount_tracking {
+                            log::info!("mount tracking is now {}{}", if t { "on" } else { "off" }, if moving { " (it is moving)" } else { " (changed outside RustFlare)" });
                         }
                         self.mount_tracking = t;
+                        self.tracking_off_since = None;
+                        self.tracking_off_noticed = false;
+                    } else {
+                        let since = *self.tracking_off_since.get_or_insert(now);
+                        if now.duration_since(since) >= Duration::from_secs(6) && !self.tracking_off_noticed {
+                            self.tracking_off_noticed = true;
+                            let why = self.mount.as_mut().and_then(|m| m.why_not_tracking());
+                            if why.as_deref() == Some("it is tracking") {
+                                self.tracking_off_since = None; // the flag was a blip: the mount says it tracks
+                            } else {
+                                log::info!("mount tracking is now off (changed outside RustFlare): {}", why.as_deref().unwrap_or("no reason given"));
+                                self.event("mount_stopped_tracking", json!({ "why": why }));
+                                if !matches!(self.guide, GuideState::Off) {
+                                    self.stop_guiding_quietly();
+                                    self.status.error = Some("the mount stopped tracking (changed on the mount itself): guiding stopped".into());
+                                }
+                                self.notice("warning", format!("The mount stopped tracking by itself: {}.", why.unwrap_or_else(|| "it gave no reason".into())));
+                                self.mount_tracking = false;
+                            }
+                        }
                     }
                 }
                 let changed = st != self.mount_state;
