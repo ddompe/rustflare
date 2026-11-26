@@ -101,6 +101,11 @@ pub trait Mount: Send {
     fn state(&mut self) -> Result<MountState> { Ok(MountState::default()) }
     /// Where the mount says it is pointing: (RA hours, Dec degrees). `None` if the driver cannot tell. Read-only.
     fn equatorial(&mut self) -> Result<Option<(f64, f64)>> { Ok(None) }
+    /// A read-only question to the mount by name (for example `GAT`, why tracking is off), answered as the mount's own text. Only a short
+    /// list of getters is allowed. For diagnosing a mount that does something unexpected.
+    fn query(&mut self, _what: &str) -> Result<String> { Err(crate::Error::Unsupported("query".into())) }
+    /// Why the mount is not tracking, in words, if it can tell (the ZWO mounts can: below the horizon, past the meridian limit...).
+    fn why_not_tracking(&mut self) -> Option<String> { None }
     /// Moves to the home (zero) position. Moves the mount.
     fn go_home(&mut self) -> Result<()> { Err(crate::Error::Unsupported("go home".into())) }
 

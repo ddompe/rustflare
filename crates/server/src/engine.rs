@@ -185,6 +185,8 @@ pub enum Command {
     SetAfterBurst { patch: Value },
     /// Write recordings with O_DIRECT (skipping the page cache) instead of through it; see `rustflare_capture::set_direct_io`.
     SetDirectIo { enabled: bool },
+    /// A read-only question to the mount (see `Mount::query`), for diagnosing it.
+    MountQuery { what: String },
     AckNotices { id: Option<u64> },
     /// Reconnect the last camera and mount automatically at startup (and after a camera error).
     SetStartup { enabled: bool },
@@ -1867,6 +1869,11 @@ impl Engine {
                 self.status.capture.bursts_total = total;
                 Ok(json!({ "lanes": n_lanes, "buffer_frames": cap }))
             }
+            Command::MountQuery { what } => {
+                let m = self.mount.as_mut().ok_or("no mount connected")?;
+                let reply = m.query(&what).map_err(s)?;
+                Ok(json!({ "what": what, "reply": reply }))
+            }
             Command::SetDirectIo { enabled } => {
                 if enabled {
                     let dir = self.storage.dir();
@@ -2009,6 +2016,14 @@ impl Engine {
                         if !t && !matches!(self.guide, GuideState::Off) {
                             self.stop_guiding_quietly();
                             self.status.error = Some("the mount stopped tracking (changed on the mount itself): guiding stopped".into());
+                        }
+                        if !t {
+                            // the mount knows why it stopped (below the horizon, past its meridian limit, ...): say it, once
+                            let why = self.mount.as_mut().and_then(|m| m.why_not_tracking());
+                            self.event("mount_stopped_tracking", json!({ "why": why }));
+                            if self.mount_tracking {
+                                self.notice("warning", format!("The mount stopped tracking by itself: {}.", why.unwrap_or_else(|| "it gave no reason".into())));
+                            }
                         }
                         self.mount_tracking = t;
                     }

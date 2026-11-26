@@ -46,6 +46,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/mount/stop", post(|s| run(s, Command::MountStop)))
         .route("/api/mount/home", post(|s, b| mount_motion(s, b, Command::MountHome)))
         .route("/api/mount/goto-sun", post(goto_sun))
+        .route("/api/debug/mount-query", get(mount_query))
         .route("/api/mount/goto", post(goto_target))
         .route("/api/mount/flip", post(mount_flip))
         .route("/api/site", put(site_put))
@@ -766,6 +767,13 @@ async fn goto_sun(s: State<AppState>, body: Option<Json<GotoBody>>) -> Res {
     let mut b = body.map(|b| b.0).unwrap_or(GotoBody { target: None, confirm: false, allow_unsynced_clock: false, allow_below_horizon: false });
     b.target = Some("sun".into());
     goto_target(s, Some(Json(b))).await
+}
+
+#[derive(Deserialize)]
+struct MountQ { what: String }
+/// Asks the mount a read-only question by name (GAT: why tracking is off, GTa: its meridian behaviour, GU: status flags, GLC/GLH/GLL: altitude limits...).
+async fn mount_query(s: State<AppState>, axum::extract::Query(q): axum::extract::Query<MountQ>) -> Res {
+    run(s, Command::MountQuery { what: q.what }).await
 }
 
 #[derive(Deserialize)]

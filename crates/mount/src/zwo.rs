@@ -164,9 +164,35 @@ impl<P: Read + Write + Send> Mount for Zwo<P> {
     }
 
     fn set_tracking(&mut self, enabled: bool) -> Result<()> {
-        send(&mut self.port, if enabled { ":Te#" } else { ":Td#" }, Reply::Exactly("1"))?;
+        if let Err(e) = send(&mut self.port, if enabled { ":Te#" } else { ":Td#" }, Reply::Exactly("1")) {
+            // the mount answers 0 when it will not: say why instead of "expected 1, got 0"
+            return Err(match (&e, enabled) {
+                (Error::Mount(m), true) if m.contains("got \"0\"") => {
+                    let why = self.why_not_tracking().unwrap_or_else(|| "it gave no reason".into());
+                    Error::Mount(format!("the mount would not start tracking: {why}"))
+                }
+                (Error::Mount(m), false) if m.contains("got \"0\"") => Error::Mount("the mount would not stop tracking: it is slewing or going to its home position (press STOP first)".into()),
+                _ => e,
+            });
+        }
         self.tracking = enabled;
         Ok(())
+    }
+
+    fn query(&mut self, what: &str) -> Result<String> {
+        // read-only getters only (the protocol's `G` commands that take no argument)
+        const ALLOWED: [&str; 12] = ["GAT", "GTa", "GT", "GU", "Gps", "GVP", "GLC", "GLH", "GLL", "GR", "GD", "GAST"];
+        if !ALLOWED.contains(&what) {
+            return Err(Error::Unsupported(format!("query {what}: allowed are {}", ALLOWED.join(", "))));
+        }
+        let cmd = format!(":{what}#");
+        let reply = if what == "GAST" { send(&mut self.port, &cmd, Reply::Segments(b'#', 3)) } else { send(&mut self.port, &cmd, Reply::EndsWith(END_CHAR)) }?;
+        Ok(String::from_utf8_lossy(&reply).to_string())
+    }
+
+    fn why_not_tracking(&mut self) -> Option<String> {
+        let r = self.query("GAT").ok()?;
+        Some(explain_tracking_status(&r))
     }
 
     fn set_tracking_rate(&mut self, rate: TrackingRate) -> Result<()> {
@@ -227,6 +253,22 @@ impl<P: Read + Write + Send> Mount for Zwo<P> {
 }
 
 /// The RA/Dec part of a `:GAST#` reply: `11/21/26&15:20:38&+06:00#01:47:36&+90*00:00#nNHGM040400880#`.
+/// `:GAT#` answers `0` (tracking off, no fault), `1` (tracking) or `e<code>` (it stopped, or would not start, and why).
+pub fn explain_tracking_status(reply: &str) -> String {
+    let r = reply.trim().trim_end_matches('#');
+    match r {
+        "1" => "it is tracking".into(),
+        "0" => "tracking is off and the mount reports no fault (it was switched off, or it is at its home position)".into(),
+        "e3" => "it is going home, slewing or doing a Go to".into(),
+        "e4" => "it is moving".into(),
+        "e5" => "the target is below the horizon".into(),
+        "e6" => "the target is below the mount's altitude limit".into(),
+        "e7" => "the mount's time and place are not set: do a Go to (it sends them) or set the site".into(),
+        "e8" => "the mount has passed its meridian limit while tracking: flip the mount (Aim > Meridian flip), or change the meridian setting in the mount's own app".into(),
+        other => format!("the mount reported {other} (see the ZWO protocol's error codes)"),
+    }
+}
+
 fn parse_gast_pointing(reply: &str) -> Option<(f64, f64)> {
     let part = reply.split('#').nth(1)?;
     let (ra, dec) = part.split_once('&')?;
@@ -432,6 +474,23 @@ mod tests {
         assert_eq!(civil(0), (1970, 1, 1, 0, 0, 0));
         assert_eq!(civil(1_795_296_038), (2026, 11, 21, 21, 20, 38));
         assert_eq!(fmt_dms(-0.5, 2), "-00*30:00");
+    }
+
+    #[test]
+    fn a_refused_tracking_start_says_why() {
+        assert!(explain_tracking_status("e8#").contains("meridian limit"));
+        assert!(explain_tracking_status("e5").contains("horizon"));
+        assert!(explain_tracking_status("0#").contains("no fault"));
+        assert!(explain_tracking_status("e99#").contains("e99"));
+        // end to end on a scripted port: :Te# answers 0, then :GAT# answers e8
+        let mut m = mount("0e8#");
+        let e = m.set_tracking(true).unwrap_err().to_string();
+        assert!(e.contains("would not start tracking") && e.contains("meridian limit"), "{e}");
+        assert!(m.port.written.ends_with(":Te#:GAT#"), "{}", m.port.written);
+        // only getters can be asked for
+        let mut m = mount("1#");
+        assert!(m.query(":Te").is_err() && m.query("SLD").is_err());
+        assert_eq!(m.query("GAT").unwrap(), "1");
     }
 
     #[test]
