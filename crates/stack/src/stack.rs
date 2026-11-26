@@ -68,7 +68,7 @@ pub struct Options {
 }
 
 impl Default for Options {
-    fn default() -> Self { Options { keep: 0.25, align: true, threads: 2, bin: 2, whiten: 0.7, erode: 8, rank: Rank::Reference, cache_mb: 1024, integer_shifts: false, clip: 0.0, refine: 0.10, multipoint: true, ap_half: 24, search: 14, register: 0.5, min_structure: 0.05, disc_mask: true, disc_scale: 1.01 } }
+    fn default() -> Self { Options { keep: 0.25, align: true, threads: 2, bin: 2, whiten: 0.7, erode: 8, rank: Rank::Reference, cache_mb: 1024, integer_shifts: false, clip: 0.0, refine: 0.10, multipoint: true, ap_half: 24, search: 14, register: 0.5, min_structure: 0.05, disc_mask: true, disc_scale: 1.0 } }
 }
 
 #[derive(Serialize, Clone, Debug, Default)]

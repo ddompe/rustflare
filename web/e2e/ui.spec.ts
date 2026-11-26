@@ -12,6 +12,7 @@ async function openDay(fm: import('@playwright/test').Locator) {
 }
 
 test.beforeEach(async ({ page }) => {
+  await put(page, '/storage/reserve', { gb: 2 }) // the test server records to its own disk: keep its reserve small (a CI runner has little free)
   await post(page, '/camera/close'); await post(page, '/mount/disconnect')
   await post(page, '/camera/open', { driver: 'simulator', id: 'sim0' })
   await post(page, '/mount/connect', { driver: 'simulator' })
@@ -225,7 +226,11 @@ test('quick Rec and Snap are on the Camera tab and use the saved recipe', async 
 })
 
 test('automatic meridian flip: needs a site, switches on with its timing, and off again', async ({ page }) => {
-  await put(page, '/site', { latitude: 40, longitude: -105 })
+  // a site where the Sun crosses the meridian in about three hours, whatever the time of day: the automatic flip acts from 35 minutes before
+  // the meridian to 90 minutes after it, and this test only switches it on and off again
+  await put(page, '/site', { latitude: 40, longitude: 0 })
+  const m0 = ((await (await page.request.get('/api/status')).json()) as { sky_sun: { minutes_to_meridian: number } }).sky_sun.minutes_to_meridian
+  await put(page, '/site', { latitude: 40, longitude: (m0 - 180) / 4 })
   await page.goto('/')
   await page.getByRole('tab', { name: /^Aim/ }).click()
   await page.getByText(/Meridian flip/i).first().click()
@@ -594,5 +599,5 @@ test('the Pi\'s own disk can be recorded to, and always keeps a reserve free', a
   await page.getByText('Storage', { exact: true }).first().click()
   await expect(page.getByRole('note')).toContainText("Pi's SD card")
   await expect(page.getByLabel('Keep this much free (GB)')).toHaveValue('5')
-  await put(page, '/storage/reserve', { gb: 8 })
+  await put(page, '/storage/reserve', { gb: 2 })
 })
