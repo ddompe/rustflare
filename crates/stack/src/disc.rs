@@ -178,6 +178,13 @@ pub fn locate(s: &Stacked, track: &[Pos]) -> Result<DiscInfo, String> {
     })
 }
 
+/// The size of the black disc as a multiple of the radius. A disc whose edge was fitted in the stack is known to a fraction of a pixel, so the
+/// user's setting (101 % by default) is used as it is: a bigger margin hides the base of the prominences, which a real recording showed.
+/// A disc taken from the recorder's positions (the edge could not be found) is only known to a few tens of pixels: never less than 103 %.
+pub fn mask_scale(how: &str, setting: f64) -> f64 {
+    if how == "fitted" { setting } else { setting.max(1.03) }
+}
+
 /// Black out the disc (`scale` times its radius) in the stack.
 pub fn blank(s: &mut Stacked, d: &mut DiscInfo, scale: f64) {
     let (w, h) = (s.width, s.height);
@@ -244,6 +251,13 @@ mod tests {
         assert_eq!(d.how, "recorded");
         assert!((d.x - 210.0).abs() < 4.5 && d.r == 80.0);
         assert!(locate(&s, &[[0.0, 0.0, 0.0]; 3]).is_err(), "no positions, no disc");
+    }
+
+    #[test]
+    fn a_fitted_edge_gets_the_set_margin_and_a_recorded_position_a_wide_one() {
+        assert_eq!(mask_scale("fitted", 1.01), 1.01);
+        assert_eq!(mask_scale("recorded", 1.01), 1.03);
+        assert_eq!(mask_scale("recorded", 1.08), 1.08);
     }
 
     #[test]

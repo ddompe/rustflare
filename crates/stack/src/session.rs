@@ -96,7 +96,8 @@ pub fn stack_source(root: &Path, out: &Path, name: &Path, src: &dyn crate::sourc
                         notes.push("the disc's edge could not be found in the stack: its recorded position was used".into());
                     }
                     if opts.disc_mask {
-                        crate::disc::blank(&mut stacked, &mut d, opts.disc_scale);
+                        let scale = crate::disc::mask_scale(&d.how, opts.disc_scale);
+                        crate::disc::blank(&mut stacked, &mut d, scale);
                     }
                     stacked.disc = Some(d);
                 }

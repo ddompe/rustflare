@@ -93,7 +93,7 @@ A JSON array, one object per stack: `source` and `output` (paths relative to the
 
 ## `stack.json` (stacker settings)
 
-`enabled`, `policy` (`when_idle`, `between_bursts`, `always`), `min_gap_s`, `keep_percent` (1 to 100), `multipoint`, `threads` (1 to 4), `float`, `flat` and `darks` (raw recordings, relative to the data folder), `include_unmarked`, `telemetry`, `disc_mask` (draw the black disc on prominence stacks, default on) and `disc_scale` (0.8 to 1.2, default 1.03). Missing keys take their defaults. Changing a setting affects stacks made afterwards.
+`enabled`, `policy` (`when_idle`, `between_bursts`, `always`), `min_gap_s`, `keep_percent` (1 to 100), `multipoint`, `threads` (1 to 4), `float`, `flat` and `darks` (raw recordings, relative to the data folder), `include_unmarked`, `telemetry`, `disc_mask` (draw the black disc on prominence stacks, default on) and `disc_scale` (0.8 to 1.2, default 1.01; a disc taken from the recorded positions gets at least 1.03). Missing keys take their defaults. Changing a setting affects stacks made afterwards.
 
 ## Single frames and image sequences
 

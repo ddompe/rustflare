@@ -53,7 +53,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Config { enabled: true, policy: Policy::BetweenBursts, min_gap_s: 15.0, keep_percent: 25.0, multipoint: true, threads: 2, float: true, flat: None, darks: Vec::new(), include_unmarked: false, telemetry: true, disc_mask: true, disc_scale: 1.03 }
+        Config { enabled: true, policy: Policy::BetweenBursts, min_gap_s: 15.0, keep_percent: 25.0, multipoint: true, threads: 2, float: true, flat: None, darks: Vec::new(), include_unmarked: false, telemetry: true, disc_mask: true, disc_scale: 1.01 }
     }
 }
 
