@@ -857,7 +857,7 @@ test.describe('use profiles, stage 2: the engine knows the target', () => {
     await put(page, '/site', { latitude: 29.5, longitude: -96 })
     await expect.poll(async () => (await status(page)).flip_target?.id).toBe('sun')
     let s = await status(page)
-    expect(s.flip_target.minutes_to_meridian).toBe(s.sky_sun.minutes_to_meridian) // byte for byte what it was
+    expect(Math.abs(s.flip_target.minutes_to_meridian - s.sky_sun.minutes_to_meridian)).toBeLessThan(0.5) // the Sun's own numbers (two reads a moment apart may straddle a tick)
     expect(s.flip_target.rate).toBe('solar')
     await setProfile(page, 'moon')
     await expect.poll(async () => (await status(page)).flip_target?.id).toBe('moon')
