@@ -2,16 +2,6 @@
 
 Status: proposal, 2026-11-26. Nothing in the code has been changed for it. Everything below was read from the tree at this date; where something was inferred and not run, it says so.
 
-## Decisions (2026-11-26) and what is built
-
-1. **Default for existing installs: `sun_ha`**, without a prompt (the owner images the Sun in H-alpha). The behaviour of the application as it was is the `sun_*` profiles.
-2. **Go to offers** the profile switch when the target differs from the profile; it never switches by itself.
-3. **The API refuses nothing** that the UI greys out.
-4. **No planet stacking on the Pi.** The planetary camera is a cooled ASI533MC used in video mode with a small ROI for frame rate: the SER mosaic is stacked off the Pi.
-5. **No filter wheel for now** (stage 5 is not planned).
-
-**Built (0.7.1):** the profile in the engine (`status.profile`, `PUT /api/profile`, saved in the settings file, FITS `OBJECT` from it), the picker on the Camera tab, the status chip, the greyed-with-reason pattern (`Segmented` options with `off`, `Why`), the gates for prominence view, prominence recording and pair, HDR lanes (planet), the disc-edge and full-disc trackers (planet), the edge circle (planet), the automatic flip and assist (Moon, planet, other), the stacker modes for a colour camera (any profile), the words ("No Moon found", Aim, Track, Camera, Display), the white-balance wording, and the Go to switch offer. User guide: [profiles](../guide/profiles.md). **Not built:** the engine side of the flip for other targets, the Moon and planet expected radius, a planet tracker, peak statistic and peak-based stretch, per-profile recording defaults, per-channel colour controls.
-
 ## 1. Summary
 
 RustFlare assumes the Sun in four layers: **words** (about 60 strings in `web/src/`), **defaults** (exposure, the `limb` tracker, 100-frame recordings, orange H-alpha tint, "the Sun is taken as white"), **logic** (the detector, the one Sun model, the meridian flip and auto flip, focus assist, the guider's hold, the stacker's disc mask) and **metadata** (`OBJECT = Sun` in FITS, the `sky_sun` status block).

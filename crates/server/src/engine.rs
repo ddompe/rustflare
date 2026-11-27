@@ -161,8 +161,6 @@ pub enum Command {
     SetDarkApplied { enabled: bool },
     /// Prominence view: mask the Sun's disc in the live view (display only).
     SetCoronagraph { enabled: bool, scale: f64 },
-    /// What is being imaged: one of `status::PROFILES`.
-    SetProfile { id: String },
     /// White balance of a colour camera: mode off / auto / manual, manual red and blue gains (green = 1).
     SetColour { mode: String, r: f64, b: f64 },
     /// Focus assist on or off; `reset` clears the history and the best score.
@@ -510,7 +508,6 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
     let guide_params = load_guide_params(&storage);
     let mut first_status = Status::default();
     first_status.guide_params = GuideParamsStatus { window_s: guide_params.window.as_secs_f64(), deadband_px: guide_params.deadband_px, gain: guide_params.gain, speed: guide_params.speed, fast_speed: guide_params.fast_speed, fast_above_px: guide_params.fast_above_px };
-    first_status.profile = crate::config::read(storage.config_file()).get("profile").and_then(|v| v.as_str()).and_then(|v| crate::status::PROFILES.iter().find(|p| **p == v).copied()).unwrap_or("sun_ha");
     let (status_tx, status_rx) = watch::channel(first_status.clone());
     let (jpeg_tx, jpeg_rx) = watch::channel(None);
     let sky = SimSky::new();
@@ -1494,13 +1491,6 @@ impl Engine {
                     self.status.focus = FocusStatus::default();
                     self.publish();
                 }
-                Ok(json!({}))
-            }
-            Command::SetProfile { id } => {
-                let Some(p) = crate::status::PROFILES.iter().find(|p| **p == id).copied() else { return Err(format!("unknown profile {id} (use {})", crate::status::PROFILES.join(", "))) };
-                self.status.profile = p;
-                crate::config::set(self.storage.config_file(), "profile", json!(p))?;
-                self.event("profile", json!({ "profile": p }));
                 Ok(json!({}))
             }
             Command::SetColour { mode, r, b } => {
@@ -3082,7 +3072,7 @@ impl Engine {
             Job::Single { stem, fits } => {
                 let path = stem.with_extension(if fits { "fits" } else { "png" });
                 let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
-                let meta = rustflare_capture::FitsMeta { instrument: self.status.camera.as_ref().map(|c| c.name.clone()), exposure_us: ctl(CTRL_EXPOSURE_US), gain: ctl("gain"), object: crate::status::profile_object(self.status.profile), comments: vec![] };
+                let meta = rustflare_capture::FitsMeta { instrument: self.status.camera.as_ref().map(|c| c.name.clone()), exposure_us: ctl(CTRL_EXPOSURE_US), gain: ctl("gain"), object: Some("Sun".into()), comments: vec![] };
                 let gains = { let c = self.colour.lock().unwrap(); match c.mode { "off" => [1.0; 3], "manual" => [c.r, 1.0, c.b], _ => frame.bayer.map(|p| rustflare_capture::debayer::auto_white_balance(&frame, p)).unwrap_or([1.0; 3]) } };
                 let r = std::fs::create_dir_all(path.parent().unwrap()).map_err(s).and_then(|_| {
                     if fits {
@@ -3162,7 +3152,7 @@ impl Engine {
                 instrument: Some(instrument.clone()),
                 exposure_us: ctl(CTRL_EXPOSURE_US),
                 gain: ctl("gain"),
-                object: crate::status::profile_object(self.status.profile),
+                object: Some("Sun".into()),
                 comments: vec![format!("flat applied to preview only: {}", if self.status.flats.applied { "yes" } else { "no" }), "frames are raw".into()],
             };
             let spec = BurstSpec { stem: stem.clone(), format: job.format, instrument, max_file_bytes: job.max_file, fits_meta };

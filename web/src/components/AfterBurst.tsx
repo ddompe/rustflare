@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { AfterBurst as AfterBurstState, AfterMode, api, Status } from '../api'
 import { Disclosure, ErrorLine, Field, Switch, useAction } from './ui'
 import { useStackInfo } from './Stacking'
-import { whyStack } from '../profile'
 
 const MODES: { id: AfterMode; title: string; text: string; warn?: string }[] = [
   { id: 'video', title: 'Keep the video', text: 'Write every frame. Stack later from the file if you want to.' },
@@ -32,7 +31,6 @@ export function AfterBurst({ status, nFrames, frameBytes, burstSecs, everySecs, 
   const cam = status.camera
   const set = (patch: Record<string, unknown>) => run(() => api('PUT', '/capture/after-burst', patch))
   const stacking = a.mode !== 'video'
-  const noStack = whyStack(status)
   const rawFrac = a.mode === 'video' || a.mode === 'video_stack' ? 1 : a.mode === 'best_frames' ? a.raw_keep_percent / 100 : 0
   const stackBytes = stacking && cam ? cam.width * cam.height * 4 : 0
   const burstBytes = nFrames * frameBytes * rawFrac + stackBytes
@@ -45,12 +43,11 @@ export function AfterBurst({ status, nFrames, frameBytes, burstSecs, everySecs, 
       <p className="hint-text">A burst is one run of frames, the number you set above. This is what happens to it once it is captured.</p>
       <div className="mode-cards" role="group" aria-label="After each burst">
         {MODES.map((m) => (
-          <button key={m.id} type="button" className="mode-card" aria-pressed={a.mode === m.id} disabled={!!noStack && m.id !== 'video' && a.mode !== m.id} onClick={() => set({ mode: m.id })}>
+          <button key={m.id} type="button" className="mode-card" aria-pressed={a.mode === m.id} onClick={() => set({ mode: m.id })}>
             <b>{m.title}</b><span>{m.text}</span>{m.warn && <em className="mode-warn">{m.warn}</em>}
           </button>
         ))}
       </div>
-      {noStack && <div className="gate-why hint-text" role="note">{noStack}</div>}
       {stacking && (
         <div className="grid2">
           <Field label="Best frames kept, stacked from memory (%)">{(id) => <input id={id} inputMode="decimal" value={keep} onChange={(e) => setKeep(e.target.value)} onBlur={() => { const v = parseFloat(keep); if (v !== a.stack_keep_percent) void set({ stack_keep_percent: v }) }} />}</Field>

@@ -8,7 +8,6 @@ import { Darks } from './Darks'
 import { ProminencePair } from './ProminencePair'
 import { LaneEditor, parseLanes, PRESETS } from './BracketLanes'
 import { useSetting } from '../settings'
-import { profileOf, why } from '../profile'
 
 const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`)
 
@@ -118,7 +117,7 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
   return (
     <>
       <Section title="Record" error={err}>
-        <Segmented label="What to record" value={kind} onChange={setKind} options={[{ id: 'plain', label: 'Sequence' }, { id: 'prominence', label: '+ Prominence', off: why(profileOf(status), 'prominence') }, { id: 'hdr', label: 'HDR lanes', off: why(profileOf(status), 'lanes') }]} />
+        <Segmented label="What to record" value={kind} onChange={setKind} options={[{ id: 'plain', label: 'Sequence' }, { id: 'prominence', label: '+ Prominence' }, { id: 'hdr', label: 'HDR lanes' }]} />
         <p className="hint-text">
           {kind === 'plain' && 'Frames at the current exposure, once or repeated.'}
           {kind === 'prominence' && `Two lanes alternate: the disc at the current exposure${exp ? ` (${(exp / 1000).toFixed(2)} ms)` : ''} and a longer exposure for the prominences. A lane is one exposure setting recorded on its own: each lane is its own raw video in its own folder.`}

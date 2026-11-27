@@ -3,7 +3,6 @@ import { useStretch } from '../stretch'
 import { api, Status, reportError } from '../api'
 import { Display, cssFilter } from '../display'
 import { HudLayer, HudMenu, useHudLayout } from './Hud'
-import { noun, profileOf, why } from '../profile'
 
 /** Live image (MJPEG) with display filters, zoom/pan and a measurement overlay in frame-pixel coordinates. */
 export function LiveView({ status, display, setDisplay, anchorPick, onPicked, onDisplay }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; anchorPick: boolean; onPicked: () => void; onDisplay: () => void }) {
@@ -47,7 +46,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
     try { await api('POST', '/tracking/start', { mode: 'anchor', x, y }) } catch (err) { alert((err as Error).message) }
   }
 
-  if (!cam) return <div className="placeholder"><div><b>No camera open</b><br />Open the camera in the Camera tab to see the {noun(profileOf(status))}.</div></div>
+  if (!cam) return <div className="placeholder"><div><b>No camera open</b><br />Open the camera in the Camera tab to see the Sun.</div></div>
   const W = cam.width, H = cam.height
   const stroke = Math.max(1.5, W / 500) / d.zoom
   const cx = W / 2, cy = H / 2
@@ -112,7 +111,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
       <div className="live-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
         <button type="button" aria-label="Zoom in" onClick={() => { const zoom = Math.min(8, d.zoom * 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>+</button>
         <button type="button" aria-label="Zoom out" disabled={d.zoom <= 1} onClick={() => { const zoom = Math.max(1, d.zoom / 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>−</button>
-        <button type="button" aria-label="Prominence view" aria-pressed={!!status?.coronagraph?.enabled} className={status?.coronagraph?.enabled ? 'tool-on' : ''} disabled={(!status?.sun && !status?.coronagraph?.enabled) || !!why(profileOf(status), 'corona')} title={why(profileOf(status), 'corona') ?? "Black out the Sun's disc to judge the exposure for prominences"} onClick={() => api('PUT', '/coronagraph', { enabled: !status?.coronagraph?.enabled, scale: status?.coronagraph?.scale ?? 1.03 }).catch((e) => reportError(e, 'Prominence view'))}>
+        <button type="button" aria-label="Prominence view" aria-pressed={!!status?.coronagraph?.enabled} className={status?.coronagraph?.enabled ? 'tool-on' : ''} disabled={!status?.sun && !status?.coronagraph?.enabled} title="Black out the Sun's disc to judge the exposure for prominences" onClick={() => api('PUT', '/coronagraph', { enabled: !status?.coronagraph?.enabled, scale: status?.coronagraph?.scale ?? 1.03 }).catch((e) => reportError(e, 'Prominence view'))}>
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="10" cy="10" r="4.5" fill="currentColor" /></svg>
         </button>
         <button type="button" aria-label="Auto-stretch" aria-pressed={stretch} className={stretch ? 'tool-on' : ''} title="Brighten a dim picture for everyone watching (the recording is not changed)" onClick={() => setStretch(!stretch)}>

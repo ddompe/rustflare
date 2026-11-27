@@ -65,19 +65,15 @@ export function Switch({ checked, onChange, label, hint, disabled }: { checked: 
 }
 
 /** A small set of mutually exclusive choices, shown all at once. */
-export function Segmented<T extends string>({ value, options, onChange, label, disabled }: { value: T; options: { id: T; label: string; /** Why this option does not apply now: it is greyed and the reason is shown under the group. */ off?: string | null }[]; onChange: (v: T) => void; label: string; disabled?: boolean }) {
-  const off = options.filter((o) => o.off)
+export function Segmented<T extends string>({ value, options, onChange, label, disabled }: { value: T; options: { id: T; label: string }[]; onChange: (v: T) => void; label: string; disabled?: boolean }) {
   return (
-    <>
-      <div className="seg" role="radiogroup" aria-label={label}>
-        {options.map((o) => (
-          <button key={o.id} type="button" role="radio" aria-checked={value === o.id} disabled={disabled || !!o.off} className={value === o.id ? 'on' : ''} onClick={() => onChange(o.id)}>
-            {o.label}
-          </button>
-        ))}
-      </div>
-      {off.map((o) => <div key={o.id} className="gate-why hint-text" role="note"><b>{o.label}</b>: {o.off}</div>)}
-    </>
+    <div className="seg" role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button key={o.id} type="button" role="radio" aria-checked={value === o.id} disabled={disabled} className={value === o.id ? 'on' : ''} onClick={() => onChange(o.id)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
