@@ -8,6 +8,8 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
   workers: 1,
+  // CI retries a failed test once; the list reporter then calls it flaky, so a flake is reported, not hidden (see docs/project/development.md)
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   use: { baseURL: external ?? 'http://127.0.0.1:18101', trace: 'retain-on-failure' },
   projects: [

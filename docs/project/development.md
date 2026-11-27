@@ -40,6 +40,10 @@ Not covered by automated tests: real cameras and mounts (the iOptron driver and 
 
 Agents and new contributors: start with `AGENTS.md` and `CONTRIBUTING.md` at the repository root.
 
+### Browser test rules
+
+All browser tests share one server and one data folder, so each starts from `resetSimulators` and ends with `stopCapture` (`web/e2e/reset.ts`). A test must not depend on the time of day, the brightness of the simulated picture, or two live readings being equal; compare with a tolerance, or poll. CI retries a failed browser test once and the report marks the pass as flaky: a flaky test is a bug to fix, not a pass to ignore.
+
 ## Releasing
 
 1. Bump `version` under `[workspace.package]` in `Cargo.toml`, commit.

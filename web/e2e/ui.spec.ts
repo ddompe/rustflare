@@ -1,6 +1,7 @@
 import { expect, Page, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
+import { resetSimulators, stopCapture } from './reset'
 
 const post = (page: Page, path: string, body: unknown = {}) => page.request.post(`/api${path}`, { data: body })
 const put = (page: Page, path: string, body: unknown) => page.request.put(`/api${path}`, { data: body })
@@ -18,13 +19,8 @@ async function openMoreItem(page: Page, title: string) {
   if (!(await d.evaluate((e) => (e as HTMLDetailsElement).open))) await d.locator('summary').click()
 }
 
-test.beforeEach(async ({ page }) => {
-  await put(page, '/storage/reserve', { gb: 2 }) // the test server records to its own disk: keep its reserve small (a CI runner has little free)
-  await post(page, '/camera/close'); await post(page, '/mount/disconnect')
-  await post(page, '/camera/open', { driver: 'simulator', id: 'sim0' })
-  await post(page, '/mount/connect', { driver: 'simulator' })
-  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).camera?.fps ?? 0, { timeout: 10_000 }).toBeGreaterThan(1)
-})
+test.beforeEach(async ({ page }) => { await resetSimulators(page) })
+test.afterEach(async ({ page }) => { await stopCapture(page) })
 
 test('every tab renders without horizontal overflow or console errors', async ({ page }) => {
   const errors: string[] = []

@@ -1,6 +1,7 @@
 import { expect, Page, test } from '@playwright/test'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { resetSimulators, stopCapture } from './reset'
 
 const post = (page: Page, path: string, body: unknown = {}) => page.request.post(`/api${path}`, { data: body })
 const put = (page: Page, path: string, body: unknown) => page.request.put(`/api${path}`, { data: body })
@@ -21,15 +22,11 @@ async function patchStatus(page: Page, patch: (s: any) => void) { // eslint-disa
   })
 }
 
-test.afterEach(async ({ page }) => { await post(page, '/capture/stop') })
+test.afterEach(async ({ page }) => { await stopCapture(page) })
 
 test.beforeEach(async ({ page }, info) => {
   test.skip(info.project.name !== 'phone', 'sizes are set in each test; one project is enough')
-  await put(page, '/storage/reserve', { gb: 2 })
-  await post(page, '/camera/close'); await post(page, '/mount/disconnect')
-  await post(page, '/camera/open', { driver: 'simulator', id: 'sim0' })
-  await post(page, '/mount/connect', { driver: 'simulator' })
-  await put(page, '/profile', { id: 'sun_ha' })
+  await resetSimulators(page)
   await put(page, '/site', { latitude: 40, longitude: -105 })
   await post(page, '/debug/sim-mount-clock', { time_offset_s: 0, latitude_deg: 40, longitude_east_deg: -105 })
   for (const [key, value] of [['ui.setup_dismissed', false], ['ui.profile_confirmed', false], ['ui.theme', 'night'], ['ui.autolock_seen', false], ['tracking.mode', '']] as const) await put(page, '/ui', { key, value })

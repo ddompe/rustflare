@@ -1,4 +1,5 @@
 import { expect, Locator, Page, test } from '@playwright/test'
+import { resetSimulators, stopCapture } from './reset'
 
 const post = (page: Page, path: string, body: unknown = {}) => page.request.post(`/api${path}`, { data: body })
 const put = (page: Page, path: string, body: unknown) => page.request.put(`/api${path}`, { data: body })
@@ -15,12 +16,10 @@ const VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 800 },
 ]
 
+test.afterEach(async ({ page }) => { await stopCapture(page) })
+
 test.beforeEach(async ({ page }) => {
-  await put(page, '/storage/reserve', { gb: 2 })
-  await post(page, '/camera/close'); await post(page, '/mount/disconnect')
-  await post(page, '/camera/open', { driver: 'simulator', id: 'sim0' })
-  await post(page, '/mount/connect', { driver: 'simulator' })
-  await put(page, '/profile', { id: 'sun_ha' })
+  await resetSimulators(page)
   await put(page, '/ui', { key: 'ui.setup_dismissed', value: false })
   await expect.poll(async () => (await status(page)).camera?.fps ?? 0, { timeout: 10_000 }).toBeGreaterThan(1)
 })

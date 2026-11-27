@@ -1,4 +1,5 @@
 import { expect, Locator, Page, test } from '@playwright/test'
+import { resetSimulators, stopCapture } from './reset'
 
 // Choosing a region of interest by dragging on the picture. The simulator camera is 1280 x 960 with steps of 2 (corner), 4 (width) and 2 (height),
 // minimum 64 x 64. Everything asserts on geometry and on numbers, never on pixels: the simulated picture can be black.
@@ -9,15 +10,11 @@ const put = (page: Page, path: string, body: unknown) => page.request.put(`/api$
 const status = async (page: Page) => (await page.request.get('/api/status')).json()
 const WIDE = '* { font-family: Verdana, "DejaVu Sans", sans-serif !important; letter-spacing: .02em !important }'
 
-test.afterEach(async ({ page }) => { await post(page, '/capture/stop') })
+test.afterEach(async ({ page }) => { await stopCapture(page) })
 
 test.beforeEach(async ({ page }, info) => {
   test.skip(info.project.name !== 'phone', 'sizes are set in each test; one project is enough')
-  await put(page, '/storage/reserve', { gb: 2 })
-  await post(page, '/camera/close'); await post(page, '/mount/disconnect')
-  await post(page, '/camera/open', { driver: 'simulator', id: 'sim0' })
-  await post(page, '/mount/connect', { driver: 'simulator' })
-  await put(page, '/profile', { id: 'sun_ha' })
+  await resetSimulators(page)
   for (const [key, value] of [['ui.setup_dismissed', true], ['ui.profile_confirmed', true], ['ui.theme', 'night']] as const) await put(page, '/ui', { key, value })
   await put(page, '/camera/roi', { fraction: 1 })
   await expect.poll(async () => (await status(page)).camera?.fps ?? 0, { timeout: 10_000 }).toBeGreaterThan(1)
