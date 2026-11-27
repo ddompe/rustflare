@@ -363,10 +363,11 @@ function saveMyLocation(run: (f: () => Promise<unknown>) => unknown) {
 }
 
 /** What the mount itself holds as its site and time, next to the Pi's, and a button that sends the Pi's (nothing moves). */
-function MountClock({ status, openMore, focus }: { status: Status; openMore?: (focus: string) => void; focus?: { id: string; nonce: number } | null }) {
+function MountClock({ status, openMore, focus, onOpen }: { status: Status; openMore?: (focus: string) => void; focus?: { id: string; nonce: number } | null; /** tells the notes sheet whether this section is open, so it does not offer a second Send */ onOpen?: (open: boolean) => void }) {
   const { err, busy, run } = useAction()
   const [open, setOpen] = useState(focus?.id === 'clock')
   useEffect(() => { if (focus?.id === 'clock') setOpen(true) }, [focus?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { onOpen?.(open); return () => onOpen?.(false) }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
   const m = status.mount!
   const st = m.site_time
   const ntp = status.clock?.ntp_synchronized
@@ -481,7 +482,7 @@ const RATE_NAME = { solar: 'Solar', lunar: 'Lunar', sidereal: 'Star' } as const
 const RATE_FOR = { solar: 'Solar (Sun)', lunar: 'Lunar (Moon)', sidereal: 'Star (planets)' } as const
 
 /** Step 2: connect the mount, switch on solar tracking, slew the region of interest into view. */
-export function AimTab({ status, next, openMore, focus }: { status: Status | null; next: () => void; openMore?: (focus: string) => void; focus?: { id: string; nonce: number } | null }) {
+export function AimTab({ status, next, openMore, focus, onClockOpen }: { status: Status | null; next: () => void; openMore?: (focus: string) => void; focus?: { id: string; nonce: number } | null; onClockOpen?: (open: boolean) => void }) {
   const { err, run } = useAction()
   const m = status?.mount
   const sheet = useDatasheet('mount', status, m ? shortInfo(m.info) : null)
@@ -494,7 +495,7 @@ export function AimTab({ status, next, openMore, focus }: { status: Status | nul
       <Offset status={status} />
       <Pad status={status} locked={parked} />
       <GoToSun status={status} disabled={parked || !!status.goto} openMore={openMore} />
-      <MountClock status={status} openMore={openMore} focus={focus} />
+      <MountClock status={status} openMore={openMore} focus={focus} onOpen={onClockOpen} />
       <Disclosure title="Meridian flip">
         <MeridianFlip status={status} />
       </Disclosure>
