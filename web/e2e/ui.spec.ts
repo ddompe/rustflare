@@ -667,3 +667,10 @@ test('the stacker settings are on the Record tab too, and change the same settin
   await expect.poll(async () => (await cfg()).multipoint).toBe(before.multipoint)
   await expect(page.getByRole('switch', { name: 'Black disc on prominence stacks' })).toBeVisible()
 })
+
+test('the software version is in the corner of the status bar', async ({ page }) => {
+  await page.goto('/')
+  const v = ((await (await page.request.get('/api/status')).json()) as { version: string }).version
+  expect(v).toMatch(/^\d+\.\d+\.\d+/)
+  await expect(page.locator('.sbar .sbar-ver')).toHaveText(`v${v}`)
+})

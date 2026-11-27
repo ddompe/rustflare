@@ -26,6 +26,12 @@ if [ "$SKIP_WEB" = 0 ]; then
 fi
 [ -f web/dist/index.html ] || { echo "web/dist missing: build the UI first" >&2; exit 1; }
 
+# a local build says so, with its commit, in the corner of every screen (a CI or release build shows the plain version)
+if [ -z "${CI:-}" ] && command -v git >/dev/null 2>&1; then
+  RUSTFLARE_BUILD="local $(git rev-parse --short HEAD 2>/dev/null)$([ -n "$(git status --porcelain 2>/dev/null)" ] && echo '+changes')"
+  export RUSTFLARE_BUILD
+fi
+
 # --features asi: ZWO ASI cameras, loads libASICamera2 (Debian: libasi, a Recommends) at run time, ADR 0014
 # --features ble: Bluetooth mount link over BlueZ/D-Bus (pure Rust zbus, bluez is a Recommends), ADR 0015
 # --features playerone: Player One camera support (bundles the vendor library, see ADR 0006)

@@ -11,6 +11,8 @@ export interface StorageInfo { path: string; label: string; mount_point: string 
 export interface SunLocation { pos: { x: number; y: number }; radius: number; partial: boolean; radius_from_optics?: boolean | null; fit_rms?: number | null }
 export interface Startup { enabled: boolean; camera: string | null; mount: string | null; retrying: boolean }
 export interface Status {
+  /** The software version (a local build adds its commit): shown in the corner of the status bar. */
+  version?: string
   site?: { latitude: number; longitude: number } | null
   sky_targets?: { id: string; name: string; altitude_deg: number; azimuth_deg: number; ra_hours: number; dec_deg: number }[]
   sky_sun?: { altitude_deg: number; azimuth_deg: number; ra_hours: number; dec_deg: number; hour_angle_h: number; minutes_to_meridian: number } | null

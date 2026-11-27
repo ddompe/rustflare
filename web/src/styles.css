@@ -690,3 +690,6 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--info, #6
 
 .mp-name { display: flex; flex-direction: column; min-width: 0; }
 .mp-sub { font-size: .78rem; font-weight: 500; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the software version, in the corner of the status bar */
+.sbar-ver { flex: none; align-self: center; padding: 0 .75rem; font-size: .72rem; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }

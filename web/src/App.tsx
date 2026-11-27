@@ -157,6 +157,7 @@ function StatusBar({ status, connected }: { status: Status | null; connected: bo
       <button type="button" className="sbar-btn" disabled={!text} aria-expanded={open} onClick={() => setOpen(!open)}>
         {text ? <><i aria-hidden="true" /><span>{text}</span></> : <span className="sbar-idle">Ready</span>}
       </button>
+      {status?.version && <span className="sbar-ver" title="RustFlare version">v{status.version}</span>}
       {uiError && <button type="button" className="sbar-dismiss" onClick={() => { setOpen(false); clearUiError() }}>Dismiss</button>}
       {!uiError && notices.length > 0 && <button type="button" className="sbar-dismiss" onClick={() => { setOpen(false); void dismiss() }}>{notices.length > 1 ? 'Dismiss all' : 'Dismiss'}</button>}
       {open && text && (notices.length

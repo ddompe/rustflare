@@ -344,6 +344,8 @@ pub struct CoronagraphStatus {
 
 #[derive(Clone, Serialize)]
 pub struct Status {
+    /// The software version, and for a local build the commit it was built from (`0.7.1 (local 48fb5bc)`): shown in a corner of every screen.
+    pub version: String,
     pub coronagraph: CoronagraphStatus,
     pub focus: FocusStatus,
     pub colour: ColourStatus,
@@ -382,6 +384,7 @@ pub struct Status {
 impl Default for Status {
     fn default() -> Self {
         Status {
+            version: build_version(),
             session_log: SessionLogStatus { lost_frames: true, lost_saved: 0, enabled: false, lines: 0, frames: 0, bytes: 0, file: None },
             roi: None,
             perf: PerfStatus::default(),
@@ -412,5 +415,13 @@ impl Default for Status {
             error: None,
             seq: 0,
         }
+    }
+}
+
+/// `0.7.1`, or `0.7.1 (local 48fb5bc)` when the build script says it is a local build (`RUSTFLARE_BUILD`).
+pub fn build_version() -> String {
+    match option_env!("RUSTFLARE_BUILD") {
+        Some(b) if !b.is_empty() => format!("{} ({b})", env!("CARGO_PKG_VERSION")),
+        _ => env!("CARGO_PKG_VERSION").to_string(),
     }
 }
