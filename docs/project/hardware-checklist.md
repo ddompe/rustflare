@@ -136,3 +136,15 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 | Send home | `:MH#` goes to the zero position; `state` then reports at home |
 | Meridian | Past the meridian: a new Go to flips (the mount's `:GMT#` setting decides) |
 
+## Still to check with light and sky (0.8.0)
+
+| Check | How |
+|---|---|
+| Colour histogram with real light | ASI533MC Pro pointed at the Moon or a bright scene: three curves, the clipping marker per channel appears before the picture clips |
+| Moon profile | Go to Moon: lunar rate, the Moon outline radius against the real disc, automatic flip names the Moon |
+| Planet profile | a planet in a small ROI: the planet locator marks it, peak-based stretch, Planet centroid tracking holds it with the slew pad nudging |
+| Cooler | switch on at -10 C, power and temperature move, switch off ramps about 4 C a minute, snowflake shows while on (not yet tried: the cooler has only been off) |
+| iOptron guiding | Calibrate and Hold position on the HAE69C (guide pulses `:ZS` `:ZQ` `:ZE` `:ZC` are not yet tried), Go to Sun after the time sync |
+| Go to on the HAE69C | Go to Sun, then a meridian pass: the mount's own meridian setting decides |
+| Optical setups | save the real trains, apply one with its profile, flat and dark |
+
