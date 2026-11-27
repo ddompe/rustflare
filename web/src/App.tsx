@@ -15,6 +15,7 @@ import { ToneIcon, Tone } from './components/ui'
 import { SetupStrip, SetupStepId } from './components/SetupStrip'
 import { holdLevel } from './vocab'
 import { useSaved } from './saved'
+import { RegionDone, RegionPanel, useRegion } from './components/RegionPanel'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'camera', label: 'Camera' },
@@ -36,7 +37,9 @@ export function App() {
   const [display, setDisplay, resetDisplay] = useDisplay()
   const [savedTab, setSavedTab] = useSetting<TabId>('ui.tab', 'camera')
   const [tab, setTabState] = useState<TabId>(TABS.some((x) => x.id === savedTab) ? savedTab : 'camera')
-  const setTab = (t: TabId) => { setTabState(t); setSavedTab(t) }
+  const region = useRegion(status)
+  // leaving the screen while choosing a region is a Cancel: the earlier region comes back
+  const setTab = (t: TabId) => { if (region.active) region.cancel(); setTabState(t); setSavedTab(t) }
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null)
   /** Which section a tab should open when it is entered from elsewhere (the Aim tab's Mount time and place). */
   const [aimFocus, setAimFocus] = useState<{ id: string; nonce: number } | null>(null)
@@ -122,7 +125,7 @@ export function App() {
       </header>
       <section className="view" aria-label="Live view">
         <div className="live-slot">
-          <LiveView status={status} display={display} setDisplay={setDisplay} anchorPick={anchorPick} onPicked={() => setAnchorPick(false)} onDisplay={() => openMore('display')} />
+          <LiveView status={status} display={display} setDisplay={setDisplay} anchorPick={anchorPick} onPicked={() => setAnchorPick(false)} onDisplay={() => openMore('display')} region={region} />
         </div>
         <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} hide={tab === 'aim' ? ['sun'] : []} saved={saved} onSavedOpen={() => { openFiles(saved?.dir ?? ''); }} onSavedDismiss={dismissSaved} setup={tab !== 'camera' ? <SetupStrip status={status} onStep={onSetupStep} variant="pill" /> : undefined} />
       </section>
@@ -152,12 +155,14 @@ export function App() {
         })}
       </nav>
 
-      <main ref={panelRef} className="panel" id="panel" role="tabpanel" aria-label={TABS.find((x) => x.id === tab)?.label} tabIndex={-1}>
-        {tab === 'camera' && <CameraTab status={status} next={() => goto('aim')} openOptics={() => setOpticsOpen(true)} setup={<SetupStrip status={status} onStep={onSetupStep} variant="bar" />} />}
-        {tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} focus={aimFocus} />}
-        {tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} toCamera={() => setTab('camera')} />}
-        {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={openFiles} saved={saved} dismissSaved={dismissSaved} toCamera={() => setTab('camera')} />}
-        {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} openFiles={openFiles} openOptics={() => setOpticsOpen(true)} opticsOpen={opticsOpen} />}
+      <main ref={panelRef} className={`panel${region.active ? ' choosing' : ''}`} id="panel" role="tabpanel" aria-label={region.active ? 'Choose the region' : TABS.find((x) => x.id === tab)?.label} tabIndex={-1}>
+        {region.active && <RegionPanel region={region} />}
+        {!region.active && <RegionDone region={region} />}
+        {!region.active && tab === 'camera' && <CameraTab status={status} region={region} next={() => goto('aim')} openOptics={() => setOpticsOpen(true)} setup={<SetupStrip status={status} onStep={onSetupStep} variant="bar" />} />}
+        {!region.active && tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} focus={aimFocus} />}
+        {!region.active && tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} toCamera={() => setTab('camera')} />}
+        {!region.active && tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={openFiles} saved={saved} dismissSaved={dismissSaved} toCamera={() => setTab('camera')} />}
+        {!region.active && tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} openFiles={openFiles} openOptics={() => setOpticsOpen(true)} opticsOpen={opticsOpen} />}
       </main>
       <StatusBar status={status} connected={connected} />
       {full && status && status.capture.state !== 'idle' && (

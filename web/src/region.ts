@@ -88,7 +88,7 @@ const has = (h: Handle, c: 'n' | 's' | 'e' | 'w') => h.includes(c)
  * about the centre line, so the picture grows or shrinks around the middle of the edge you hold.
  */
 export function resizeRect(start: Rect, handle: Handle, dx: number, dy: number, ratio: number | null, l: Limits, s: Sensor): Rect {
-  const mn = minSize(l), mx = maxSize(l, s)
+  const mn = minSize(l)
   const left = start.x, right = start.x + start.w, top = start.y, bottom = start.y + start.h
   // the fixed side on each axis, and the raw position of the moving side
   const fx = has(handle, 'w') ? right : has(handle, 'e') ? left : null
