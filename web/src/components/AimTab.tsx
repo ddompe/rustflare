@@ -229,7 +229,7 @@ function Pad({ status, locked }: { status: Status; locked: boolean }) {
   const btn = (key: string, label: string, name: string, axis: Axis, dir: 1 | -1) => (
     <button
       type="button"
-      className={`pad-btn ${active === key ? 'held' : ''}`}
+      className={`pad-btn pad-${name[0].toLowerCase()} ${active === key ? 'held' : ''}`}
       disabled={locked}
       aria-label={`${name}: hold to move`}
       aria-pressed={active === key}
@@ -247,11 +247,11 @@ function Pad({ status, locked }: { status: Status; locked: boolean }) {
   return (
     <div>
       <div className="pad" role="group" aria-label="Slew pad. Hold a direction to move, release to stop.">
-        <span />{btn('ArrowUp', 'N', 'North', 'secondary', 1)}<span />
+        <span className="pad-gap" />{btn('ArrowUp', 'N', 'North', 'secondary', 1)}<span className="pad-gap" />
         {btn('ArrowLeft', 'W', 'West', 'primary', -1)}
         <button type="button" className="pad-stop" onClick={() => { stopAll(); api('POST', '/mount/stop').catch((e: Error) => setErr(e.message)) }}>STOP</button>
         {btn('ArrowRight', 'E', 'East', 'primary', 1)}
-        <span />{btn('ArrowDown', 'S', 'South', 'secondary', -1)}<span />
+        <span className="pad-gap" />{btn('ArrowDown', 'S', 'South', 'secondary', -1)}<span className="pad-gap" />
       </div>
       <div className="pad-foot">
         <label htmlFor="slew-speed">Slew speed</label>

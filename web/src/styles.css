@@ -813,7 +813,7 @@ button.quiet:disabled { background: none; border-color: transparent; }
 .quick { flex-wrap: nowrap; }
 
 /* ---------- compact profile picker, what-is-this, first-session strip ---------- */
-.profile-pick { margin: 0 0 .5rem; }
+.profile-pick { margin: .75rem 0 .5rem; }
 .profile-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; align-items: center; }
 .profile-row select { font-weight: 650; }
 .profile-short { margin: .15rem 0 .1rem; color: var(--muted); font-size: .88rem; }
@@ -856,3 +856,16 @@ summary { min-height: 44px; }
 :root[data-theme='day'] .sbar-pop, :root[data-theme='day'] .notes-sheet { color: var(--fg); }
 :root[data-theme='day'] button.primary:disabled { color: var(--disabled-fg); }
 :root[data-theme='day'] .setup-badge { color: var(--warn); }
+
+/* phone landscape: the slew pad is three columns by two rows (stop and north above, west, south, east below), so it fits the panel */
+@media (max-height: 520px) and (orientation: landscape) {
+  .pad { max-width: 100%; gap: .3rem; }
+  .pad > * { min-height: 52px; }
+  .pad-gap { display: none; }
+  .pad-stop { grid-area: 1 / 1; }
+  .pad-n { grid-area: 1 / 2; }
+  .pad-w { grid-area: 2 / 1; }
+  .pad-s { grid-area: 2 / 2; }
+  .pad-e { grid-area: 2 / 3; }
+  .pad-foot { max-width: 100%; margin: .4rem 0 .2rem; }
+}

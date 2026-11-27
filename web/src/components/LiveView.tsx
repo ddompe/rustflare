@@ -48,7 +48,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
     try { await api('POST', '/tracking/start', { mode: 'anchor', x, y }) } catch (err) { alert((err as Error).message) }
   }
 
-  if (!cam) return <div className="placeholder"><div><b>No camera open</b><br />Open one on the Camera tab to see the {noun(profileOf(status))}.</div></div>
+  if (!cam) return <div className="placeholder"><div><b>No camera open</b><br />Open a camera to see the {noun(profileOf(status))}.</div></div>
   const W = cam.width, H = cam.height
   const stroke = Math.max(1.5, W / 500) / d.zoom
   const cx = W / 2, cy = H / 2

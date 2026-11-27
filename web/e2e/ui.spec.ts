@@ -11,6 +11,13 @@ async function openDay(fm: import('@playwright/test').Locator) {
   await expect(fm.locator('.fm-crumbs')).toContainText('›')
 }
 
+
+/** Opens a section of the More tab, leaving it open if it already is (the open section is remembered). */
+async function openMoreItem(page: Page, title: string) {
+  const d = page.locator('details.disc', { has: page.locator('.disc-title', { hasText: new RegExp(`^${title}$`) }) })
+  if (!(await d.evaluate((e) => (e as HTMLDetailsElement).open))) await d.locator('summary').click()
+}
+
 test.beforeEach(async ({ page }) => {
   await put(page, '/storage/reserve', { gb: 2 }) // the test server records to its own disk: keep its reserve small (a CI runner has little free)
   await post(page, '/camera/close'); await post(page, '/mount/disconnect')
@@ -110,8 +117,8 @@ test('record a short sequence, check it, delete it', async ({ page }) => {
   await expect.poll(async () => (await post(page, '/capture/sequence', { name: 'e2e', frames: 10, format: 'ser' })).text(), { timeout: 10_000 }).toContain('buffer_frames')
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 15_000 }).toBe('idle')
   await page.getByRole('tab', { name: /^Record/ }).click()
-  await page.getByRole('button', { name: /Open file manager/ }).click()
-  const fm = page.getByRole('dialog', { name: 'File manager' })
+  await page.getByRole('button', { name: /^Files ·/ }).click()
+  const fm = page.getByRole('dialog', { name: 'Files' })
   await expect(fm).toBeVisible()
   await openDay(fm)
   const row = fm.locator('.fm-row', { hasText: 'e2e' })
@@ -142,6 +149,7 @@ test('flats and darks live in the Record tab, with the other everyday work', asy
 
 test('Prominence view toggles from the live view tools', async ({ page }) => {
   await page.goto('/')
+  await page.getByRole('tab', { name: /^Camera/ }).click() // the picture tools sit on the picture of the Camera tab
   await expect.poll(async () => !!(await (await page.request.get('/api/status')).json()).sun, { timeout: 10_000 }).toBe(true).catch(() => {})
   const btn = page.getByRole('button', { name: 'Prominence view' })
   if (await btn.isDisabled()) test.skip(true, 'the simulator scene has no Sun in view')
@@ -179,8 +187,8 @@ test('HDR lanes record into one folder per lane', async ({ page }) => {
   await expect.poll(async () => (await post(page, '/capture/lanes', { lanes: [{ name: 'x1', exposure_us: 200, frames: 3 }, { name: 'x2', exposure_us: 400, frames: 3 }], cycles: 1 })).text(), { timeout: 10_000 }).toContain('lanes')
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
   await page.getByRole('tab', { name: /^Record/ }).click()
-  await page.getByRole('button', { name: /Open file manager/ }).click()
-  const fm = page.getByRole('dialog', { name: 'File manager' })
+  await page.getByRole('button', { name: /^Files ·/ }).click()
+  const fm = page.getByRole('dialog', { name: 'Files' })
   await openDay(fm)
   await expect(fm).toContainText('hdr_')
   await expect(fm.locator('.fm-row[data-type="hdr"]').first()).toContainText('HDR lanes')
@@ -195,8 +203,8 @@ test('the prominence recording with the coronagraph masks the disc in its lane o
   await page.getByLabel('Number of cycles').fill('1')
   await page.locator('.quick-rec').click()
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 20_000 }).toBe('idle')
-  await page.getByRole('button', { name: /Open file manager/ }).click()
-  const fm = page.getByRole('dialog', { name: 'File manager' })
+  await page.getByRole('button', { name: /^Files ·/ }).click()
+  const fm = page.getByRole('dialog', { name: 'Files' })
   await openDay(fm)
   await expect(fm.locator('.fm-row[data-type="prominence"]').first()).toContainText('Prominence video')
   await fm.locator('.fm-row[data-type="prominence"]').first().locator('.fm-open').click()
@@ -380,7 +388,7 @@ test('Stacking: the stacker, its settings, and the stacks it made are looked at 
   await expect(section.locator('.stack-card')).toHaveCount(0)
   await expect(section.getByText(/\d+ stacks so far/)).toBeVisible({ timeout: 10_000 })
   await section.getByRole('button', { name: 'Open the stacks in Files' }).click()
-  const fm = page.getByRole('dialog', { name: 'File manager' })
+  const fm = page.getByRole('dialog', { name: 'Files' })
   await expect(fm.locator('.fm-crumbs')).toContainText('stacks')
   await fm.locator('.fm-row[data-type="folder"] .fm-open, .fm-row[data-type="day"] .fm-open').first().click()
   const cell = fm.getByRole('list', { name: 'Stacks' }).locator('li').first()
@@ -431,13 +439,13 @@ test('After each burst: modes, a stacker that is not there is never quiet, notic
   await page.goto('/')
   await page.getByRole('tab', { name: /^Record/ }).click()
   await page.getByText('After each burst', { exact: true }).click()
-  await expect(page.getByRole('button', { name: /Keep the video/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: /^Keep video/ })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: /Stack only/ }).click()
   await expect(page.getByText(/stacker is not running/).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: /Keep the video/ })).toHaveAttribute('aria-pressed', 'true') // refused: nothing changed
+  await expect(page.getByRole('button', { name: /^Keep video/ })).toHaveAttribute('aria-pressed', 'true') // refused: nothing changed
   // video + stack without a stacker: allowed, but every recording says it is video only, in the status bar, until dismissed
-  await page.getByRole('button', { name: /Video and stack/ }).click()
-  await expect(page.getByRole('button', { name: /Video and stack/ })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: /^Video \+ stack/ }).click()
+  await expect(page.getByRole('button', { name: /^Video \+ stack/ })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByText(/Stacker ready|The stacker is not running, so bursts are saved as video for now/)).toBeVisible()
   expect((await post(page, '/capture/sequence', { name: 'noticetest', frames: 8, format: 'ser' })).ok()).toBe(true)
   const bar = page.locator('.sbar')
@@ -458,8 +466,8 @@ test('the file manager browses folders: stacks and a folder download are reachab
   await expect.poll(async () => (await post(page, '/capture/sequence', { name: 'fmnav', frames: 5, format: 'ser' })).text(), { timeout: 10_000 }).toContain('buffer_frames')
   await expect.poll(async () => (await (await page.request.get('/api/status')).json()).capture.state, { timeout: 15_000 }).toBe('idle')
   await page.getByRole('tab', { name: /^Record/ }).click()
-  await page.getByRole('button', { name: /Open file manager/ }).click()
-  const fm = page.getByRole('dialog', { name: 'File manager' })
+  await page.getByRole('button', { name: /^Files ·/ }).click()
+  const fm = page.getByRole('dialog', { name: 'Files' })
   await openDay(fm)
   await expect(fm.locator('.fm-row', { hasText: 'fmnav' })).toHaveCount(1)
   // the breadcrumb goes back to the top, and the filter narrows a folder
@@ -491,8 +499,8 @@ test('the folder tree divider can be dragged and moved with the keyboard', async
   test.skip(info.project.name === 'phone', 'the tree only shows on wide screens')
   await page.goto('/')
   await page.getByRole('tab', { name: /^Record/ }).click()
-  await page.getByRole('button', { name: /Open file manager/ }).click()
-  const fm = page.getByRole('dialog', { name: 'File manager' })
+  await page.getByRole('button', { name: /^Files ·/ }).click()
+  const fm = page.getByRole('dialog', { name: 'Files' })
   const tree = fm.getByRole('navigation', { name: 'Folders' })
   const w0 = (await tree.boundingBox())!.width
   const bar = fm.getByRole('separator', { name: 'Resize the folder tree' })
@@ -511,7 +519,7 @@ test('a failed action is shown in the status bar until dismissed, never swallowe
   await page.route('**/api/storage', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'the drive is on fire' }) }))
   await page.goto('/')
   await page.getByRole('tab', { name: /^Record/ }).click()
-  await page.getByRole('button', { name: /Open file manager/ }).click() // reads the storage state
+  await page.getByRole('button', { name: /^Files ·/ }).click() // reads the storage state
   const bar = page.locator('.sbar')
   await expect(bar).toContainText('Reading the storage state failed: the drive is on fire')
   await page.keyboard.press('Escape')
@@ -534,8 +542,8 @@ test('stacks show as thumbnails with a preview, and a selection downloads as one
   try {
     await page.goto('/')
     await page.getByRole('tab', { name: /^Record/ }).click()
-    await page.getByRole('button', { name: /Open file manager/ }).click()
-    const fm = page.getByRole('dialog', { name: 'File manager' })
+    await page.getByRole('button', { name: /^Files ·/ }).click()
+    const fm = page.getByRole('dialog', { name: 'Files' })
     await fm.locator('.fm-row[data-type="stacks"] .fm-open').click()
     await fm.locator('.fm-row', { hasText: '2099-01-01' }).locator('.fm-open').click()
     const cells = fm.getByRole('list', { name: 'Stacks' }).locator('li')
@@ -588,15 +596,17 @@ test('auto-stretch is a button on the live view and stays in step with More > Di
   const stretch = async () => ((await (await page.request.get('/api/preview')).json()) as { stretch: boolean }).stretch
   await page.request.put('/api/preview', { data: { stretch: false } })
   await page.goto('/')
+  await page.getByRole('tab', { name: /^Camera/ }).click()
   const btn = page.getByRole('button', { name: 'Auto-stretch' })
   await expect(btn).toHaveAttribute('aria-pressed', 'false')
   await btn.click()
   await expect(btn).toHaveAttribute('aria-pressed', 'true')
   await expect.poll(stretch).toBe(true)
   await page.getByRole('tab', { name: /^More/ }).click()
-  await page.getByText('Display', { exact: true }).first().click() // the section that holds the switch
+  await openMoreItem(page, 'Display') // the section that holds the switch
   await expect(page.getByRole('switch', { name: 'Auto-stretch' })).toBeChecked()
   await page.getByRole('switch', { name: 'Auto-stretch' }).uncheck()
+  await page.getByRole('tab', { name: /^Camera/ }).click()
   await expect(btn).toHaveAttribute('aria-pressed', 'false')
   await expect.poll(stretch).toBe(false)
 })
@@ -611,8 +621,8 @@ test('the Pi\'s own disk can be recorded to, and always keeps a reserve free', a
   expect((await get()).current.reserve_bytes).toBe(5_000_000_000)
   await page.goto('/')
   await page.getByRole('tab', { name: /^More/ }).click()
-  await page.getByText('Storage', { exact: true }).first().click()
-  await expect(page.getByRole('note')).toContainText("Pi's SD card")
+  await openMoreItem(page, 'Storage')
+  await expect(page.getByRole('note')).toContainText('SD card')
   await expect(page.getByLabel('Keep this much free (GB)')).toHaveValue('5')
   await put(page, '/storage/reserve', { gb: 2 })
 })
@@ -647,7 +657,7 @@ test('a drive on a USB 3 port next to a USB 3 camera shows a warning where the d
   await page.getByRole('tab', { name: /^Record/ }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'USB 2.0 port' }).first()).toBeVisible()
   await page.getByRole('tab', { name: /^More/ }).click()
-  await page.getByText('Storage', { exact: true }).first().click()
+  await openMoreItem(page, 'Storage')
   await expect(page.getByRole('alert').filter({ hasText: 'USB 2.0 port' }).first()).toBeVisible()
 })
 
@@ -727,7 +737,6 @@ test.describe('cooled camera', () => {
     expect(c.warming_up).toBe(true)
     await page.goto('/')
     await page.getByRole('tab', { name: /^Camera/ }).click()
-    await page.locator('details.disc', { has: page.locator('.disc-title', { hasText: /^Cooler$/ }) }).locator('summary').click()
     await expect(page.getByText('Warming the sensor before switching off')).toBeVisible()
     await page.getByRole('button', { name: 'Switch off now' }).click()
     await expect.poll(async () => (await status(page)).camera?.cooler.on).toBe(false)
@@ -750,12 +759,15 @@ test.describe('use profiles: the words and the enabled tools follow what is imag
   test('the picker on the Camera tab changes the profile and the chip says so', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('tab', { name: /^Camera/ }).click()
-    await page.getByRole('radio', { name: 'Moon' }).click()
+    const pick = page.getByRole('combobox', { name: 'What are you imaging?' })
+    await pick.selectOption('moon')
     await expect.poll(() => profile(page)).toBe('moon')
-    await expect(page.locator('.chip.profile')).toContainText('Moon')
-    await page.getByRole('radio', { name: 'Sun, H-alpha' }).click()
+    await page.getByRole('button', { name: /\d notes?$/ }).click()
+    await expect(page.getByRole('region', { name: 'Notes' })).toContainText('Moon')
+    await page.keyboard.press('Escape')
+    await pick.selectOption('sun_ha')
     await expect.poll(() => profile(page)).toBe('sun_ha')
-    await expect(page.locator('.chip.profile')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /\d notes?$/ })).toHaveCount(0)
   })
 
   test('what does not apply is greyed with its reason, and is still on the page', async ({ page }) => {
@@ -766,16 +778,16 @@ test.describe('use profiles: the words and the enabled tools follow what is imag
     await expect(prom).toBeEnabled(); await expect(hdr).toBeEnabled()
     await setProfile(page, 'moon')
     await expect(prom).toBeDisabled(); await expect(hdr).toBeEnabled()
-    await expect(page.getByText(/Prominence recordings pair a disc exposure/).first()).toBeVisible()
+    await expect(page.getByText(/it pairs a disc exposure/).first()).toBeVisible()
     await setProfile(page, 'planet')
     await expect(prom).toBeDisabled(); await expect(hdr).toBeDisabled() // greyed, not removed
-    await expect(page.getByText(/Exposure lanes bracket a bright and a dark scene/)).toBeVisible()
+    await expect(page.getByText(/lanes bracket a bright and a dark scene/)).toBeVisible()
     await page.getByRole('tab', { name: /^Track/ }).click()
     await expect(page.getByRole('radio', { name: 'Disc edge' })).toBeDisabled()
     await expect(page.getByRole('radio', { name: 'Feature' })).toBeEnabled()
-    await expect(page.getByText(/there is no edge to fit/).first()).toBeVisible()
+    await expect(page.getByText(/no edge to fit/).first()).toBeVisible()
     await page.getByRole('tab', { name: /^More/ }).click()
-    await page.getByText('Display', { exact: true }).first().click()
+    await openMoreItem(page, 'Display')
     await expect(page.getByRole('switch', { name: 'Prominence view (software coronagraph)' })).toBeDisabled()
     await expect(page.getByRole('switch', { name: 'Planet edge circle' })).toBeDisabled()
   })
@@ -827,7 +839,7 @@ test.describe('colour histogram', () => {
     await put(page, '/camera/control', { id: 'exposure_us', value: 1_000_000 })
     await put(page, '/camera/control', { id: 'gain', value: 400 })
     await expect.poll(async () => ((await status(page)).saturated_rgb ?? [0, 0, 0]).some((v: number) => v > 0.001), { timeout: 15_000 }).toBe(true)
-    await expect(page.getByTestId('hist-rgb').locator('[data-clip]').first()).toBeVisible()
+    await expect(page.locator('.hist-clip [data-clip]').first()).toBeVisible()
     await expect(page.getByRole('alert').filter({ hasText: /Clipping: .*%/ })).toBeVisible()
   })
 })
@@ -919,7 +931,7 @@ test.describe('use profiles, stage 3: a planet and a phased Moon on the simulate
     await page.getByRole('tab', { name: /^Track/ }).click()
     // not a planet profile: greyed, on the page, with the reason
     await expect(page.getByRole('radio', { name: 'Planet centroid' })).toBeDisabled()
-    await expect(page.getByText(/Planet centroid finds a small bright disc on a dark sky/)).toBeVisible()
+    await expect(page.getByText(/it needs the Planet profile/)).toBeVisible()
     await post(page, '/mount/tracking', { enabled: true }) // the simulated sky drifts 15 px/s untracked
     await control(page, 'sim_scene', 3) // a new scene starts at the frame centre
     await control(page, 'sim_seeing', 2)
@@ -976,9 +988,9 @@ test.describe('optical setups: named trains that carry their profile', () => {
   const openOptics = async (page: Page) => {
     await page.goto('/')
     await page.getByRole('tab', { name: /^More/ }).click()
-    const d = page.locator('details', { has: page.locator('summary', { hasText: 'Optics' }) })
+    const d = page.locator('details', { has: page.locator('summary', { hasText: 'Optical setup' }) })
     if (!(await d.evaluate((e) => (e as HTMLDetailsElement).open))) await d.locator('summary').click()
-    return page.getByRole('group', { name: 'Optical setups' })
+    return page.getByRole('group', { name: 'Saved optical setups' })
   }
   const fill = async (page: Page, label: string, v: string) => page.getByLabel(label, { exact: true }).fill(v)
 
@@ -990,7 +1002,7 @@ test.describe('optical setups: named trains that carry their profile', () => {
     expect(await r.text()).toContain('stop the recording first')
     const g = await openOptics(page)
     await expect(g.getByRole('button', { name: /^Apply/ })).toBeDisabled()
-    await expect(page.getByText(/Applying a setup is greyed while a recording runs/)).toBeVisible()
+    await expect(page.getByText(/Applying is off while a recording runs/)).toBeVisible()
     await post(page, '/capture/stop')
     await expect.poll(async () => ((await (await page.request.get('/api/status')).json()) as { capture: { state: string } }).capture.state, { timeout: 20_000 }).toBe('idle')
     expect((await post(page, '/optics/setups/Train/apply', {})).ok()).toBe(true)
@@ -1039,32 +1051,32 @@ test.describe('optical setups: named trains that carry their profile', () => {
   test('save as, apply (the profile follows), modified and revert, duplicate, delete with confirm, in the UI', async ({ page }) => {
     const g = await openOptics(page)
     await fill(page, 'Focal length (mm)', '400'); await fill(page, 'Barlow / reducer (×)', '2')
-    await page.getByRole('button', { name: 'Save optics' }).click()
+    await page.getByRole('button', { name: 'Use these values' }).click()
     await expect.poll(async () => (await status(page)).optics.focal_length_mm).toBe(400)
     // save as: profile of the train and aperture
-    await g.getByLabel('Profile of this train').selectOption('sun_ha')
+    await g.getByLabel('Profile for this optical setup').selectOption('sun_ha')
     await g.getByLabel('Aperture (mm)').fill('50')
     await expect(g.locator('.fratio')).toHaveText('f/16.0')
-    await g.getByLabel('Name for a new setup').fill('  Lunt + Barlow  ')
-    await g.getByRole('button', { name: 'Save as…' }).click()
+    await g.getByLabel('Name for a new optical setup').fill('  Lunt + Barlow  ')
+    await g.getByRole('button', { name: 'Save as new…' }).click()
     await expect(g.locator('.setup-name')).toHaveText('Lunt + Barlow')
     // a second train for the Moon
     await fill(page, 'Focal length (mm)', '2800'); await fill(page, 'Barlow / reducer (×)', '0.63')
-    await g.getByLabel('Profile of this train').selectOption('moon')
-    await g.getByLabel('Name for a new setup').fill('C11 + reducer')
-    await g.getByRole('button', { name: 'Save as…' }).click()
+    await g.getByLabel('Profile for this optical setup').selectOption('moon')
+    await g.getByLabel('Name for a new optical setup').fill('C11 + reducer')
+    await g.getByRole('button', { name: 'Save as new…' }).click()
     await expect(g.locator('.setup-name')).toHaveText('C11 + reducer')
     await expect(g.locator('.setup-badge')).toHaveCount(0)
     expect((await status(page)).profile).toBe('moon') // the train just saved is in use, with the profile chosen for it
     // apply the first: the result says what changed
-    await g.getByLabel('Saved setups').selectOption('Lunt + Barlow')
+    await g.getByLabel('Optical setup', { exact: true }).selectOption('Lunt + Barlow')
     await g.getByRole('button', { name: /^Apply/ }).click()
     await expect(g.getByRole('status', { name: 'What applying changed' })).toContainText('Effective focal length')
     expect((await status(page)).profile).toBe('sun_ha')
     await expect(g.getByRole('status', { name: 'What applying changed' })).toContainText('Nothing was moved')
     await expect(g.locator('.setup-name')).toHaveText('Lunt + Barlow') // the status has caught up
     // then the Moon train: the profile follows
-    await g.getByLabel('Saved setups').selectOption('C11 + reducer')
+    await g.getByLabel('Optical setup', { exact: true }).selectOption('C11 + reducer')
     await g.getByRole('button', { name: /^Apply/ }).click()
     await expect.poll(async () => (await status(page)).profile).toBe('moon')
     await expect(g.getByRole('status', { name: 'What applying changed' })).toContainText('Profile: Sun, H-alpha → Moon')
@@ -1073,7 +1085,7 @@ test.describe('optical setups: named trains that carry their profile', () => {
     await page.getByRole('tab', { name: /^Camera/ }).click()
     await expect(page.getByLabel('Optical setup in use').first()).toHaveText('C11 + reducer · Moon')
     // changing the profile by hand marks the setup modified; Revert brings back the train's own profile
-    await page.getByRole('radio', { name: 'Planet' }).click()
+    await page.getByRole('combobox', { name: 'What are you imaging?' }).selectOption('planet')
     await expect(page.getByLabel('Optical setup in use').first()).toContainText('(modified)')
     await page.getByRole('tab', { name: /^More/ }).click()
     await expect(g.locator('.setup-badge')).toHaveText('modified')
@@ -1081,19 +1093,19 @@ test.describe('optical setups: named trains that carry their profile', () => {
     await expect.poll(async () => (await status(page)).profile).toBe('moon')
     await expect(g.locator('.setup-badge')).toHaveCount(0)
     // duplicate
-    await g.getByLabel('Saved setups').selectOption('C11 + reducer')
+    await g.getByLabel('Optical setup', { exact: true }).selectOption('C11 + reducer')
     await g.getByRole('button', { name: 'Duplicate' }).click()
     await expect.poll(async () => (await setupsOf(page)).setups.map((s) => s.name)).toContain('C11 + reducer copy')
     expect((await setupsOf(page)).active).toBe('C11 + reducer')
     // delete asks first and says what is lost
-    await g.getByLabel('Saved setups').selectOption('C11 + reducer copy')
+    await g.getByLabel('Optical setup', { exact: true }).selectOption('C11 + reducer copy')
     await g.getByRole('button', { name: 'Delete…' }).click()
-    const ask = g.getByRole('alertdialog', { name: 'Delete the setup' })
+    const ask = g.getByRole('alertdialog', { name: 'Delete the optical setup' })
     await expect(ask).toContainText('Forgotten')
-    await ask.getByRole('button', { name: 'Keep it' }).click()
+    await ask.getByRole('button', { name: 'Cancel' }).click()
     expect((await setupsOf(page)).setups).toHaveLength(3)
     await g.getByRole('button', { name: 'Delete…' }).click()
-    await ask.getByRole('button', { name: 'Delete setup' }).click()
+    await ask.getByRole('button', { name: /^Delete “/ }).click()
     await expect.poll(async () => (await setupsOf(page)).setups.length).toBe(2)
   })
 
@@ -1110,30 +1122,33 @@ test.describe('optical setups: named trains that carry their profile', () => {
 
   test('a bad name is refused on screen, not silently', async ({ page }) => {
     const g = await openOptics(page)
-    await g.getByLabel('Name for a new setup').fill('a'.repeat(41))
-    await expect(g.getByRole('button', { name: 'Save as…' })).toBeDisabled()
+    await g.getByLabel('Name for a new optical setup').fill('a'.repeat(41))
+    await expect(g.getByRole('button', { name: 'Save as new…' })).toBeDisabled()
     await expect(g.getByRole('note')).toContainText('1 to 40')
   })
 })
 
 test.describe('mount time and place (issue #104)', () => {
-  test('differs -> chip -> send -> matches -> chip gone', async ({ page }) => {
+  test('differs -> note -> send -> matches -> note gone', async ({ page }) => {
     // the Pi's site, and a simulated mount that holds a clock 3 min 12 s ahead and a site 10 degrees away
     expect((await put(page, '/site', { latitude: 40, longitude: -105 })).ok()).toBe(true)
     expect((await post(page, '/debug/sim-mount-clock', { time_offset_s: 192, latitude_deg: 30, longitude_east_deg: -105 })).ok()).toBe(true)
+    await put(page, '/mount/auto-site-time', { enabled: false })
     await page.goto('/')
     await page.getByRole('tab', { name: /^Camera/ }).click()
-    // the chip is in the status strip on any tab, and jumps to the Aim tab
-    const chip = page.locator('.chip.mountclock')
+    // a difference that can be compared is one line in the notes chip (not a warning); Show on Aim opens the section
+    const chip = page.getByRole('button', { name: /\d notes?$/ })
     await expect(chip).toBeVisible()
-    await expect(chip).toContainText('Mount clock differs')
     expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(43.5)
     await chip.click()
+    const sheet = page.getByRole('region', { name: 'Notes' })
+    await expect(sheet).toContainText('time and place differ')
+    await sheet.getByRole('button', { name: 'Show on Aim' }).click()
     await expect(page.getByRole('tab', { name: /^Aim/ })).toHaveAttribute('aria-selected', 'true')
     const disc = page.locator('details.disc', { has: page.locator('.disc-title', { hasText: 'Mount time and place' }) })
-    await expect(disc.locator('.disc-sum')).toContainText(/differs: 3 min (11|12|13) s, 10 degrees/) // the mount's clock is whole seconds
-    await disc.locator('summary').click()
-    await expect(disc).toContainText('Go to Sun is computed from the site and time the mount holds')
+    await expect(disc).toHaveAttribute('open', '')
+    await expect(disc.locator('.disc-sum')).toContainText(/time differs by 3 min (11|12|13) s · place differs by 1110 km/) // the mount's clock is whole seconds
+    await expect(disc).toContainText("Go to sends the Pi's site and time")
     await expect(disc.locator('.clocktable')).toContainText('30.000° N')
     await expect(disc.locator('.clocktable')).toContainText('40.000° N')
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false)
@@ -1141,12 +1156,13 @@ test.describe('mount time and place (issue #104)', () => {
     await expect(send).toBeEnabled()
     expect((await send.boundingBox())!.height).toBeGreaterThanOrEqual(43.5)
     await send.click()
-    await expect(disc.locator('.disc-sum')).toContainText('matches')
-    await expect(page.locator('.chip.mountclock')).toHaveCount(0)
+    await expect(disc.locator('.disc-sum')).toContainText('time matches · place matches')
+    await expect(page.getByRole('button', { name: /\d notes?$/ })).toHaveCount(0)
     const st = (await (await page.request.get('/api/status')).json()).mount.site_time
     expect(st.ok).toBe(true)
     expect(Math.abs(st.time_diff_s)).toBeLessThan(5)
     expect(st.place_diff_deg).toBeLessThan(0.05)
+    await put(page, '/mount/auto-site-time', { enabled: true })
   })
 
   test('the API: sync needs no confirmation, and is refused without a mount', async ({ page }) => {

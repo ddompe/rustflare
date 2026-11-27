@@ -2,7 +2,7 @@
 
 RustFlare began as a solar capture server, so most of its words and tools assume the Sun. The **profile** tells it what you are imaging, so the words fit and the tools that make no sense for the target are switched off.
 
-Choose it at the top of the **Camera** tab (*What are you imaging?*):
+Choose it at the top of the **Camera** tab (*What are you imaging?*, one compact list; **What is this?** shows the longer sentence). The profile never changes the mount's tracking rate: on **Aim**, when the profile's natural rate (Lunar for the Moon, Star for planets) differs from the mount's, one tap offers to switch it. Choosing a rate there switches tracking on at that rate.
 
 | Profile | For | What changes |
 |---|---|---|
@@ -12,7 +12,7 @@ Choose it at the top of the **Camera** tab (*What are you imaging?*):
 | **Planet** | a planet (a small bright disc) | also greyed: the disc-edge and full-disc trackers (a planet has no edge to fit) and HDR lanes; the edge circle; white balance Auto is explained as turning a planet grey. **Planet centroid** tracking is on (and the default), the engine marks the planet in the picture, clipping is judged by the brightest part of the picture and auto-stretch is set by it, the flip follows the planet last gone to; FITS says `OBJECT = Planet` |
 | **Other** | anything else | nothing assumed; the Sun detector does not run (no outline, no "No Sun found"); the automatic flip is greyed (it has no body to follow); FITS has no `OBJECT` |
 
-What does not apply is **greyed, not hidden**, with the reason written under the control (a phone has no hover). The page lists the same controls in every profile, and the HTTP API refuses nothing: the profile adapts the screen and the headers, it is not a lock. A status-bar chip names the profile whenever it is not a Sun one.
+What does not apply is **greyed, not hidden**, with the reason written under the control (a phone has no hover). The page lists the same controls in every profile, and the HTTP API refuses nothing: the profile adapts the screen and the headers, it is not a lock. The **N notes** chip names the profile whenever it is not a Sun one.
 
 The profile is never changed by itself. **Go to** the Moon (or a planet, or the Sun) while another profile is chosen shows a line with a button to switch.
 

@@ -47,7 +47,7 @@ export function FocusAssist({ status }: { status: Status | null }) {
   const diff = f?.lucky != null && prevMean != null ? f.lucky - prevMean : null
   const noise = diff != null ? Math.hypot(f?.lucky_err ?? 0, prevErr) : 0
   const trend = diff == null ? null : Math.abs(diff) <= noise ? 1 : diff > 0 ? 1.1 : 0.9
-  const verdict = trend == null ? '' : trend > 1 ? '▲ sharper' : trend < 1 ? '▼ softer' : '● same (within noise)'
+  const verdict = trend == null ? '' : trend > 1 ? 'Sharper' : trend < 1 ? 'Softer' : 'Same (within noise)'
   const atBest = f?.lucky != null && f.best != null && Math.abs(f.lucky - f.best) <= Math.hypot(f.lucky_err ?? 0, f.best_err ?? 0)
   return (
     <div>

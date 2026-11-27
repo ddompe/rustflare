@@ -198,7 +198,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
               ? <button type="button" className="fm-open" onClick={() => go(f.path)}><svg className="fm-ico" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M4 2l4.5 4L4 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>{f.type === 'stacks' ? 'Stacked images' : f.name}</button>
               : <span className="fm-name">{f.name}</span>}
             {!['stack', 'recording', 'notes', 'file', 'image', 'fits', 'folder', 'day'].includes(f.type) && <span className="tag">{TYPE_LABEL[f.type] ?? f.type}</span>}
-            {f.stack && <button type="button" className="tag ok linkish" onClick={() => go(parentOf(f.stack!.output))}>Stacked ✓ show</button>}
+            {f.stack && <button type="button" className="tag ok linkish" onClick={() => go(parentOf(f.stack!.output))}>Stacked, show</button>}
             {s?.mostly_dark && <span className="tag warn" title={`${Math.round(s.dark_fraction * 100)}% of sampled frames are dark`}>Mostly dark</span>}
             {s && !s.complete && <span className="tag warn" title="The file ends early: the recording was cut off">Incomplete</span>}
           </div>
@@ -352,7 +352,7 @@ function Peek({ items, index, setIndex }: { items: Entry[]; index: number; setIn
       <header>
         <b>{f.name}</b>
         <span className="muted">{index + 1} of {items.length}{info ? ` · best ${info.kept} of ${info.frames} frames` : ''}</span>
-        <button ref={ref} type="button" onClick={() => setIndex(null)} aria-label="Close preview">✕</button>
+        <button ref={ref} type="button" onClick={() => setIndex(null)} aria-label="Close preview"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button>
       </header>
       <img alt={`Preview of ${f.name}, stretched for display`} src={`/api/stack/thumb/${f.path.replace(/^stacks\//, '')}`} />
       <footer>

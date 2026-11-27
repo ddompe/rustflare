@@ -302,7 +302,7 @@ export function HudMenu({ api }: { api: HudApi }) {
           <div className="hud-toggles">
             {HUD_ITEMS.map((i) => (
               <button key={i.id} type="button" aria-pressed={api.get(i.id).on} className={api.get(i.id).on ? 'on' : ''} title={i.when || undefined} onClick={() => api.toggle(i.id)}>
-                <span className="hud-check" aria-hidden="true">{api.get(i.id).on ? '✓' : ''}</span>{i.short}
+                <span className="hud-check" aria-hidden="true">{api.get(i.id).on ? <svg viewBox="0 0 12 12" width="12" height="12"><path d="M2.4 6.3l2.4 2.4 4.8-5.2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg> : null}</span>{i.short}
               </button>
             ))}
           </div>

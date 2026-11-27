@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { ProfilePicker } from './Profile'
 import { clipping, profileOf } from '../profile'
 import { api, CameraInfo, Control, Status } from '../api'
@@ -153,7 +153,7 @@ function Slider({ c, marks }: { c: Control; marks?: { v: number; label: string; 
 const PRIMARY = ['exposure_us', 'gain']
 
 /** Step 1: open the camera, then get a good exposure (histogram, no clipping). */
-export function CameraTab({ status, next }: { status: Status | null; next: () => void }) {
+export function CameraTab({ status, next, setup }: { status: Status | null; next: () => void; /** the first-session strip: below the exposure, so the first screen stays the picture, Start, profile and exposure */ setup?: ReactNode }) {
   const [list, setList] = useState<CameraInfo[]>([])
   const [sel, setSel] = useSetting('camera.selected', '')
   const { err, busy, run } = useAction()
@@ -185,6 +185,7 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
         {status?.startup.retrying && <p className="hint-text">Reconnecting {status.startup.camera ?? ''} {status.startup.mount ?? ''}… (mount tracking is never switched on automatically)</p>}
         <h2 className="sr-only">What are you imaging?</h2>
         <ProfilePicker status={status} />
+        {setup}
       </Section>
     )
   }
@@ -203,6 +204,7 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
           return <Slider key={c.id} c={c} marks={marks} />
         })}
       </Section>
+      {setup}
       {cam.cooler?.available && <CoolerPanel cooler={cam.cooler} />}
       {rest.length > 0 && (
         <Disclosure title="Extra controls" summary={rest.map((c) => c.label.split(' (')[0]).join(', ')}>

@@ -47,3 +47,10 @@ One line at the bottom of the screen, always there, so a message appearing never
 ## Quick capture
 
 On every tab except Aim and Record, below the picture, **▶ Start** starts the recording exactly as set up on the [Record tab](record.md) (sequence, prominence or HDR lanes; the button says which, and how many frames) and **Snap** saves a single frame. While recording, the strip shows progress and a Stop button.
+
+## Under the picture
+
+- **Start** is always there with one line saying what it keeps (*Keep video*, *Video + stack*, *Stack only*, *Best frames + stack*, or *Stacker off, saves video*). It is greyed with its reason while the mount calibrates.
+- Warnings that matter stay as their own chips (clipping, No Sun found, Mount parked, Calibrating). Information only (the profile, a planet not found yet, a mount clock that differs) is folded into one **N notes** chip that opens a short sheet.
+- On a phone the picture is smaller on the tabs that need the room for the panel (Aim, Record, More), and its tools fold behind one **Picture tools** button there. In landscape the tools sit beside the picture, never on it.
+- **Set up 2 of 4** (Camera and Aim): the steps still to do (profile, optical setup, site, mount time), each a tap to where it is done. Hide it with the cross.

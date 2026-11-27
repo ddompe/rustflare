@@ -56,7 +56,7 @@ The AM3 stops tracking at its own limit past the meridian (about 19 minutes on 2
 
 **"Stack only" is refused.** It needs the stacker, and there is no stacker connected: `sudo systemctl start rustflare-stack`.
 
-**A stack was made but I wanted the video.** Choose *Keep the video* or *Video and stack* before recording. A burst that was not written cannot be recovered.
+**A stack was made but I wanted the video.** Choose *Keep video* or *Video + stack* before recording. A burst that was not written cannot be recovered.
 
 ## Clock and site
 

@@ -113,7 +113,7 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick 
                     <p>{n.text}</p>
                     <div className="btnrow tight wrap">
                       {n.send && <button type="button" className="small" disabled={sending || !!sendWhy} aria-describedby={sendWhy ? 'notes-send-why' : undefined} onClick={() => { setSending(true); api('POST', '/mount/sync-site-time').catch((e) => reportError(e, 'Sending the site and time')).finally(() => setSending(false)) }}>{sending ? 'Sending…' : 'Send now'}</button>}
-                      {n.tab && <button type="button" className="small" onClick={() => { setSheet(false); goto(n.tab!, n.focus) }}>{n.focus ? `Show on ${n.tabLabel}` : `Open ${n.tabLabel}`}</button>}
+                      {n.focus && n.tab && <button type="button" className="small" onClick={() => { setSheet(false); goto(n.tab!, n.focus) }}>{n.focus ? `Show on ${n.tabLabel}` : `Open ${n.tabLabel}`}</button>}
                     </div>
                     {n.send && sendWhy && <p className="hint-text gate-why" id="notes-send-why">{sendWhy}</p>}
                   </li>
