@@ -1,6 +1,6 @@
 # What are you imaging? (profiles)
 
-RustFlare began as a solar capture server, so most of its words and tools assume the Sun. The **profile** tells it what you are imaging, so the words fit and the tools that make no sense for the target are switched off.
+RustFlare began as a solar imaging server, so most of its words and tools assume the Sun. The **profile** tells it what you are imaging, so the words fit and the tools that make no sense for the target are switched off.
 
 Choose it at the top of the **Camera** tab (*What are you imaging?*, one compact list; **What is this?** shows the longer sentence). The profile never changes the mount's tracking rate: on **Aim**, when the profile's natural rate (Lunar for the Moon, Star for planets) differs from the mount's, one tap offers to switch it. Choosing a rate there switches tracking on at that rate.
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=Rustflare solar capture server
+Description=Rustflare solar and planetary imaging server
 Documentation=https://github.com/ddompe/rustflare
 After=network-online.target
 Wants=network-online.target

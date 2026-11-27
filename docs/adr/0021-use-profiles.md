@@ -4,7 +4,7 @@ Date: 2026-11-26. Status: accepted (simulators only; nothing here has run on a r
 
 ## Context
 
-RustFlare began as a solar capture server and assumed the Sun in its words, its defaults, its logic (detector, the one Sun model, the meridian flip, the guider's hold) and its metadata. The owner also images the Moon, and planets with a cooled colour camera in SER video mode with a small region of interest, stacked off the Pi. See `docs/project/proposal-use-profiles.md` for the inventory.
+RustFlare began as a solar imaging server and assumed the Sun in its words, its defaults, its logic (detector, the one Sun model, the meridian flip, the guider's hold) and its metadata. The owner also images the Moon, and planets with a cooled colour camera in SER video mode with a small region of interest, stacked off the Pi. See `docs/project/proposal-use-profiles.md` for the inventory.
 
 ## Decision
 

@@ -18,7 +18,7 @@
   <sub>One cycle of a prominence recording, straight from a RustFlare session in H-alpha (colour added for display): the disc lane (left) and the long-exposure lane with the coronagraph mask (right).</sub>
 </p>
 
-Headless, web-controlled **solar, lunar and planetary capture** in Rust. Run it on a Raspberry Pi next to the telescope, open a web page from your phone or laptop (an iPhone Home Screen app works well), and take the Sun (or the Moon, or a planet) from "where is it?" to a saved recording without a keyboard. It began as a solar tool and the Sun is still the best-supported target. The installed version is shown in the corner of the status bar.
+Headless, web-controlled **solar and planetary imaging** in Rust (planetary includes the Moon). Run it on a Raspberry Pi next to the telescope, open a web page from your phone or laptop (an iPhone Home Screen app works well), and take the Sun (or the Moon, or a planet) from "where is it?" to a saved recording without a keyboard. It began as a solar tool and the Sun is still the best-supported target. The installed version is shown in the corner of the status bar.
 
 ## Features
 

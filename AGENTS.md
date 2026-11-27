@@ -1,6 +1,6 @@
 # Working on RustFlare (for coding agents and new contributors)
 
-RustFlare is a Rust + React solar, lunar and planetary capture server for a Raspberry Pi: a web UI and REST API in front of a camera, a mount (ZWO AM3 family, iOptron CEM70 series and HAE69C, simulator), a Sun (or Moon, or planet) tracker and guider, a raw recorder and a separate stacker. Read [docs/project/architecture.md](docs/project/architecture.md) and [docs/project/development.md](docs/project/development.md) first; decisions are in [docs/adr/](docs/adr/).
+RustFlare is a Rust + React solar and planetary imaging server for a Raspberry Pi: a web UI and REST API in front of a camera, a mount (ZWO AM3 family, iOptron CEM70 series and HAE69C, simulator), a Sun (or Moon, or planet) tracker and guider, a raw recorder and a separate stacker. Read [docs/project/architecture.md](docs/project/architecture.md) and [docs/project/development.md](docs/project/development.md) first; decisions are in [docs/adr/](docs/adr/).
 
 ## Build and test (all of this runs without hardware)
 

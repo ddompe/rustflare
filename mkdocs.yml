@@ -1,5 +1,5 @@
 site_name: RustFlare
-site_description: Headless, web-controlled solar, lunar and planetary capture for Raspberry Pi
+site_description: Headless, web-controlled solar and planetary imaging for Raspberry Pi
 docs_dir: docs
 nav:
   - Home: index.md

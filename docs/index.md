@@ -4,7 +4,7 @@
 
 *One cycle of a prominence recording, straight from a RustFlare session in H-alpha (colour added for display): the disc lane (left) and the long-exposure lane with the coronagraph mask (right).*
 
-RustFlare is headless solar, lunar and planetary capture for a Raspberry Pi (the Sun is the best-supported target). It runs next to your telescope and you control it from the web browser on your phone: live view, Go to the Sun, Moon or a planet, tracking and guiding, and recording in SER, FITS or PNG.
+RustFlare is headless solar and planetary imaging for a Raspberry Pi (planetary includes the Moon; the Sun is the best-supported target). It runs next to your telescope and you control it from the web browser on your phone: live view, Go to the Sun, Moon or a planet, tracking and guiding, and recording in SER, FITS or PNG.
 
 This site has three parts.
 

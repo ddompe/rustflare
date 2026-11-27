@@ -3,7 +3,7 @@ name = "rustflare-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Headless web-controlled solar capture server"
+description = "Headless web-controlled solar and planetary imaging server"
 
 
 [features]
@@ -43,7 +43,7 @@ name = "rustflare"
 maintainer = "Rustflare contributors"
 copyright = "2026, Rustflare contributors (portions Filip Szczerek, MIT)"
 license-file = ["../../LICENSE", "0"]
-extended-description = "Headless web-controlled solar capture: Player One camera, ZWO mount, Sun tracking, guiding, flats."
+extended-description = "Headless web-controlled solar and planetary imaging: Player One and ZWO cameras, ZWO and iOptron mounts, tracking, guiding, flats."
 section = "science"
 priority = "optional"
 depends = "libc6 (>= 2.36), libusb-1.0-0, python3, curl, ca-certificates"

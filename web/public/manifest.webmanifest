@@ -1,7 +1,7 @@
 {
   "name": "RustFlare",
   "short_name": "RustFlare",
-  "description": "Solar capture, tracking and guiding",
+  "description": "Solar and planetary imaging, tracking and guiding",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
