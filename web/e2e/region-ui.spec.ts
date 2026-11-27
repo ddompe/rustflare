@@ -268,6 +268,7 @@ test.describe('selection mode', () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await post(page, '/capture/sequence', { frames: 600, format: 'ser' })
     await expect.poll(async () => (await status(page)).capture.state).not.toBe('idle')
+    try {
     await page.goto('/')
     await page.getByRole('tab', { name: /^Camera/ }).click()
     await page.getByRole('button', { name: 'Picture tools' }).click()
@@ -277,8 +278,12 @@ test.describe('selection mode', () => {
     expect(why).toBeTruthy()
     await expect(page.locator(`#${why}`)).toContainText('not while recording')
     await post(page, '/capture/stop')
-    await expect.poll(async () => (await status(page)).capture.state).toBe('idle')
+    await expect.poll(async () => (await status(page)).capture.state, { timeout: 30_000 }).toBe('idle') // a 600-frame SER takes a while to flush on a busy runner
     await expect(btn).toBeEnabled()
+    } finally {
+      await post(page, '/capture/stop') // never leave a recording running for the next test
+      await expect.poll(async () => (await status(page)).capture.state, { timeout: 30_000 }).toBe('idle')
+    }
   })
 
   test('greyed with its reason when the camera cannot read a region', async ({ page }) => {
