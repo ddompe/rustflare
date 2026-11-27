@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { ProfilePicker } from './Profile'
+import { noun, profileOf } from '../profile'
 import { api, CameraInfo, Control, Status } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
@@ -160,7 +162,8 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
   if (!cam) {
     return (
       <Section title="Open the camera" error={err}>
-        <p className="lead">Pick your camera to see the Sun.</p>
+        <ProfilePicker status={status} />
+        <p className="lead">Pick your camera to see the {noun(profileOf(status))}.</p>
         <div className="field">
           <label htmlFor="cam-pick">Camera</label>
           <select id="cam-pick" value={sel} onChange={(e) => setSel(e.target.value)}>
@@ -181,6 +184,9 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
   const rest = cam.controls.filter((c) => !PRIMARY.includes(c.id))
   return (
     <>
+      <Section title="What are you imaging?">
+        <ProfilePicker status={status} />
+      </Section>
       <Section error={err}>
         {cam.histogram.length > 0 && <Histogram bins={cam.histogram} saturated={cam.saturated} />}
         {primary.map((c) => {

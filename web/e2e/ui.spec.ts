@@ -667,3 +667,71 @@ test('the stacker settings are on the Record tab too, and change the same settin
   await expect.poll(async () => (await cfg()).multipoint).toBe(before.multipoint)
   await expect(page.getByRole('switch', { name: 'Black disc on prominence stacks' })).toBeVisible()
 })
+
+test.describe('use profiles: the words and the enabled tools follow what is imaged, nothing is hidden', () => {
+  const setProfile = (page: Page, id: string) => put(page, '/profile', { id })
+  const profile = async (page: Page) => ((await (await page.request.get('/api/status')).json()) as { profile: string }).profile
+  test.afterEach(async ({ page }) => { await setProfile(page, 'sun_ha') })
+
+  test('the profile is set through the API, validated, remembered by the status, and names the FITS target', async ({ page }) => {
+    expect(await profile(page)).toBe('sun_ha')
+    expect((await setProfile(page, 'comet')).status()).toBe(400)
+    expect((await setProfile(page, 'moon')).ok()).toBe(true)
+    expect(await profile(page)).toBe('moon')
+  })
+
+  test('the picker on the Camera tab changes the profile and the chip says so', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Camera/ }).click()
+    await page.getByRole('radio', { name: 'Moon' }).click()
+    await expect.poll(() => profile(page)).toBe('moon')
+    await expect(page.locator('.chip.profile')).toContainText('Moon')
+    await page.getByRole('radio', { name: 'Sun, H-alpha' }).click()
+    await expect.poll(() => profile(page)).toBe('sun_ha')
+    await expect(page.locator('.chip.profile')).toHaveCount(0)
+  })
+
+  test('what does not apply is greyed with its reason, and is still on the page', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Record/ }).click()
+    const prom = page.getByRole('radio', { name: '+ Prominence' })
+    const hdr = page.getByRole('radio', { name: 'HDR lanes' })
+    await expect(prom).toBeEnabled(); await expect(hdr).toBeEnabled()
+    await setProfile(page, 'moon')
+    await expect(prom).toBeDisabled(); await expect(hdr).toBeEnabled()
+    await expect(page.getByText(/Prominence recordings pair a disc exposure/).first()).toBeVisible()
+    await setProfile(page, 'planet')
+    await expect(prom).toBeDisabled(); await expect(hdr).toBeDisabled() // greyed, not removed
+    await expect(page.getByText(/Exposure lanes bracket a bright and a dark scene/)).toBeVisible()
+    await page.getByRole('tab', { name: /^Track/ }).click()
+    await expect(page.getByRole('radio', { name: 'Disc edge' })).toBeDisabled()
+    await expect(page.getByRole('radio', { name: 'Feature' })).toBeEnabled()
+    await expect(page.getByText(/there is no edge to fit/).first()).toBeVisible()
+    await page.getByRole('tab', { name: /^More/ }).click()
+    await page.getByText('Display', { exact: true }).first().click()
+    await expect(page.getByRole('switch', { name: 'Prominence view (software coronagraph)' })).toBeDisabled()
+    await expect(page.getByRole('switch', { name: 'Planet edge circle' })).toBeDisabled()
+  })
+
+  test('the Sun profile still has everything enabled (what the app did before profiles)', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Record/ }).click()
+    await expect(page.getByRole('radio', { name: '+ Prominence' })).toBeEnabled()
+    await expect(page.getByRole('radio', { name: 'HDR lanes' })).toBeEnabled()
+    await page.getByRole('tab', { name: /^Track/ }).click()
+    await expect(page.getByRole('radio', { name: 'Disc edge' })).toBeEnabled()
+  })
+
+  test('Go to the Moon offers the Moon profile, and never switches by itself', async ({ page }) => {
+    await put(page, '/site', { latitude: 29.5, longitude: -96 })
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Aim/ }).click()
+    const sel = page.getByLabel('Go to target')
+    await expect(sel).toBeVisible()
+    await sel.selectOption('moon')
+    await expect(page.getByText(/Switch to the Moon profile|Switch to Moon/)).toBeVisible()
+    expect(await profile(page)).toBe('sun_ha')
+    await page.getByRole('button', { name: 'Switch to Moon' }).click()
+    await expect.poll(() => profile(page)).toBe('moon')
+  })
+})

@@ -84,6 +84,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/coronagraph", put(coronagraph))
         .route("/api/mount/autoflip", put(mount_autoflip))
         .route("/api/colour", put(colour))
+        .route("/api/profile", put(profile))
         .route("/api/focus", put(focus))
         .route("/api/camera/roi", put(camera_roi))
         .route("/api/session-log", put(session_log))
@@ -563,6 +564,13 @@ struct FocusBody { enabled: bool, #[serde(default)] reset: bool }
 /// Focus assist: a sharpness score and its history while the user turns the focuser by hand.
 async fn focus(s: State<AppState>, Json(b): Json<FocusBody>) -> Res {
     run(s, Command::SetFocus { enabled: b.enabled, reset: b.reset }).await
+}
+
+#[derive(Deserialize)]
+struct ProfileBody { id: String }
+/// What is being imaged (`sun_white`, `sun_ha`, `moon`, `planet`, `other`). The API accepts any profile with any setting: the profile adapts the UI and the FITS headers, it does not refuse anything.
+async fn profile(s: State<AppState>, Json(b): Json<ProfileBody>) -> Res {
+    run(s, Command::SetProfile { id: b.id }).await
 }
 
 #[derive(Deserialize)]
