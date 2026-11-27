@@ -15,11 +15,11 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `PUT /api/storage/reserve` | `{"gb": 2 to 100}`: how much of the internal disk a recording must leave free (default 8). `GET /api/storage` marks the internal disk with `internal: true` and its `reserve_bytes`, and lists it among the candidates |
 | `PUT /api/storage` | `{"path"}`: choose a location (a folder on a drive); refused while capturing |
 | `GET /api/mount/detect` | the serial ports, each with `driver` and `model` when a mount we drive answered a read-only question there (ZWO `:GVP#` at 9600 baud, iOptron `:MountInfo#` at 115200); a few hundred ms a port; no answers while a mount is connected |
-| `PUT /api/profile` | `{id}`: what is imaged, one of `sun_white`, `sun_ha` (default), `moon`, `planet`, `other`. Saved in the settings file, reported as `status.profile`, used for the FITS `OBJECT` and by the UI for its words and its greyed controls; the API refuses nothing because of it |
+| `PUT /api/profile` | `{id}`: what is imaged, one of `sun_white`, `sun_ha` (default), `moon`, `planet`, `other`. Saved in the settings file, reported as `status.profile`, used for the FITS `OBJECT`, the target of the meridian flip and its tracking rate (`flip_target`), the expected size, the default name of an unnamed recording (`Moon`, the planet's name), which measurer finds the target (disc and limb for the Sun and Moon, the brightest small disc for a planet, none for `other`), the clipping rule (the planet: `camera.peak`) and by the UI for its words and its greyed controls; the API refuses nothing because of it |
 | `PUT /api/optics` | `{"focal_length_mm"?,"pixel_size_um"?,"binning"}` |
 | `GET/PUT /api/preview` | `{"stretch"}`: auto-stretch of the live view |
 
-`Status` has `optics`, `sun` (located Sun: pos, radius, partial), `camera` (name, controls, fps, mean, saturation, histogram, size), `mount`, `tracking` (mode, x, y, radius, lost), `guiding` (state, calibration, target, error_px), `capture` (state, phase, done, total, file, last_file), `error`.
+`Status` has `optics`, `sun` (located target: pos, radius, partial; for the Moon profile the Moon, for the planet profile the planet, absent for Other), `camera` (name, controls, fps, mean, saturation, `peak`, histogram, size; for a colour camera also `histogram_rgb` and `saturated_rgb`), `mount`, `tracking` (mode, x, y, radius, lost), `guiding` (state, calibration, target, error_px), `capture` (state, phase, done, total, file, last_file), `error`.
 
 ## Camera
 
@@ -48,7 +48,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 
 | | body |
 |---|---|
-| `POST /api/tracking/start` | `{"mode":"limb"}` (optional `"radius"` px; default from Optics), `{"mode":"sun_disc"}`, `{"mode":"anchor","x":640,"y":480}` |
+| `POST /api/tracking/start` | `{"mode":"planet"}` (centroid of the brightest small disc: a planet), `{"mode":"limb"}` (optional `"radius"` px; default from Optics), `{"mode":"sun_disc"}`, `{"mode":"anchor","x":640,"y":480}` |
 | `POST /api/tracking/stop` | |
 | `POST /api/guiding/calibrate` | needs tracking + mount sky tracking |
 | `POST /api/guiding/start` | `{"center":true}` moves the target to the frame centre, otherwise holds the current position; needs calibration |
@@ -82,7 +82,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `POST /api/mount/flip` | meridian flip assist: `{"record_only":true}` saves the pointing and the Sun's place; `{"confirm":true}` flips and re-centres; `{"confirm":true,"restore":true}` re-centres after a manual flip. Needs an idle camera |
 | `PUT /api/mount/autoflip` | `{"enabled","record_min"?,"flip_min"?}`: unattended flip (minutes before the meridian to record, minutes after to flip). `status.auto_flip` carries `stage`, `message` and `resume_pending` |
 
-`status` also carries `site`, `sky_sun` (altitude/azimuth/RA/Dec of the Sun now), `clock.ntp_synchronized` and `flats` (`available`, `applied`, `name`).
+`status` also carries `site`, `sky_sun` (altitude/azimuth/RA/Dec of the Sun now), `target` (`{id, name}`: what the profile images; null for `other` and for `planet` until a planet was gone to), `flip_target` (the body the meridian flip follows: `{id, name, ra_hours, dec_deg, hour_angle_h, minutes_to_meridian, rate}`; for the Sun the same numbers as `sky_sun`, for the Moon its own hour-angle rate, `rate` is what is restored after a flip), `optics.target_radius_arcsec` (the Sun's, the Moon's or the planet's apparent radius), `clock.ntp_synchronized` and `flats` (`available`, `applied`, `name`).
 
 ## Storage and captures
 

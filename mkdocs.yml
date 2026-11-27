@@ -50,6 +50,7 @@ nav:
           - adr/0014-zwo-asi-cameras.md
           - adr/0015-ble-mount-transport.md
           - adr/0016-optional-https-and-password.md
+          - adr/0021-use-profiles.md
           - adr/template.md
       - ZWO mount Bluetooth protocol: project/zwo-ble-protocol.md
       - Roadmap and status: project/roadmap.md

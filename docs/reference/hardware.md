@@ -62,6 +62,6 @@ What works through the protocol: Go to (`:MS1#`, falling back to the counterweig
 
 ## Simulators
 
-`simulator` camera and mount are always available. The simulated Sun drifts, responds to mount motion, and has a *Sim scene* control (0 = Sun, 1 = vignetted flat field) for testing flats.
+`simulator` camera and mount are always available. The simulated Sun drifts, responds to mount motion, and has a *Sim scene* control (0 = Sun, 1 = vignetted flat field for testing flats, 2 = Moon with a phase (*Sim Moon phase*, 0 new, 0.5 full), 3 = a 25 px planet with two small moons and *Sim seeing jitter*). Scenes 2 and 3 start at the frame centre and move with the mount like the Sun; on the colour simulator the Moon is nearly neutral and the planet orange.
 
 To add a driver for another camera or mount, see the [development guide](../project/development.md#adding-a-camera-or-mount).

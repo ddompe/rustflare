@@ -10,6 +10,8 @@ Exposure and gain take typed values or the slider. The exposure slider is logari
 
 Use the **histogram**: the bright part of the disc should sit clear of the right edge. A *Clipping* warning means too much exposure or gain.
 
+With a **colour camera** the histogram shows three curves, red, green and blue, drawn over each other in their own colours. Each channel is counted from its own photosites of the raw mosaic, so a red curve pushed against the right edge means the red channel is clipping even when the picture looks fine. A coloured marker at the right edge appears for every channel that clips, and the message names them (*R 1.2%, B 0.4%*). A mono camera shows the single blue-grey histogram as before. On the Planet profile, clipping means the brightest part of the picture (the planet) reaches full scale; see [profiles](profiles.md).
+
 Under the gain slider, **HCG** and **Unity** marks show where the camera's high conversion gain switches on and where one electron equals one count, when the [device catalog](../reference/hardware.md) knows them for your camera (the ZWO ASI533MC Pro: both at gain 100). Gain at or above the HCG mark gives much lower read noise, which suits short exposures of the Sun, Moon and planets. The mark's tooltip says where the number comes from.
 
 ## Cooler (cooled cameras)
