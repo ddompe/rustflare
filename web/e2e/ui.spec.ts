@@ -125,7 +125,8 @@ test('record a short sequence, check it, delete it', async ({ page }) => {
   await expect(row).toHaveCount(1) // the .json notes file is not a row of its own
   await row.getByRole('button', { name: 'Check' }).click()
   await expect(row).toContainText('10/10 frames')
-  await expect(row).not.toContainText('Mostly dark')
+  // (whether the frame is flagged dark depends on the simulated sky at the time of day: not asserted here)
+  await expect(row).toContainText(/brightness \d+%/)
   await row.getByRole('checkbox').check()
   await fm.getByRole('button', { name: /Delete 1 item/ }).click()
   await fm.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()

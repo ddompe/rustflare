@@ -472,3 +472,18 @@ test.describe('the colour histogram is readable without colour (accessibility)',
     await post(page, '/camera/open', { driver: 'simulator', id: 'sim0' })
   })
 })
+
+test('the five tabs fit their bar with a wide font in a narrow landscape column (no sideways scroll)', async ({ page }) => {
+  await page.setViewportSize({ width: 667, height: 375 })
+  await page.goto('/')
+  await page.addStyleTag({ content: '* { font-family: Verdana, DejaVu Sans !important }' })
+  await page.waitForTimeout(300)
+  const r = await page.evaluate(() => {
+    const bar = document.querySelector('.tabs')!.getBoundingClientRect()
+    const bs = [...document.querySelectorAll('.tabs button')].map((x) => x.getBoundingClientRect())
+    return { barRight: bar.right, lastRight: bs[bs.length - 1].right, minWidth: Math.min(...bs.map((b) => b.width)), scrollW: document.documentElement.scrollWidth, innerW: innerWidth }
+  })
+  expect(r.lastRight).toBeLessThanOrEqual(r.barRight + 1)
+  expect(r.scrollW).toBeLessThanOrEqual(r.innerW)
+  expect(r.minWidth, 'a tab is at least 44 px wide').toBeGreaterThanOrEqual(44)
+})
