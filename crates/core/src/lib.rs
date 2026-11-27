@@ -10,7 +10,7 @@ pub mod geom;
 pub mod mount;
 pub mod sim;
 
-pub use camera::{centred_roi, Camera, CameraDriver, CameraInfo, ControlDesc, Roi};
+pub use camera::{centred_roi, Camera, CameraDriver, CameraInfo, ControlDesc, CoolerRequest, CoolerStatus, Roi};
 pub use error::{Error, Result};
 pub use frame::{BayerPattern, Frame, PixelFormat};
 pub use geom::{Mat2, Vec2};

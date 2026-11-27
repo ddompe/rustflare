@@ -19,13 +19,25 @@ Controls exposed: exposure (µs), gain, offset, 8/16-bit output. Colour cameras 
 
 ZWO ASI cameras are driven through ZWO's userspace library `libASICamera2`, which RustFlare **loads at run time** (`dlopen`); it is never linked or bundled. On Raspberry Pi OS / Debian install it with `sudo apt install libasi` (the `.deb` lists it as *Recommends*, so apt installs it by default). Without it the ASI driver lists no cameras and opening one reports `install it with: sudo apt install libasi`. Build with `--features asi`; see [ADR 0014](../adr/0014-zwo-asi-cameras.md).
 
-Controls exposed: exposure (µs), gain, offset, USB bandwidth (%), 8/16-bit output. Mono cameras only for now. The `libasi` package ships its own udev rule (`/usr/lib/udev/rules.d/99-asi.rules`: vendor id `03c3`, mode 0666, and `usbfs_memory_mb=200`), so RustFlare adds none. The same vendor id covers the ZWO AM3/AM5 mount (a serial device), which the rule leaves usable.
+Controls exposed: exposure (µs), gain, offset, USB bandwidth (%), 8/16-bit output. For a cooled camera also the **cooler** (see below). Colour cameras are reported with their Bayer pattern. The `libasi` package ships its own udev rule (`/usr/lib/udev/rules.d/99-asi.rules`: vendor id `03c3`, mode 0666, and `usbfs_memory_mb=200`), so RustFlare adds none. The same vendor id covers the ZWO AM3/AM5 mount (a serial device), which the rule leaves usable.
 
 **ASI174MM Mini** (USB id `03c3:1749`), from [ZWO's Mini Cameras page](https://www.zwoastro.com/product/mini-cameras/): Sony IMX174 (global shutter), 1/1.2" (11.3 × 7.1 mm), 1936 × 1216, 5.86 µm pixels, 12-bit ADC, read noise 3.5 e-, full well 32 ke-, peak QE 77 %, USB 3.0, up to 164 fps (ZWO's figure).
 
 !!! note "Status: verified on a real ASI174MM Mini (Raspberry Pi 5, libasi 1.27)"
     Verified: enumeration, opening, controls (exposure 32 µs to 2000 s, gain 0-400, offset 0-240, USB bandwidth 40-100 %, 8/16-bit), 1936 × 1216 frames, pixel size 5.86 µm, temperature readout (about 38-41 °C idle), RAW16 scaled to the full 16-bit range (mean level matches the 8-bit stream).
     **Frame rate:** the camera enumerated at **USB 2.0 speed (480 Mbit/s)** on the Pi's USB 2 port, so it measured **8.7 fps at 16-bit and 17.3 fps at 8-bit (full frame)**, independent of exposure from 1 to 10 ms: the USB 2 link (about 40 MB/s) is the limit, not the driver. ZWO's 164 fps needs a USB 3 port and cable (blue Pi port), and was **not measured**.
+
+
+### ZWO cooled cameras (ASI533MC Pro and relatives): cooler, fan, anti-dew heater
+
+The driver offers a cooler only when the camera says `IsCoolerCam` **and** the SDK lists a writable `ASI_COOLER_ON` control (`ASIGetControlCaps`). The fan (`ASI_FAN_ON`) and the anti-dew heater (`ASI_ANTI_DEW_HEATER`) appear only where the SDK lists them, the target range is the one the SDK reports for `ASI_TARGET_TEMP`. Control numbers (counted from the `ASI_CONTROL_TYPE` enum of `ASICamera2.h`): `ASI_TEMPERATURE` 8 (ten times the temperature), `ASI_COOLER_POWER_PERC` 15 (read only), `ASI_TARGET_TEMP` 16 (whole degrees, not times ten), `ASI_COOLER_ON` 17, `ASI_FAN_ON` 19, `ASI_ANTI_DEW_HEATER` 21. Changing them does not stop a running stream. The Camera tab and `PUT /api/camera/cooler` ([API](api.md)) drive them; switching off a cold sensor ramps the target first (see the [camera guide](../guide/camera.md)). The Player One driver does not expose its cooler yet (the SDK has the calls; the trait takes them).
+
+!!! note "Status: tested against a fake SDK and the simulator only"
+    Not yet tried on a real cooled ZWO camera. To check on one: the Cooler section appears; setting a target of -10 and switching on lowers the sensor temperature and raises the power; the fan and heater switches click through; switching off while cold warms by 1 degree per 15 s and then the cooler turns off.
+
+**ASI533MC Pro** (IMX533, colour), from [ZWO's ASI533 Pro page](https://www.zwoastro.com/product/asi533-pro-series/), [its product page](https://www.zwoastro.com/product/asi533mc-pro/) and the [ASI533 manual](https://astronomy-imaging-camera.com/manuals/ASI533_Manual_EN.pdf): Sony IMX533, 1" (11.31 × 11.31 mm), 3008 × 3008, 3.76 µm pixels, 14-bit ADC, full well 50 ke-, read noise 1.0 to 3.8 e- depending on gain (1.53 e- at gain 100), peak QE about 80 % (colour), 20 fps at full resolution on USB 3.0, two-stage TEC with Delta T 35 °C below ambient, DDR3 256 MB. Gain 100 (offset 70) is ZWO's default "Unity Gain" setting for it, and gain 100 is where ZWO's cameras of this family switch on high conversion gain (stated in ZWO's ASI2600 text; the ASI533 pages do not say "HCG", so the catalog marks it and says so).
+
+The catalog (`crates/server/data/catalog.json`) carries `hcg_gain` for the ZWO cameras whose switch point ZWO's own pages state: ASI294 (120), ASI662 (200), ASI2600 (100), ASI664 (180) and the ASI533 (100, see above). Not stated on ZWO's ASI585, ASI678, ASI715, ASI676 or ASI183 pages as fetched, so they have none yet (retailers quote 252 for the ASI585 and 182 for the ASI678; add them when ZWO's manual is checked).
 
 
 ## ZWO AM3 / AM5 mounts

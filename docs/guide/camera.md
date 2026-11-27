@@ -10,6 +10,21 @@ Exposure and gain take typed values or the slider. The exposure slider is logari
 
 Use the **histogram**: the bright part of the disc should sit clear of the right edge. A *Clipping* warning means too much exposure or gain.
 
+Under the gain slider, **HCG** and **Unity** marks show where the camera's high conversion gain switches on and where one electron equals one count, when the [device catalog](../reference/hardware.md) knows them for your camera (the ZWO ASI533MC Pro: both at gain 100). Gain at or above the HCG mark gives much lower read noise, which suits short exposures of the Sun, Moon and planets. The mark's tooltip says where the number comes from.
+
+## Cooler (cooled cameras)
+
+A camera with a thermoelectric cooler (for example the ZWO ASI533MC Pro) gets a **Cooler** section. It has:
+
+- the **Cooler** switch and a **Target temperature** slider (the range comes from the camera), with the sensor temperature, the **cooler power** in percent and a short history graph (about ten minutes, dashed line is the power);
+- **Fan** and **Anti-dew heater** switches, shown only when the camera has them.
+
+Cooling helps long exposures; for the few milliseconds of a Sun or planet frame it changes little, so leaving it off is fine. Set the target first, then switch on: the camera needs a few minutes to get there and the power readout settles when it has.
+
+**Switching off is gentle.** While the sensor is cold (below 15 degrees) a request to switch the cooler off raises the target 1 degree every 15 seconds (about 4 degrees a minute) and switches off when the sensor is near room temperature, or when the cooler is idle. The switch reads *Warming the sensor before switching off*, and **Switch off now** cuts the cooler at once if you must. A sensor warmed too fast is stressed and its window mists; do not cover or open a cold camera. The cooler is not switched on by itself, and closing the camera in RustFlare leaves it as it was.
+
+The simulator has a cooled colour camera ("Simulated cooled colour camera (RGGB)") for trying it out; its sensor moves about a degree a second.
+
 ## Frame size
 
 **Frame size** reads out only the centre 75, 50 or 25 % of the sensor. That gives a higher frame rate for the same USB bandwidth, for example about 150 fps instead of 57 on one Player One camera (see [Performance](../reference/performance.md)). Tracking restarts when you change it.

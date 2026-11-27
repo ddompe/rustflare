@@ -673,4 +673,58 @@ test('the software version is in the corner of the status bar', async ({ page })
   const v = ((await (await page.request.get('/api/status')).json()) as { version: string }).version
   expect(v).toMatch(/^\d+\.\d+\.\d+/)
   await expect(page.locator('.sbar .sbar-ver')).toHaveText(`v${v}`)
+
+test.describe('cooled camera', () => {
+  const status = async (page: Page) => (await (await page.request.get('/api/status')).json()) as { camera?: { temperature_c: number | null; cooler: { available: boolean; on: boolean; target_c: number | null; power_pct: number | null; warming_up: boolean; fan: boolean | null; heater: boolean | null } } }
+  const openCooled = async (page: Page) => {
+    await post(page, '/camera/close')
+    await post(page, '/camera/open', { driver: 'simulator', id: 'sim_cooled' })
+    await expect.poll(async () => (await status(page)).camera?.cooler.available).toBe(true)
+  }
+  test.afterEach(async ({ page }) => { await put(page, '/camera/cooler', { on: false, immediate: true }) })
+
+  test('an uncooled camera has no cooler section and the API refuses', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Camera/ }).click()
+    await expect(page.getByRole('heading', { name: 'Cooler' })).toHaveCount(0)
+    expect((await status(page)).camera?.cooler.available).toBe(false)
+    expect((await put(page, '/camera/cooler', { on: true })).ok()).toBe(false)
+  })
+
+  test('the cooler section switches the cooler, sets the target and shows power and temperature', async ({ page }) => {
+    await openCooled(page)
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Camera/ }).click()
+    await expect(page.getByRole('heading', { name: 'Cooler' })).toBeVisible()
+    await expect(page.getByRole('switch', { name: 'Fan' })).toBeVisible()
+    await expect(page.getByRole('switch', { name: 'Anti-dew heater' })).toBeVisible()
+    const sw = page.getByRole('switch', { name: /^Cooler/ })
+    await expect(sw).not.toBeChecked()
+    expect((await put(page, '/camera/cooler', { target_c: -20 })).ok()).toBe(true)
+    await expect.poll(async () => (await status(page)).camera?.cooler.target_c).toBe(-20)
+    await sw.click()
+    await expect.poll(async () => (await status(page)).camera?.cooler.on).toBe(true)
+    // the simulated sensor cools about a degree a second and the cooler works for it
+    await expect.poll(async () => (await status(page)).camera?.temperature_c ?? 99, { timeout: 15_000 }).toBeLessThan(20)
+    await expect(page.getByTestId('cooler-power')).not.toHaveText('0 %', { timeout: 15_000 })
+    await page.getByRole('switch', { name: 'Anti-dew heater' }).click()
+    await expect.poll(async () => (await status(page)).camera?.cooler.heater).toBe(true)
+  })
+
+  test('switching off a cold sensor warms it gradually, and can be forced', async ({ page }) => {
+    await openCooled(page)
+    await put(page, '/camera/cooler', { target_c: -20, on: true })
+    await expect.poll(async () => (await status(page)).camera?.temperature_c ?? 99, { timeout: 15_000 }).toBeLessThan(10)
+    const r = await put(page, '/camera/cooler', { on: false })
+    expect(((await r.json()) as { warming_up: boolean }).warming_up).toBe(true)
+    const c = (await status(page)).camera!.cooler
+    expect(c.on).toBe(true) // still on: the target is raised step by step
+    expect(c.warming_up).toBe(true)
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Camera/ }).click()
+    await expect(page.getByText('Warming the sensor before switching off')).toBeVisible()
+    await page.getByRole('button', { name: 'Switch off now' }).click()
+    await expect.poll(async () => (await status(page)).camera?.cooler.on).toBe(false)
+    expect((await status(page)).camera?.cooler.warming_up).toBe(false)
+  })
 })

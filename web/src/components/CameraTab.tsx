@@ -7,6 +7,7 @@ import { DeviceCard } from './DeviceCard'
 import { RoiControl } from './RoiControl'
 import { ColourControl } from './ColourControl'
 import { FocusAssist } from './FocusAssist'
+import { CoolerPanel } from './CoolerPanel'
 import { CameraCatalog, useDatasheet } from '../datasheet'
 
 const fmt = (c: Control, v: number) => {
@@ -188,6 +189,7 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
           return <Slider key={c.id} c={c} marks={marks} />
         })}
       </Section>
+      {cam.cooler?.available && <CoolerPanel cooler={cam.cooler} />}
       {rest.length > 0 && (
         <Disclosure title="More camera controls" summary={rest.map((c) => c.label.split(' (')[0]).join(', ')}>
           {rest.map((c) => <Slider key={c.id} c={c} />)}

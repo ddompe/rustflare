@@ -9,6 +9,8 @@ pub struct CameraStatus {
     pub name: String,
     pub controls: Vec<ControlDesc>,
     pub temperature_c: Option<f64>,
+    /// The cooler of a cooled camera (`available: false` and nothing else for an uncooled one).
+    pub cooler: CoolerView,
     pub width: u32,
     pub height: u32,
     pub bits: u32,
@@ -21,6 +23,22 @@ pub struct CameraStatus {
     pub saturated: f64,
     /// 64-bin normalised histogram over full scale.
     pub histogram: Vec<f32>,
+}
+
+/// What the Camera tab shows about the cooler: the camera's own report plus the sensor temperature and whether a gentle switch-off is running.
+#[derive(Clone, Serialize, Default)]
+pub struct CoolerView {
+    pub available: bool,
+    pub on: bool,
+    pub target_c: Option<f64>,
+    pub target_min_c: Option<f64>,
+    pub target_max_c: Option<f64>,
+    pub power_pct: Option<f64>,
+    pub temp_c: Option<f64>,
+    pub fan: Option<bool>,
+    pub heater: Option<bool>,
+    /// The target is being raised step by step before the cooler is switched off (see `cooler.rs`).
+    pub warming_up: bool,
 }
 
 #[derive(Clone, Serialize)]

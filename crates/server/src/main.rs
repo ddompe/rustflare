@@ -5,6 +5,7 @@ mod api;
 mod bench;
 mod asynclog;
 mod config;
+mod cooler;
 mod engine;
 mod browse;
 mod files;
