@@ -2,6 +2,11 @@
 
 ![Camera tab](../img/manual/camera.png)
 
+!!! note "Screenshot"
+    The picture is from 2026-11-21: it has no profile picker, optical setup line, *Set up N of 5* strip, colour histogram, HCG marks or cooler section. The text is current.
+
+At the top of the tab (once the camera is open) is the profile picker, *What are you imaging?* (see [profiles](profiles.md)), and, when an optical setup is in use, a line naming it that opens the setups dialog.
+
 Open the camera, then set up the picture.
 
 ## Exposure and gain
@@ -29,21 +34,21 @@ The simulator has a cooled colour camera ("Simulated cooled colour camera (RGGB)
 
 ## Frame size
 
-**Frame size** reads out only the centre 75, 50 or 25 % of the sensor. That gives a higher frame rate for the same USB bandwidth, for example about 150 fps instead of 57 on one Player One camera (see [Performance](../reference/performance.md)). Tracking restarts when you change it.
+**Frame size** reads out only the centre 75, 50 or 25 % of the sensor. That gives a higher frame rate for the same USB bandwidth, for example about 150 fps instead of 57 on one Player One camera (see [Performance](../reference/performance.md)). It works on Player One and ZWO ASI cameras. Tracking restarts when you change it.
 
 ## Flats
 
 *Flats and darks are on the [Record tab](record.md#flats-and-darks)* (they are everyday work, done with the recordings); the steps are here.
 
-1. Press *Start flats*.
+1. Press *Start flats...* (Record tab > Flats).
 2. Put the flat cap or a diffuser on and check the level.
 3. Press *Capture*.
 
-The exposure is found automatically (about 50 % of full scale). The master flat is written and applied to the live view, and the overlay shows *Flat: applied*. Recordings stay raw. A switch turns the correction on or off, and the master flat is remembered across restarts. Details: [Capture formats](../reference/capture-formats.md#flats).
+The exposure is found automatically (about 50 % of full scale). The master flat is written and applied to the live view, and the Status overlay shows *Flat: applied*. Recordings stay raw. A switch turns the correction on or off, and the master flat is remembered across restarts. Details: [Capture formats](../reference/capture-formats.md#flats).
 
 ## Darks
 
-Cap on, the same exposure and gain as on the Sun, then *Capture darks*. The master dark is subtracted from the live view (before the flat). The overlay shows *Dark: applied*, or *mismatch* if the camera's settings changed since. Recordings stay raw.
+Cap on, the same exposure and gain as on the Sun, then *Capture darks*. The master dark is subtracted from the live view (before the flat). The Status overlay shows *Dark: applied*, or *mismatch* if the camera's settings changed since. Recordings stay raw.
 
 ## Colour cameras
 
@@ -51,7 +56,7 @@ Colour cameras show a colour live view (half resolution) with white balance (Cam
 
 ## Reconnecting
 
-*reconnect camera & mount* makes RustFlare reopen the last devices after a restart. See [Getting started](getting-started.md#what-the-service-does-by-itself).
+*Reconnect camera and mount at startup* (More > Startup) makes RustFlare reopen the last devices after a restart. See [Getting started](getting-started.md#what-the-service-does-by-itself).
 
 ## Focus assist
 

@@ -31,4 +31,8 @@ After that, `sudo apt update && sudo apt upgrade` updates RustFlare along with t
 
 ## Checking the version
 
-[More > Updates](more.md#updates) shows the installed version, or run `dpkg -s rustflare`.
+The installed version is shown at the right of the status bar at the bottom of every screen (a package built on a computer with `scripts/pi-deploy.sh` says `local` and the commit it was built from), or run `dpkg -s rustflare`. See [More](more.md#version).
+
+## Release packages and local builds
+
+A release is made by pushing a tag `vX.Y.Z`; the release workflow builds the arm64 package and publishes it with `SHA256SUMS`. During development a package built from a checkout with `scripts/pi-deploy.sh user@host` (it builds, installs and refuses while a recording runs) carries a version like `0.8.2+dev<date>.<commit>`, which sorts above the release it is based on, so the next release still upgrades it.

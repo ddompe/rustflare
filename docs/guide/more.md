@@ -2,7 +2,10 @@
 
 ![More tab](../img/manual/more.png)
 
-Settings you change rarely.
+!!! note "Screenshot"
+    The picture is from 2026-11-21. The tab now has these sections, each a line that opens: Display, Optical setup, Site, Stacking, Storage, RAM buffer, Session log and Startup. The text below is current.
+
+Settings you change rarely. The section you opened last stays open.
 
 ## Site
 
@@ -10,7 +13,7 @@ Type your latitude and longitude in degrees, east positive (a site west of Green
 
 *Use this device's location* works only over HTTPS (browsers share location only on secure pages), see [Phone setup](phone-setup.md). On a plain `http://` page the button is not offered: type the latitude and longitude instead, and a line says why.
 
-## Optics
+## Optical setup
 
 Choose the optical setup (below), or make one with the telescope's native focal length and, if you use one, the Barlow or reducer factor. RustFlare shows the effective focal length, the image scale and how large the Sun should be in pixels, and tells you when the measured Sun disagrees.
 
@@ -40,7 +43,7 @@ Nothing is created for you: an install that never saves a setup behaves as befor
 
 The drive is remembered by its **filesystem UUID**, not by the name it was mounted under. Desktop auto-mounting names a drive after its label and appends a number when a stale mount point is left (`ASTRODRIVE`, then `ASTRODRIVE1`); RustFlare finds the drive again wherever it is mounted, and settings saved by older versions follow a renamed mount by themselves when exactly one mount fits.
 
-Pick the drive for captures (a USB stick appears automatically) and press *Use*; the choice is remembered. It shows free space and the recording time left at the current frame rate.
+Pick the drive for captures under **Save to** (a USB stick appears automatically) and press *Use*; the choice is remembered. It shows how much is *Used*, the free space and the recording time left at the current frame rate. **Internal storage (SD card)** is in the same list, with a **Keep this much free (GB)** reserve (see [Record](record.md#recording-to-the-pis-own-sd-card)). The switch *Write recordings directly to the drive* uses direct writes (`O_DIRECT`) instead of the page cache; it is for comparing speeds and is refused if the drive does not allow it.
 
 - A removed drive is never silently replaced by the SD card: recording refuses to start until it is back.
 - FAT32 sticks work, but a file cannot exceed 4 GB, so long recordings continue in `_part2`, `_part3` files.
@@ -51,14 +54,24 @@ Pick the drive for captures (a USB stick appears automatically) and press *Use*;
 
 Stretch, brightness, contrast, gamma, tint, bullseye and the overlays. See [The screen](screen.md#overlays).
 
-## Guiding settings
+## Stacking
 
-How strongly the guider corrects. See [Track](track.md).
+The settings of the separate stacker program (on or off, when it runs, how many frames it keeps, a flat and darks, the black disc on prominence stacks) and how many stacks there are. The stacks themselves are looked at and downloaded in **Files**. See [Stacking](stacking.md).
+
+## RAM buffer
+
+The size of the RAM buffer that recordings pass through (default 1 GB, at most 70 % of the free memory), how many frames it holds at the current frame size, and whether the stacker is connected. It cannot be changed while a recording runs.
+
+## Startup
+
+*Reconnect camera and mount at startup* (on by default): the service reopens the last camera and mount after a restart. Mount tracking is never switched on automatically.
+
+Guiding settings (how strongly the guider corrects) are on the [Track](track.md) tab, under *Guiding settings*.
 
 ## Session log
 
 An opt-in log of what the tracker and guider saw, plus small frames. Useful when reporting a problem. It writes into a `logs` folder on the capture drive and stops at 200 MB. Nothing identifying is logged.
 
-## Updates
+## Version
 
-Shows the installed version and whether a newer one exists. See [Updating](updating.md).
+There is no Updates section: RustFlare does not update itself. The installed version is shown at the right of the status bar at the bottom of every screen. See [Updating](updating.md).

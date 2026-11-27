@@ -1,6 +1,6 @@
 # After each burst: video, stacks, or both
 
-Raw video is the product, but a night of 4 GB bursts fills a drive quickly, and many people end up deleting the video after stacking it. **Record > After each burst** lets the recorder stack each burst straight from memory, so the video never has to make the round trip through the disk if you do not want it to.
+Raw video is the product, but a night of 4 GB bursts fills a drive quickly, and many people end up deleting the video after stacking it. **Record > After each burst** (the mode names are *Keep video*, *Video + stack*, *Stack only* and *Best frames + stack*) lets the recorder stack each burst straight from memory, so the video never has to make the round trip through the disk if you do not want it to.
 
 !!! note "Status"
     Built, tested on the simulators, and run on a Pi 5 with a real camera on a dark scene: all four modes, 16 bursts of 100 frames every 30 s in stack-only mode with no dropped frame and no gap, and a stacker killed in the middle of a recording. Not yet run on the Sun, where a real disc takes longer to stack than the noise a camera sees indoors: see the [hardware checklist](../project/hardware-checklist.md). Until you have compared the stacks with your own, keep the video (mode 1 or 2) for anything you cannot repeat, such as an eclipse.
@@ -14,7 +14,7 @@ Raw video is the product, but a night of 4 GB bursts fills a drive quickly, and 
 | **Stack only** | One stack (a 32-bit float FITS) and **no video**. About 100 times smaller. | Routine solar sessions where you throw the video away. The raw frames are not kept. |
 | **Best frames + stack** | A stack and a short video of only the best frames. | You want to be able to re-stack the best of each burst yourself, without keeping all of it. |
 
-Two percentages go with these, both configurable: **frames in each stack** (default 25 %: the best quarter of the burst by sharpness) and, for *Best frames + stack*, **frames kept as video** (default 25 %). They can differ: stack the best 10 % but keep the best 30 % as video, so you can try other settings later.
+Two percentages go with these, both configurable (a third, *Keep best (%): stacked from a video file*, is under More > Stacking and applies to recordings stacked after they finish): **Keep best (%): stacked from memory** (default 25 %: the best quarter of the burst by sharpness) and, for *Best frames + stack*, **Keep best (%): saved as video** (default 25 %). They can differ: stack the best 10 % but keep the best 30 % as video, so you can try other settings later.
 
 The plan line under the modes shows what a burst costs on disk, how much that is an hour at your repeat interval, how long a stack takes (measured, not guessed) against the gap between bursts, and whether a burst fits in the RAM buffer.
 

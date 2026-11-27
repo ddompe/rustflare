@@ -17,25 +17,25 @@ Every file format in detail (SER layout, notes file, stack FITS headers, manifes
 | `dark_…` | `.ser`, `_master.png` | the raw dark frames (kept since 0.4.1; earlier darks have only the master), and their 16-bit mean |
 | `*.fits` | one file per frame in a folder | header has time, exposure, gain, instrument |
 
-Download from the **Files** screen (see [Record](../guide/record.md#files-file-manager)) or `/files/<date>/<name>`.
+Download from the **Files** screen (see [Record](../guide/record.md#files-file-manager)); a folder can be downloaded as one `.tar` or `/files/<date>/<name>`.
 
 ## Bursts and the RAM buffer
 
-Frames are captured at camera speed into a **RAM buffer** and written to disk by a separate thread, so a slow USB stick does not limit the frame rate. **Record → Bursts every N seconds** schedules "100 frames every 30 s": *frames or seconds* per burst, *every* = start-to-start spacing, *bursts* = how many (blank = until you press Stop). Live view, tracking and guiding keep running between bursts.
+Frames are captured at camera speed into a **RAM buffer** and written to disk by a separate thread, so a slow USB stick does not limit the frame rate. **Record > Sequence > Repeat every (s)** schedules "100 frames every 30 s": *frames or seconds* per burst, *every* = start-to-start spacing, *bursts* = how many (blank = until you press Stop). Live view, tracking and guiding keep running between bursts.
 
-- Buffer size (default 1 GB) is set in the Capture panel and capped to 70 % of free memory. The panel shows whether a burst fits and the average disk load of the schedule; while recording it shows buffer fill and measured disk speed.
-- If a burst is larger than the buffer, then once it is full capture either slows to disk speed (*Wait for the disk*, no frame is lost) or keeps full speed and drops frames (*Drop frames*): the oldest frames still waiting for the disk are overwritten by the camera and counted. A recording that lost frames says so in four places: the live count in the recording status, a note on the Record tab until the next recording starts, an entry in the event log (`frames_dropped`) and the burst's `.json` (`dropped_frames`, and `frames_written` next to the number captured).
+- Buffer size (default 1 GB) is set in More > RAM buffer and capped to 70 % of free memory. The Record tab shows whether a burst fits and the average disk load of the schedule; while recording it shows buffer fill and measured disk speed.
+- If a burst is larger than the buffer, then once it is full capture either slows to disk speed (*Never lose frames*, no frame is lost) or keeps full speed and drops frames (*Keep camera speed*; Record > Advanced > *If the storage cannot keep up*): the oldest frames still waiting for the disk are overwritten by the camera and counted. A recording that lost frames says so in four places: the live count in the recording status, a note on the Record tab until the next recording starts, an entry in the event log (`frames_dropped`) and the burst's `.json` (`dropped_frames`, and `frames_written` next to the number captured).
 - After the last burst the state is *flushing* until everything is on disk; storage changes and closing the camera wait for it. Stopping the service flushes first.
 - **Formats:** *SER* (one file per burst), *PNG* or *FITS* images (a folder per burst). Each burst also gets a `.json` sidecar.
 
 ## Storage
 
-Choose where captures go in the **Storage** panel: detected USB drives are listed with free space and the recording time left at the current frame rate. The choice is saved.
+Choose where captures go in **More > Storage** (*Save to*): detected USB drives are listed with free space and the recording time left at the current frame rate. The choice is saved.
 
-- **The Pi's own SD card** is offered in the Storage panel as *Internal storage (SD card)*. Use it for a short, fast event or for the stack-only and best-frames modes, not for long full-rate recordings: it writes at roughly 30 to 90 MB/s, so the RAM buffer fills in seconds. A **reserve** (8 GB by default, 2 to 100 GB, set in the panel) is always kept free for the system, its logs and settings: a recording will not start without it and stops cleanly before it would use it, counting the frames still in memory that have yet to be written (`PUT /api/storage/reserve`).
+- **The Pi's own SD card** is offered in the Storage panel as *Internal storage (SD card)* (*Keep this much free*). Use it for a short, fast event or for the stack-only and best-frames modes, not for long full-rate recordings: it writes at roughly 30 to 90 MB/s, so the RAM buffer fills in seconds. A **reserve** (8 GB by default, 2 to 100 GB, *Keep this much free* in the panel) is always kept free for the system, its logs and settings: a recording will not start without it and stops cleanly before it would use it, counting the frames still in memory that have yet to be written (`PUT /api/storage/reserve`).
 - A removed drive is **never silently replaced by the SD card**: captures refuse to start until it is back, and a running capture stops cleanly and keeps its frames.
 - Capturing stops (cleanly) when less than 50 MB is free; starting needs 200 MB.
-- **FAT32** (most factory-formatted sticks): a file cannot exceed 4 GB. RustFlare detects this and **splits SER files into `_part2`, `_part3`…**; PNG folders are unaffected. For long sequences exFAT or ext4 is better (RustFlare never formats a drive).
+- **FAT32** (most factory-formatted sticks): a file cannot exceed 4 GB. RustFlare detects this and **splits SER files into `_part2`, `_part3`…**; PNG folders are unaffected. For long sequences exFAT or ext4 is better (RustFlare never formats a drive). A drive pulled without ejecting, or one the kernel mounted read-only after errors, is reported in words in the Storage panel with what to do.
 - The service must be able to write to the drive: after `sudo apt install` it runs as the installing user, which owns auto-mounted drives. Otherwise: `sudo rustflare-user <your-login>`.
 
 ## Flats
@@ -53,7 +53,7 @@ Roughly `width × height × bytes` per frame: 1280×960 at 16-bit is 2.4 MB, so 
 
 ## HDR bracketing lanes
 
-For eclipses and the Moon: Record tab > HDR bracketing lanes (or `POST /api/capture/lanes`). Define 2 to 6 lanes, each with a name, an exposure (and optionally a gain) and a frame count or duration. The engine cycles through them in order, repeating for the number of cycles you give (or until stopped). Each lane records into its own folder, `<session>/lane-<name>/<name>_c001.ser`: one short raw video per lane and cycle, with a notes file holding the exposure and UTC times. Stack each video with lucky imaging into one frame; the stacks of one lane, in cycle order, form a time-lapse, and the lanes merge into HDR frames. Add `cycle_interval_s` ("Start a new cycle every" in the app) for a steady cadence, for example a new cycle every 60 s. Sessions are saved as `hdr_<time>/` or, with `"kind":"prominence"`, `prominence_<time>/` (a `disc` lane and a longer `prominence` lane), each with a `session.json` describing the lanes. The first frames after each exposure change are discarded, and the exposure and gain you had are restored at the end. Presets for partial phase, diamond ring and totality are starting points; choose exposures at the eyepiece. Switching lanes costs a couple of frame times, so lanes are cycled rather than interleaved frame by frame.
+For eclipses and the Moon: Record tab > *HDR lanes* (or `POST /api/capture/lanes`). Define 2 to 6 lanes, each with a name, an exposure (and optionally a gain) and a frame count or duration. The engine cycles through them in order, repeating for the number of cycles you give (or until stopped). Each lane records into its own folder, `<session>/lane-<name>/<name>_c001.ser`: one short raw video per lane and cycle, with a notes file holding the exposure and UTC times. Stack each video with lucky imaging into one frame; the stacks of one lane, in cycle order, form a time-lapse, and the lanes merge into HDR frames. Add `cycle_interval_s` ("Repeat a cycle every (s)" in the app) for a steady cadence, for example a new cycle every 60 s. Sessions are saved as `hdr_<time>/` or, with `"kind":"prominence"`, `prominence_<time>/` (a `disc` lane and a longer `prominence` lane), each with a `session.json` describing the lanes. The first frames after each exposure change are discarded, and the exposure and gain you had are restored at the end. Presets for partial phase, diamond ring and totality are starting points; choose exposures at the eyepiece. Switching lanes costs a couple of frame times, so lanes are cycled rather than interleaved frame by frame.
 
 ```
 curl -X POST localhost:8080/api/capture/lanes -H 'content-type: application/json' -d '{"name":"eclipse","cycles":10,"format":"ser","lanes":[{"name":"short","exposure_us":200,"frames":100},{"name":"long","exposure_us":20000,"frames":50}]}'
@@ -73,4 +73,7 @@ Colour cameras (Player One and ZWO ASI colour models report their filter layout)
 - Do not use hardware binning with a colour camera: it destroys the pattern.
 - The simulator has a colour camera ("Simulated colour camera (RGGB)", id `sim_osc`) for testing.
 
-Not available yet: a full-resolution interpolating demosaic for the preview, white balance controls, and saving debayered PNGs.
+- **White balance** (Camera tab > Colour): **Auto** makes the bright disc neutral, **Manual** takes red and blue gains (0.25 to 4), **Off** shows the sensor's own colours (`PUT /api/colour`). It applies to the live view and to the debayered single-frame PNG, never to recordings.
+- **Histogram:** a colour camera reports `histogram_rgb` and `saturated_rgb` next to the combined histogram, each channel counted from its own photosites.
+
+Not available yet: a full-resolution interpolating demosaic for the preview (it is half resolution), and a debayered video; the stacker handles mono recordings only.
