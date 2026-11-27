@@ -177,7 +177,10 @@ function Offset({ status }: { status: Status }) {
 
 /** The hold-to-move slew pad: pointer down starts the slew, pointer up (or cancel, or leaving the tab) stops it. */
 function Pad({ status, locked }: { status: Status; locked: boolean }) {
-  const [speed, setSpeed] = useSetting('mount.slew_speed', 8)
+  const [saved, setSpeed] = useSetting('mount.slew_speed', 8)
+  // the speeds come from the mount's driver (mounts differ); the saved choice snaps to the nearest one this mount has
+  const speeds = status.mount?.slew_speeds?.length ? status.mount.slew_speeds : SPEEDS
+  const speed = speeds.reduce((best, s) => (Math.abs(Math.log(s / saved)) < Math.abs(Math.log(best / saved)) ? s : best), speeds[0])
   const [err, setErr] = useState<string | null>(null)
   const [active, setActive] = useState<string | null>(null)
   const held = useRef(new Map<string, Axis>())
@@ -251,7 +254,7 @@ function Pad({ status, locked }: { status: Status; locked: boolean }) {
       <div className="pad-foot">
         <label htmlFor="slew-speed">Slew speed</label>
         <select id="slew-speed" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} disabled={!m}>
-          {SPEEDS.map((s) => <option key={s} value={s}>{s}× sidereal</option>)}
+          {speeds.map((s) => <option key={s} value={s}>{s}× sidereal</option>)}
         </select>
       </div>
       <div className="hint-text">Hold a direction to move, release to stop.</div>
@@ -321,6 +324,29 @@ function SendHome({ status, disabled, reason }: { status: Status; disabled: bool
         </div>
       )}
       {disabled && reason && <div className="hint-text">{reason}</div>}
+      <ErrorLine error={err} />
+      {status.mount.can_search_home && <SearchHome disabled={disabled} />}
+    </div>
+  )
+}
+
+/** Not the same as Send home: this finds the mount's mechanical zero with its homing sensors and makes it the new zero position. */
+function SearchHome({ disabled }: { disabled: boolean }) {
+  const [ask, setAsk] = useState(false)
+  const { err, busy, run } = useAction()
+  return (
+    <div className="home">
+      {!ask ? (
+        <button type="button" className="wide" disabled={disabled} onClick={() => setAsk(true)}>Search home…</button>
+      ) : (
+        <div className="confirm" role="alertdialog" aria-label="Search for the home position">
+          <p>The mount will move both axes until its home sensors find the mechanical zero position, and <b>make that its new zero</b>. Send home only goes to the zero it already has. Use this when the zero is wrong; make sure the telescope and cables are clear, with someone at the mount.</p>
+          <div className="btnrow tight">
+            <button type="button" className="grow" onClick={() => setAsk(false)}>Cancel</button>
+            <button type="button" className="danger grow" disabled={busy || disabled} onClick={() => run(async () => { await api('POST', '/mount/search-home', { confirm: true }); setAsk(false) })}>Search home</button>
+          </div>
+        </div>
+      )}
       <ErrorLine error={err} />
     </div>
   )

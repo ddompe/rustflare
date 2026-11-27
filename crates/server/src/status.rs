@@ -37,6 +37,10 @@ pub struct MountStatus {
     /// `usb` or `ble`, and whether that link is alive (a Bluetooth link can drop; the engine then drops the mount).
     pub link: Option<&'static str>,
     pub link_up: bool,
+    /// The manual slew speeds this mount offers (multiples of sidereal), from the driver: the UI builds its list from them.
+    pub slew_speeds: Vec<f64>,
+    /// Whether the driver can search for the mechanical home position (`POST /api/mount/search-home`).
+    pub can_search_home: bool,
 }
 
 /// Something the user should know about that stays on screen until they dismiss it: a fallback, a lost frame, a failed stack.

@@ -35,20 +35,39 @@ enum Reply {
 /// Moving rates for `:SRn#`, as multiples of sidereal.
 const MOVE_RATES: [(u8, f64); 8] = [(1, 1.0), (2, 2.0), (3, 8.0), (4, 16.0), (5, 64.0), (6, 128.0), (7, 256.0), (8, 512.0)];
 
-fn move_rate(speed: &SlewSpeed) -> Option<u8> {
+/// The rate number for a speed: the table above, or 9 ("maximum speed") for the model's top speed, which differs between models.
+fn move_rate(speed: &SlewSpeed, max_mult: Option<f64>) -> Option<u8> {
     match speed {
         SlewSpeed::Max(_) => Some(9),
         SlewSpeed::Specific(s) => {
             let m = (s.0 / SIDEREAL_RATE.0).abs();
+            if max_mult.is_some_and(|x| (m / x - 1.0).abs() <= 0.01) {
+                return Some(9);
+            }
             MOVE_RATES.iter().find(|(_, mult)| (m / mult - 1.0).abs() <= 0.01).map(|(n, _)| *n)
         }
+    }
+}
+
+/// The maximum slewing speed of a model, in multiples of sidereal (from the protocol document's "additional information"); `None` when the
+/// model code is not one the document lists, so the top speed is not offered rather than guessed.
+fn max_speed(code: &str) -> Option<f64> {
+    match code {
+        "0070" | "0071" => Some(900.0),
+        // the HAE69 family is not in the document either; its vendor figure is 4.5 degrees/s, about 1077 times sidereal
+        "0066" => Some(1077.0),
+        "0120" | "0121" | "0122" => Some(960.0),
+        "0040" | "0041" | "0043" | "0044" => Some(1066.0),
+        "0026" | "0027" | "0028" | "0029" => Some(1440.0),
+        _ => None,
     }
 }
 
 fn model_name(code: &str) -> String {
     match code {
         "0026" => "CEM26", "0027" => "CEM26-EC", "0028" => "GEM28", "0029" => "GEM28-EC", "0040" => "CEM40", "0041" => "CEM40-EC", "0043" => "GEM45", "0044" => "GEM45-EC",
-        "0070" => "CEM70", "0071" => "CEM70-EC", "0120" => "CEM120", "0121" => "CEM120-EC", "0122" => "CEM120-EC2",
+        // 0066 is not in the protocol document: a HAE69C answered it (seen on a real mount, 2026-11-27)
+        "0066" => "HAE69C", "0070" => "CEM70", "0071" => "CEM70-EC", "0120" => "CEM120", "0121" => "CEM120-EC", "0122" => "CEM120-EC2",
         other => return format!("model {other}"),
     }
     .into()
@@ -61,6 +80,8 @@ pub struct Ioptron<P: Read + Write + Send> {
     tracking: bool,
     /// Guiding rates last set (RA, Dec, in hundredths of sidereal), so they are only sent when they change.
     guide_rates: Option<(u8, u8)>,
+    /// The model's top slewing speed (multiples of sidereal), when the model is one the protocol document lists.
+    max_mult: Option<f64>,
 }
 
 impl Ioptron<Box<dyn serialport::SerialPort>> {
@@ -93,7 +114,7 @@ impl<P: Read + Write + Send> Ioptron<P> {
         if code.len() != 4 || !code.bytes().all(|b| b.is_ascii_digit()) {
             return Err(Error::Mount(format!("an iOptron mount answers :MountInfo# with four digits, this answered {code:?}")));
         }
-        let mut m = Ioptron { port, model: model_name(&code), device: device.into(), tracking: false, guide_rates: None };
+        let mut m = Ioptron { port, model: model_name(&code), device: device.into(), tracking: false, guide_rates: None, max_mult: max_speed(&code) };
         // do not force a state: ask what the mount is doing now
         if let Ok(s) = m.state() {
             m.tracking = s.tracking.unwrap_or(false);
@@ -136,6 +157,25 @@ impl<P: Read + Write + Send> Mount for Ioptron<P> {
     }
 
     fn info(&self) -> String { format!("iOptron {} on {}", self.model, self.device) }
+
+    fn slew_speeds(&self) -> Vec<f64> {
+        MOVE_RATES.iter().map(|(_, m)| *m).chain(self.max_mult).collect()
+    }
+
+    /// `:MSH#`: "automatically search the mechanical zero position / home position by detecting homing sensors; the current zero position is
+    /// overwritten if it succeeds" (CEM120, CEM70, GEM45 and CEM40 series only). Different from `:MH#`, which goes to the zero the mount has.
+    /// Offered for every model but the CEM26 and GEM28 series, which the document does not list; a model the document does not know (the HAE69
+    /// advertises a "built-in zero position search") is allowed, and the command is only ever sent when the user asks for it.
+    fn can_search_home(&self) -> bool { self.max_mult != Some(1440.0) }
+
+    fn search_home(&mut self) -> Result<()> {
+        if !self.can_search_home() {
+            return Err(Error::Unsupported("this iOptron model has no home sensors to search with (CEM120, CEM70, GEM45 and CEM40 series only)".into()));
+        }
+        self.set(":MSH#")?;
+        self.tracking = false;
+        Ok(())
+    }
 
     /// System status (the 18th digit of `:GLS#`): 0 stopped away from zero, 1 tracking, 2 slewing, 3 guiding, 4 meridian flip,
     /// 5 tracking with periodic error correction, 6 parked, 7 stopped at zero (home).
@@ -241,7 +281,7 @@ impl<P: Read + Write + Send> Mount for Ioptron<P> {
         if speed.is_zero() {
             return self.set(if axis == Axis::Primary { ":qR#" } else { ":qD#" });
         }
-        let n = move_rate(&speed).ok_or_else(|| Error::Unsupported("slewing speed".into()))?;
+        let n = move_rate(&speed, self.max_mult).ok_or_else(|| Error::Unsupported("slewing speed".into()))?;
         self.set(&format!(":SR{n}#"))?;
         self.cmd(match (axis, speed.positive()) {
             (Axis::Primary, true) => ":mw#",
@@ -252,7 +292,7 @@ impl<P: Read + Write + Send> Mount for Ioptron<P> {
     }
 
     fn slewing_speed_supported(&self, speed: RadPerSec) -> bool {
-        move_rate(&SlewSpeed::Specific(speed)).is_some()
+        move_rate(&SlewSpeed::Specific(speed), self.max_mult).is_some()
     }
 
     /// `:Q#` stops every slew; tracking is not touched.
@@ -475,6 +515,32 @@ mod tests {
         assert_eq!(m.port.written, ":qR#:qD#");
         assert!(m.slewing_speed_supported(RadPerSec(16.0 * SIDEREAL_RATE.0)));
         assert!(!m.slewing_speed_supported(RadPerSec(20.0 * SIDEREAL_RATE.0)));
+        // the CEM70's own top speed is offered, and is the protocol's "maximum" rate
+        assert_eq!(m.slew_speeds(), vec![1.0, 2.0, 8.0, 16.0, 64.0, 128.0, 256.0, 512.0, 900.0]);
+        m.port.replies.extend(b"1");
+        m.port.written.clear();
+        m.slew(Axis::Primary, SlewSpeed::Specific(RadPerSec(900.0 * SIDEREAL_RATE.0))).unwrap();
+        assert_eq!(m.port.written, ":SR9#:mw#");
+    }
+
+    #[test]
+    fn search_home_is_not_go_home_and_only_for_models_with_sensors() {
+        let mut m = mount("1");
+        assert!(m.can_search_home()); // a CEM70
+        m.port.written.clear();
+        m.search_home().unwrap();
+        assert_eq!(m.port.written, ":MSH#");
+        m.port.replies.extend(b"1");
+        m.port.written.clear();
+        m.go_home().unwrap();
+        assert_eq!(m.port.written, ":MH#");
+        // a series with no home sensors in the document is refused; a model the document does not list (the HAE69) is allowed
+        let mut c = Ioptron::new(Mock { written: String::new(), replies: format!("0026{}", gls(0)).bytes().collect() }, "mock").unwrap();
+        assert!(!c.can_search_home());
+        assert!(matches!(c.search_home(), Err(Error::Unsupported(_))));
+        let c = Ioptron::new(Mock { written: String::new(), replies: format!("0099{}", gls(0)).bytes().collect() }, "mock").unwrap();
+        assert!(c.can_search_home());
+        assert_eq!(c.slew_speeds().last(), Some(&512.0), "no guessed top speed for an unknown model");
     }
 
     #[test]

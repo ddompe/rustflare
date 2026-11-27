@@ -134,6 +134,8 @@ pub enum Command {
     MountStop,
     /// Moves the mount to its home (zero) position; the API asks for explicit confirmation.
     MountHome,
+    /// Finds the mount's mechanical zero with its homing sensors (iOptron `:MSH#`) and makes it the new zero. Moves the mount.
+    MountSearchHome,
     /// Sync site and time, slew to the target's current position, then switch tracking on at the target's rate. Moves the mount.
     /// `target`: "sun" (the default) or a body id (moon, mars, jupiter, saturn). Below the horizon only with `allow_below_horizon`.
     MountGoto { target: String, allow_unsynced_clock: bool, allow_below_horizon: bool },
@@ -1318,7 +1320,7 @@ impl Engine {
         self.status.seq += 1;
         self.last_publish = Instant::now();
         let ms = self.mount_state;
-        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking, slewing: ms.slewing, at_home: ms.at_home, park: ms.park, alt_az: ms.alt_az, link: m.link().map(|l| l.kind), link_up: m.link().map_or(true, |l| l.up), rate: self.mount_rate });
+        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking, slewing: ms.slewing, at_home: ms.at_home, park: ms.park, alt_az: ms.alt_az, link: m.link().map(|l| l.kind), link_up: m.link().map_or(true, |l| l.up), rate: self.mount_rate, slew_speeds: m.slew_speeds(), can_search_home: m.can_search_home() });
         self.status.guiding.state = match self.guide {
             GuideState::Off => "off",
             GuideState::Calibrating(_) => "calibrating",
@@ -1453,6 +1455,21 @@ impl Engine {
                 self.mount.as_mut().ok_or("no mount connected")?.go_home().map_err(s)?;
                 self.mount_tracking = false; // the mount stops tracking to go home; the next poll confirms
                 self.manual_slew_until = Instant::now() + Duration::from_secs(60); // going home takes about 30 s and the mount reports "not tracking" meanwhile
+                Ok(json!({}))
+            }
+            Command::MountSearchHome => {
+                self.goto = None;
+                self.require_idle()?;
+                self.require_not_parked()?;
+                self.stop_guiding_quietly();
+                let m = self.mount.as_mut().ok_or("no mount connected")?;
+                if !m.can_search_home() {
+                    return Err("this mount cannot search for its home position".into());
+                }
+                m.search_home().map_err(s)?;
+                self.mount_tracking = false;
+                self.manual_slew_until = Instant::now() + Duration::from_secs(120); // the search moves both axes to their sensors and takes a while
+                self.event("search_home", json!({}));
                 Ok(json!({}))
             }
             Command::SetFlatApplied { enabled } => {

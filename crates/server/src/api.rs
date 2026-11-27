@@ -46,6 +46,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/mount/slew", post(mount_slew))
         .route("/api/mount/stop", post(|s| run(s, Command::MountStop)))
         .route("/api/mount/home", post(|s, b| mount_motion(s, b, Command::MountHome)))
+        .route("/api/mount/search-home", post(|s, b| mount_motion(s, b, Command::MountSearchHome)))
         .route("/api/mount/goto-sun", post(goto_sun))
         .route("/api/debug/mount-query", get(mount_query))
         .route("/api/mount/goto", post(goto_target))

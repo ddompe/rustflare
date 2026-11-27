@@ -109,6 +109,15 @@ pub trait Mount: Send {
     /// Moves to the home (zero) position. Moves the mount.
     fn go_home(&mut self) -> Result<()> { Err(crate::Error::Unsupported("go home".into())) }
 
+    /// The manual slew speeds this mount offers, as multiples of the sidereal rate in ascending order; the UI builds its speed list from this
+    /// (mounts differ: a speed one mount has another has not). Empty: the driver does not say.
+    fn slew_speeds(&self) -> Vec<f64> { Vec::new() }
+    /// Whether `search_home` exists on this mount.
+    fn can_search_home(&self) -> bool { false }
+    /// Finds the mechanical zero (home) position with the mount's homing sensors and makes it the new zero. Moves the mount, and is not the same
+    /// as `go_home`, which goes to the zero position the mount already has.
+    fn search_home(&mut self) -> Result<()> { Err(crate::Error::Unsupported("search home".into())) }
+
     fn info(&self) -> String;
     fn set_tracking(&mut self, enabled: bool) -> Result<()>;
     /// Selects the sky tracking rate (the Sun needs `Solar`).

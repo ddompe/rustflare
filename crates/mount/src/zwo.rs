@@ -122,6 +122,8 @@ impl<P: Read + Write + Send> Mount for Zwo<P> {
 
     fn info(&self) -> String { format!("ZWO {} on {}", self.model, self.device) }
 
+    fn slew_speeds(&self) -> Vec<f64> { SLEW_RATES.iter().map(|r| r.mult).collect() }
+
     /// `:GU#` flags: `n` = tracking OFF, `N` = not slewing, `H` = at home, `Z` = alt-az mode; `:Gps#` = park state
     /// (0 not parked, 1 parking, 2 parked; read-only here). A parked mount reports no `N`, which is not a slew.
     fn state(&mut self) -> Result<MountState> {
