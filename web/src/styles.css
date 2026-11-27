@@ -719,3 +719,9 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--info, #6
 .mp-sub { white-space: normal; overflow-wrap: anywhere; }
 /* the snowflake beside the sensor temperature while the cooler is on */
 .snow { display: inline-block; vertical-align: -2px; margin-right: .25rem; color: var(--info); }
+/* Mount time and place (issue #104): the mount's own values next to the Pi's; wraps on a phone */
+.clocktable { width: 100%; border-collapse: collapse; font-size: .88rem; margin: .2rem 0 .4rem; }
+.clocktable th, .clocktable td { text-align: left; vertical-align: top; padding: .3rem .4rem .3rem 0; overflow-wrap: anywhere; }
+.clocktable thead th { color: var(--muted); font-weight: 600; }
+.clocktable tbody th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.mc-sum { overflow-wrap: anywhere; }

@@ -6,6 +6,10 @@
 
 Choose USB or Bluetooth and connect. For Bluetooth, close the ZWO phone app first and press the mount's pairing button, then use *Scan for mounts*. The state tags show the link and what the mount reports. See [Troubleshooting](troubleshooting.md#mount-bluetooth-does-not-connect).
 
+## Mount time and place
+
+Go to is computed from the site and the time the **mount** holds, not only from the Pi's. Open **Mount time and place** to see what the mount says next to the Pi's, with a line that reads "matches" or "differs: 3 min, 12 degrees" (the clock may differ by 5 seconds and the place by 0.05 degrees). When they differ, a **Mount clock differs** or **Mount place differs** chip appears under the picture on every tab; tap it to come here. **Send site and time to the mount** sends the Pi's saved site and clock; it moves nothing, and it is greyed with the reason when no site is saved (tap *Use my location* or set it in More > Site), the mount is parked or it is moving. The Pi's own clock matters first: the block says when it is not synchronised to a time server, and then the Pi should be fixed before anything is sent. A mount that cannot report its site and time shows the block greyed, and a ZWO mount reports its clock only.
+
 ## Go to Sun
 
 **Go to Sun** sends your site and the time to the mount, slews to where the Sun is now and then switches on solar tracking by itself. It asks for confirmation, and **STOP** cancels. It needs:

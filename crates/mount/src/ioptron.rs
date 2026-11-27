@@ -8,7 +8,7 @@
 //! terminator; a get command answers its data and a closing `#`; `:MountInfo#` answers four digits; the motion commands `:m?#`, `:Z?nnnnn#`
 //! and `:M?nnnnn#` have no answer.
 
-use rustflare_core::{Axis, Error, LinkInfo, Mount, MountState, ParkState, RadPerSec, Result, SiteTime, SlewSpeed, TrackingRate, SIDEREAL_RATE};
+use rustflare_core::{Axis, Error, LinkInfo, Mount, MountSiteTime, MountState, ParkState, RadPerSec, Result, SiteTime, SlewSpeed, TrackingRate, SIDEREAL_RATE};
 use std::io::{Read, Write};
 use std::time::Duration;
 
@@ -146,12 +146,17 @@ impl<P: Port> Ioptron<P> {
 
     /// The 22 digits of `:GLS#` after the sign: longitude, latitude + 90, gps, system status, tracking rate, move speed, time source, hemisphere.
     fn gls(&mut self) -> Result<Vec<u8>> {
+        Ok(self.gls_raw()?.1)
+    }
+
+    /// The sign (of the longitude) and the 22 digits of `:GLS#`.
+    fn gls_raw(&mut self) -> Result<(u8, Vec<u8>)> {
         let r = send(&mut self.port, ":GLS#", Reply::Hash)?;
         let digits: Vec<u8> = r.iter().skip(1).copied().collect();
-        if r.len() != 23 || !digits.iter().all(u8::is_ascii_digit) {
+        if r.len() != 23 || !digits.iter().all(u8::is_ascii_digit) || !matches!(r[0], b'+' | b'-') {
             return Err(Error::Mount(format!(":GLS# answered {:?}, expected a sign and 22 digits", String::from_utf8_lossy(&r))));
         }
-        Ok(digits)
+        Ok((r[0], digits))
     }
 
     fn status_digit(&mut self) -> Result<u8> {
@@ -209,6 +214,15 @@ impl<P: Port> Mount for Ioptron<P> {
     fn equatorial(&mut self) -> Result<Option<(f64, f64)>> {
         let r = send(&mut self.port, ":GEP#", Reply::Hash)?;
         Ok(parse_gep(&String::from_utf8_lossy(&r)))
+    }
+
+    /// `:GLS#` (longitude, latitude + 90) and `:GUT#` (offset, daylight flag, milliseconds since J2000.0). Read-only.
+    fn read_site_time(&mut self) -> Result<Option<MountSiteTime>> {
+        let (sign, digits) = self.gls_raw()?;
+        let (longitude_east_deg, latitude_deg) = parse_gls_site(sign, &digits);
+        let ut = send(&mut self.port, ":GUT#", Reply::Hash)?;
+        let (utc_offset_minutes, unix_secs) = parse_gut(&String::from_utf8_lossy(&ut)).ok_or_else(|| Error::Mount(format!(":GUT# answered {:?}, expected sMMM, a digit and 13 digits", String::from_utf8_lossy(&ut))))?;
+        Ok(Some(MountSiteTime { latitude_deg: Some(latitude_deg), longitude_east_deg: Some(longitude_east_deg), unix_secs: Some(unix_secs), utc_offset_minutes: Some(utc_offset_minutes) }))
     }
 
     /// `:SGsMMM#` time zone (minutes east of UTC), `:SDS0#` no daylight saving (the offset already includes it), `:SUT<ms since J2000>#`,
@@ -348,6 +362,28 @@ fn signed8(deg: f64) -> String {
     format!("{}{v:08}", if deg < 0.0 { '-' } else { '+' })
 }
 
+/// Longitude (east positive) and latitude in degrees from the `:GLS#` digits: 8 digits of longitude (the reply's sign applies to it) and
+/// 8 digits of latitude plus 90 degrees, both in 0.01 arc-seconds.
+fn parse_gls_site(sign: u8, digits: &[u8]) -> (f64, f64) {
+    let num = |r: std::ops::Range<usize>| std::str::from_utf8(&digits[r]).ok().and_then(|t| t.parse::<f64>().ok()).unwrap_or(0.0);
+    let lon = num(0..8) / CENTI_ARCSEC_PER_DEG * if sign == b'-' { -1.0 } else { 1.0 };
+    (lon, num(8..16) / CENTI_ARCSEC_PER_DEG - 90.0)
+}
+
+/// `:GUT#` reply without the `#`: sign and 3 digits of minutes from UTC (no daylight saving in it), a daylight-saving flag digit, and 13 digits
+/// of milliseconds since J2000.0. Returns (offset minutes, Unix seconds).
+fn parse_gut(reply: &str) -> Option<(i32, i64)> {
+    let r = reply.trim();
+    if r.len() != 18 || !r.is_char_boundary(5) {
+        return None;
+    }
+    let sign = match r.as_bytes()[0] { b'-' => -1, b'+' => 1, _ => return None };
+    let minutes: i32 = r.get(1..4)?.parse().ok()?;
+    r.get(4..5)?.parse::<u8>().ok()?; // the daylight-saving flag: the mount's own setting, not needed to read the UTC time
+    let ms: i64 = r.get(5..18)?.parse().ok()?;
+    Some((sign * minutes, (ms + J2000_UNIX_MS).div_euclid(1000)))
+}
+
 /// `:GEP#` reply: sign, 8 digits declination, 9 digits right ascension, 2 digits (pier side, pointing state).
 fn parse_gep(reply: &str) -> Option<(f64, f64)> {
     let r = reply.trim();
@@ -477,6 +513,41 @@ mod tests {
         assert!(w.contains(":SG-360#") && w.contains(":SDS0#") && w.contains(":SLO-34560000#") && w.contains(":SLA+10620000#") && w.contains(":SHE1#"), "{w}");
         let ms = 1_795_816_800i64 * 1000 - 946_728_000_000;
         assert!(w.contains(&format!(":SUT{ms:013}#")), "{w}");
+    }
+
+    #[test]
+    fn site_and_time_are_read_without_writing_anything_but_the_two_getters() {
+        // a synthetic :GLS# in the HAE69C's layout, then a :GUT# for UTC-6, no daylight saving,
+        // 2026-11-26 22:00:00 UTC
+        let ms = 1_795_816_800i64 * 1000 - 946_728_000_000;
+        let mut m = mount(&format!("-3474000042984000070501#-3600{ms:013}#"));
+        m.port.written.clear();
+        let r = m.read_site_time().unwrap().expect("this driver reads");
+        assert_eq!(m.port.written, ":GLS#:GUT#");
+        assert!((r.longitude_east_deg.unwrap() + 96.5).abs() < 1e-3, "{r:?}");
+        assert!((r.latitude_deg.unwrap() - 29.4).abs() < 1e-3, "{r:?}");
+        assert_eq!((r.utc_offset_minutes, r.unix_secs), (Some(-360), Some(1_795_816_800)));
+        // the mount's western longitude is negative, an eastern one positive
+        assert!(parse_gls_site(b'+', b"3474000042984000070501").0 > 0.0);
+    }
+
+    #[test]
+    fn the_real_hae69c_replies_decode_to_its_site_and_an_unset_clock() {
+        // the :GUT# reply is a real HAE69C answer: the site digits here are a synthetic site (29.4 N, 96.5 W) in the real layout, the clock was never
+        // set (2017-01-01 13:59:45 UTC), offset -360 minutes, daylight-saving flag 0
+        let mut m = mount("-3474000042984000070501#-36000536551185000#");
+        let r = m.read_site_time().unwrap().unwrap();
+        assert!((r.latitude_deg.unwrap() - 29.4).abs() < 1e-3 && (r.longitude_east_deg.unwrap() + 96.5).abs() < 1e-3, "{r:?}");
+        assert_eq!((r.utc_offset_minutes, r.unix_secs), (Some(-360), Some(1_483_279_185)));
+    }
+
+    #[test]
+    fn a_garbled_site_or_time_reply_is_an_error_not_a_guess() {
+        let mut m = mount("-3474000042984000070501#+0600#");
+        assert!(m.read_site_time().is_err());
+        assert_eq!(parse_gut("+0600123"), None);
+        assert_eq!(parse_gut("x06001795816800000"), None);
+        assert_eq!(parse_gut("+48010000000000000"), Some((480, 946_728_000)));
     }
 
     #[test]

@@ -9,7 +9,7 @@
 //!   * `stop()` no longer disables tracking (matches the `Mount` trait contract);
 //!   * generic over the I/O object so the protocol is unit-testable.
 
-use rustflare_core::{Axis, Error, LinkInfo, Mount, MountState, ParkState, RadPerSec, Result, SiteTime, SlewSpeed, TrackingRate, SIDEREAL_RATE};
+use rustflare_core::{Axis, Error, LinkInfo, Mount, MountSiteTime, MountState, ParkState, RadPerSec, Result, SiteTime, SlewSpeed, TrackingRate, SIDEREAL_RATE};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -147,6 +147,17 @@ impl<P: Read + Write + Send> Mount for Zwo<P> {
     fn equatorial(&mut self) -> Result<Option<(f64, f64)>> {
         let r = send(&mut self.port, ":GAST#", Reply::Segments(END_CHAR, 3))?;
         Ok(parse_gast_pointing(&String::from_utf8_lossy(&r)))
+    }
+
+    /// The clock from `:GAST#` (`MM/DD/YY&HH:MM:SS&+06:00#...`: the mount's LOCAL date and time, and the offset with the opposite sign to the
+    /// usual one). Read-only. Only the time: the repo's ZWO protocol notes (docs/reference/hardware.md, `zwo-ble-protocol.md`) and the
+    /// getters this driver knows (`GLC`, `GLH`, `GLL` are altitude limits) document no command that reads the mount's site back, so the
+    /// latitude and longitude are reported as unknown rather than guessed from an undocumented command.
+    fn read_site_time(&mut self) -> Result<Option<MountSiteTime>> {
+        let r = send(&mut self.port, ":GAST#", Reply::Segments(END_CHAR, 3))?;
+        let text = String::from_utf8_lossy(&r).to_string();
+        let (unix_secs, utc_offset_minutes) = parse_gast_time(&text).ok_or_else(|| Error::Mount(format!(":GAST# answered {text:?}, expected date&time&offset first")))?;
+        Ok(Some(MountSiteTime { latitude_deg: None, longitude_east_deg: None, unix_secs: Some(unix_secs), utc_offset_minutes: Some(utc_offset_minutes) }))
     }
 
     /// `:SMGE<lat>&<lon>#` and `:SMTI<MM/DD/YY>&<hh:mm:ss>&<offset>#`, as the official app sends them. Longitude is
@@ -291,6 +302,38 @@ fn parse_gast_pointing(reply: &str) -> Option<(f64, f64)> {
     let (deg, rest) = d.split_once('*')?;
     let (min, sec) = rest.split_once(':')?;
     Some((ra_h, sign * (deg.parse::<f64>().ok()? + min.parse::<f64>().ok()? / 60.0 + sec.parse::<f64>().ok()? / 3600.0)))
+}
+
+/// The date and time part of a `:GAST#` reply, `11/21/26&15:20:38&+06:00#...`, as (Unix seconds, local-minus-UTC minutes). The mount's
+/// date and time are local time and its offset is sent with the opposite sign (`+06:00` is UTC-6), as `set_site_time` writes them.
+fn parse_gast_time(reply: &str) -> Option<(i64, i32)> {
+    let mut f = reply.split('#').next()?.split('&');
+    let (date, time, off) = (f.next()?, f.next()?, f.next()?);
+    let mut d = date.split('/').map(|v| v.trim().parse::<i64>());
+    let (mo, day, yy) = (d.next()?.ok()?, d.next()?.ok()?, d.next()?.ok()?);
+    let mut t = time.split(':').map(|v| v.trim().parse::<i64>());
+    let (h, mi, sec) = (t.next()?.ok()?, t.next()?.ok()?, t.next()?.ok()?);
+    let off = off.trim();
+    let sign = match off.as_bytes().first()? { b'+' => 1, b'-' => -1, _ => return None };
+    let (oh, om) = off[1..].split_once(':')?;
+    let mount_off = sign * (oh.parse::<i32>().ok()? * 60 + om.parse::<i32>().ok()?);
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&day) || !(0..=23).contains(&h) || !(0..=59).contains(&mi) || !(0..=60).contains(&sec) {
+        return None;
+    }
+    let local = days_from_civil(2000 + yy, mo as u32, day as u32) * 86400 + h * 3600 + mi * 60 + sec;
+    let utc_offset_minutes = -mount_off;
+    Some((local - utc_offset_minutes as i64 * 60, utc_offset_minutes))
+}
+
+/// Days since 1970-01-01 of a civil date (the inverse of `civil`).
+fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m as i64 + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
 }
 
 /// `±dd*mm:ss` (`deg_width` digits of degrees), rounded to the nearest arcsecond.
@@ -503,6 +546,25 @@ mod tests {
         let mut m = mount("1#");
         assert!(m.query(":Te").is_err() && m.query("SLD").is_err());
         assert_eq!(m.query("GAT").unwrap(), "1");
+    }
+
+    #[test]
+    fn the_clock_is_read_from_gast_as_local_time_with_the_opposite_offset_sign() {
+        // the real reply of 2026-11-22 (mount at UTC-6): 11:42:07 local is 17:42:07 UTC
+        let mut m = mount("11/22/26&11:42:07&+06:00#15:47:53&-19*58:26#nNHGM040400880#");
+        m.port.written.clear();
+        let r = m.read_site_time().unwrap().expect("reads the clock");
+        assert_eq!(m.port.written, ":GAST#");
+        assert_eq!((r.utc_offset_minutes, r.unix_secs), (Some(-360), Some(1_795_369_327)));
+        // the site is not read: no documented command
+        assert_eq!((r.latitude_deg, r.longitude_east_deg), (None, None));
+        assert!(m.port.replies.is_empty(), "the whole three-part reply must be consumed");
+        // what set_site_time writes is read back as the same instant: 2026-11-21 21:20:38 UTC at UTC-6
+        assert_eq!(parse_gast_time("11/21/26&15:20:38&+06:00#"), Some((1_795_296_038, -360)));
+        // east of Greenwich the offset is written with a minus sign: UTC+5:30, 2027-01-01 02:00 local is 2026-12-31 20:30 UTC
+        assert_eq!(parse_gast_time("01/01/27&02:00:00&-05:30#"), Some((1_798_749_000, 330)));
+        assert_eq!(parse_gast_time("garbage"), None);
+        assert_eq!(parse_gast_time("13/40/26&11:00:00&+06:00#"), None);
     }
 
     #[test]

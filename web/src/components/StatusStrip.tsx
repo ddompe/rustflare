@@ -21,6 +21,12 @@ export function chipsFor(status: Status | null): ChipSpec[] {
   if (clip.clipped) chips.push({ key: 'clip', tone: 'bad', value: clip.value, label: clip.label, tab: 'camera', title: clip.help })
   if (!status.sun && !status.tracking?.lost) chips.push({ key: 'sun', tone: 'warn', label: `No ${noun(profileOf(status))} found`, tab: 'camera', title: 'Too dark? Try more exposure' })
   if (status.mount?.park === 'parked' || status.mount?.park === 'parking') chips.push({ key: 'park', tone: 'warn', label: 'Mount parked', tab: 'aim', title: 'Parked on the mount: motion is disabled' })
+  // the mount's own clock or place is not the Pi's: Go to is computed from them (nothing when the driver cannot read them)
+  const st = status.mount?.site_time
+  if (st && !st.ok) {
+    const what = st.time_ok === false ? 'Mount clock differs' : 'Mount place differs'
+    chips.push({ key: 'mountclock', tone: 'warn', label: what, tab: 'aim', title: `${st.why} Open the Aim tab, Mount time and place.` })
+  }
   // a lost target is shown once, in the status bar at the bottom
   if (g.state === 'calibrating') chips.push({ key: 'trk', tone: 'warn', label: 'Calibrating…', tab: 'track', title: 'Calibration in progress' })
   return chips

@@ -1101,3 +1101,47 @@ test.describe('optical setups: named trains that carry their profile', () => {
     await expect(g.getByRole('note')).toContainText('1 to 40')
   })
 })
+
+test.describe('mount time and place (issue #104)', () => {
+  test('differs -> chip -> send -> matches -> chip gone', async ({ page }) => {
+    // the Pi's site, and a simulated mount that holds a clock 3 min 12 s ahead and a site 10 degrees away
+    expect((await put(page, '/site', { latitude: 40, longitude: -105 })).ok()).toBe(true)
+    expect((await post(page, '/debug/sim-mount-clock', { time_offset_s: 192, latitude_deg: 30, longitude_east_deg: -105 })).ok()).toBe(true)
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Camera/ }).click()
+    // the chip is in the status strip on any tab, and jumps to the Aim tab
+    const chip = page.locator('.chip.mountclock')
+    await expect(chip).toBeVisible()
+    await expect(chip).toContainText('Mount clock differs')
+    expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(43.5)
+    await chip.click()
+    await expect(page.getByRole('tab', { name: /^Aim/ })).toHaveAttribute('aria-selected', 'true')
+    const disc = page.locator('details.disc', { has: page.locator('.disc-title', { hasText: 'Mount time and place' }) })
+    await expect(disc.locator('.disc-sum')).toContainText(/differs: 3 min (11|12|13) s, 10 degrees/) // the mount's clock is whole seconds
+    await disc.locator('summary').click()
+    await expect(disc).toContainText('Go to Sun is computed from the site and time the mount holds')
+    await expect(disc.locator('.clocktable')).toContainText('30.000° N')
+    await expect(disc.locator('.clocktable')).toContainText('40.000° N')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false)
+    const send = disc.getByRole('button', { name: 'Send site and time to the mount' })
+    await expect(send).toBeEnabled()
+    expect((await send.boundingBox())!.height).toBeGreaterThanOrEqual(43.5)
+    await send.click()
+    await expect(disc.locator('.disc-sum')).toContainText('matches')
+    await expect(page.locator('.chip.mountclock')).toHaveCount(0)
+    const st = (await (await page.request.get('/api/status')).json()).mount.site_time
+    expect(st.ok).toBe(true)
+    expect(Math.abs(st.time_diff_s)).toBeLessThan(5)
+    expect(st.place_diff_deg).toBeLessThan(0.05)
+  })
+
+  test('the API: sync needs no confirmation, and is refused without a mount', async ({ page }) => {
+    await put(page, '/site', { latitude: 40, longitude: -105 })
+    expect((await post(page, '/mount/sync-site-time')).ok()).toBe(true)
+    const st = (await (await page.request.get('/api/status')).json()).mount.site_time
+    expect(st.ok).toBe(true)
+    expect(st.read_at_unix).toBeGreaterThan(1_700_000_000)
+    await post(page, '/mount/disconnect')
+    expect((await post(page, '/mount/sync-site-time')).status()).toBe(400)
+  })
+})

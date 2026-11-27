@@ -145,6 +145,10 @@ pub enum Command {
     MountGoto { target: String, allow_unsynced_clock: bool, allow_below_horizon: bool },
     /// Observer site (decimal degrees, east-positive longitude).
     SetSite { latitude: f64, longitude: f64 },
+    /// Sends the Pi's saved site and clock to the mount (`Mount::set_site_time`) and reads them back. Moves nothing.
+    SyncSiteTime,
+    /// Test hook, simulator only: what the simulated mount holds as its site and clock.
+    SimMountClock { time_offset_s: i64, latitude_deg: Option<f64>, longitude_east_deg: Option<f64> },
     /// Meridian flip assist. `record_only`: just remember the pointing and Sun position. `restore`: the flip was done by
     /// hand, GoTo the recorded pointing and re-centre. Otherwise: record, GoTo (the mount turns over if it decides to), re-centre.
     StartFlip { record_only: bool, restore: bool },
@@ -379,6 +383,9 @@ pub struct Engine {
     /// What the mount itself last reported (it can be changed from outside: its buttons, another app).
     mount_state: MountState,
     last_mount_poll: Instant,
+    /// What the mount said about its own site and clock, with the Pi's clock when it said it and when (Unix seconds) it was read. Compared with the Pi's saved site at publish time.
+    mount_site_time: Option<(rustflare_core::MountSiteTime, f64, i64)>,
+    last_site_time_read: Option<Instant>,
     mount_poll_failures: u32,
     site: Option<Site>,
     guide_params: GuideParams,
@@ -565,6 +572,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         mount_rate: TrackingRate::Solar,
         mount_state: MountState::default(),
         last_mount_poll: Instant::now(),
+        mount_site_time: None,
+        last_site_time_read: None,
         mount_poll_failures: 0,
         site: crate::config::read(storage.config_file()).get("site").and_then(|v| serde_json::from_value(v.clone()).ok()),
         goto: None,
@@ -1422,7 +1431,7 @@ impl Engine {
         self.status.seq += 1;
         self.last_publish = Instant::now();
         let ms = self.mount_state;
-        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking, slewing: ms.slewing, at_home: ms.at_home, park: ms.park, alt_az: ms.alt_az, link: m.link().map(|l| l.kind), link_up: m.link().map_or(true, |l| l.up), rate: self.mount_rate, slew_speeds: m.slew_speeds(), can_search_home: m.can_search_home() });
+        self.status.mount = self.mount.as_ref().map(|m| MountStatus { info: m.info(), tracking: self.mount_tracking, slewing: ms.slewing, at_home: ms.at_home, park: ms.park, alt_az: ms.alt_az, link: m.link().map(|l| l.kind), link_up: m.link().map_or(true, |l| l.up), rate: self.mount_rate, slew_speeds: m.slew_speeds(), can_search_home: m.can_search_home(), site_time: self.mount_site_time.map(|(mst, pi_unix, read_at)| crate::sitetime::compare(mst, self.site.map(|s| (s.latitude, s.longitude)), pi_unix, local_offset_minutes(), read_at)) });
         self.status.guiding.state = match self.guide {
             GuideState::Off => "off",
             GuideState::Calibrating(_) => "calibrating",
@@ -1776,6 +1785,35 @@ impl Engine {
                 }
                 self.site = Some(Site { latitude, longitude });
                 crate::config::set(self.storage.config_file(), "site", json!({ "latitude": latitude, "longitude": longitude }))?;
+                Ok(json!({}))
+            }
+            Command::SyncSiteTime => {
+                if self.mount.is_none() {
+                    return Err("no mount connected".into());
+                }
+                let site = self.site.ok_or("set your site first: More > Site (latitude and longitude), or Use my location on the Aim tab")?;
+                self.require_not_parked()?;
+                if self.mount_state.slewing == Some(true) || self.goto.is_some() || self.flip.is_some() {
+                    return Err("the mount is slewing: wait until it stops, then send the site and time".into());
+                }
+                let now = unix_now_f64();
+                let st = SiteTime { latitude_deg: site.latitude, longitude_east_deg: site.longitude, unix_secs: now as i64, utc_offset_minutes: local_offset_minutes() };
+                let before = self.mount_site_time.map(|(m, ..)| m);
+                self.mount.as_mut().ok_or("no mount connected")?.set_site_time(&st).map_err(s)?;
+                self.read_mount_site_time();
+                self.event("mount_site_time_sync", json!({ "latitude": site.latitude, "longitude_east": site.longitude, "unix": st.unix_secs, "utc_offset_minutes": st.utc_offset_minutes,
+                    "mount_before": before.map(|m| json!({ "latitude": m.latitude_deg, "longitude_east": m.longitude_east_deg, "unix": m.unix_secs, "utc_offset_minutes": m.utc_offset_minutes })),
+                    "ntp_synchronized": self.ntp_sync }));
+                self.publish();
+                Ok(json!({ "site_time": self.status.mount.as_ref().and_then(|m| m.site_time.clone()) }))
+            }
+            Command::SimMountClock { time_offset_s, latitude_deg, longitude_east_deg } => {
+                if self.mount.as_ref().map(|m| m.info()).as_deref() != Some("Simulated mount") {
+                    return Err("this hook is for the simulated mount only".into());
+                }
+                rustflare_mount::simulator::set_sim_clock(rustflare_mount::simulator::SimClock { time_offset_s, latitude_deg, longitude_east_deg });
+                self.read_mount_site_time();
+                self.publish();
                 Ok(json!({}))
             }
             Command::MountGoto { target, allow_unsynced_clock, allow_below_horizon } => {
@@ -2215,6 +2253,9 @@ impl Engine {
             return;
         }
         self.last_mount_poll = Instant::now();
+        if self.last_site_time_read.is_none_or(|t| t.elapsed() >= crate::sitetime::READ_INTERVAL) {
+            self.read_mount_site_time();
+        }
         match self.mount.as_mut().map(|m| m.state()) {
             Some(Ok(st)) => {
                 self.mount_poll_failures = 0;
@@ -2472,6 +2513,25 @@ impl Engine {
         if let Some(Ok(st)) = self.mount.as_mut().map(|m| m.state()) {
             self.mount_tracking = st.tracking.unwrap_or(false);
             self.mount_state = st;
+        }
+        self.mount_site_time = None;
+        self.last_site_time_read = None;
+        self.read_mount_site_time();
+    }
+
+    /// Asks the mount for its own site and clock (read-only) and keeps the answer with the Pi's clock at that moment. A mount that cannot
+    /// say leaves nothing; a failed read keeps the last answer and is tried again at the next interval.
+    fn read_mount_site_time(&mut self) {
+        self.last_site_time_read = Some(Instant::now());
+        let before = unix_now_f64();
+        match self.mount.as_mut().map(|m| m.read_site_time()) {
+            Some(Ok(Some(mst))) => {
+                let after = unix_now_f64();
+                self.mount_site_time = Some((mst, (before + after) / 2.0, after as i64));
+            }
+            Some(Ok(None)) => self.mount_site_time = None,
+            Some(Err(e)) => log::warn!("reading the mount's site and time: {e}"),
+            None => {}
         }
     }
 
@@ -4255,6 +4315,15 @@ mod wrap_tests {
         // nothing left at all
         assert!(wrap_unsafe(0.0, 10.0, 0.1, 1.0, 57.0));
     }
+}
+
+fn unix_now_f64() -> f64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0)
+}
+
+/// The Pi's local time minus UTC in minutes: what the mount is told as its time zone.
+fn local_offset_minutes() -> i32 {
+    chrono::Local::now().offset().local_minus_utc() / 60
 }
 
 /// The tracking rate that follows a target: solar for the Sun, lunar for the Moon, sidereal for a planet.
