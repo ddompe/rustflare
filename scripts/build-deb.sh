@@ -28,7 +28,7 @@ fi
 
 # a local build says so, with its commit, in the corner of every screen (a CI or release build shows the plain version)
 if [ -z "${CI:-}" ] && command -v git >/dev/null 2>&1; then
-  RUSTFLARE_BUILD="local $(git rev-parse --short HEAD 2>/dev/null)$([ -n "$(git status --porcelain 2>/dev/null)" ] && echo '+changes')"
+  RUSTFLARE_BUILD="local $(git rev-parse --short HEAD 2>/dev/null)$([ -n "$(git status --porcelain 2>/dev/null)" ] && echo '+changes' || true)"
   export RUSTFLARE_BUILD
 fi
 
