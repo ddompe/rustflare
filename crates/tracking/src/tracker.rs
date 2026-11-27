@@ -71,6 +71,34 @@ fn pxs(f: &Frame, x: u32, y: u32, v: View) -> u8 {
     ((px_f(f, x, y) - v.black).max(0.0) * v.gain).min(255.0) as u8
 }
 
+/// The frame sampled every `DISC_STEP` pixels in both directions, already brightened: what the thresholds, the disc centroid and
+/// the edge scan all read, so the frame's pixels are touched once (not once per use, each with a format match and a conversion).
+struct Samples { gw: usize, gh: usize, px: Vec<u8> }
+
+fn sample_grid(frame: &Frame, view: View) -> Samples {
+    let st = DISC_STEP as usize;
+    let (w, h) = (frame.width as usize, frame.height as usize);
+    let (gw, gh) = (w.div_ceil(st), h.div_ceil(st));
+    let mut px = Vec::with_capacity(gw * gh);
+    let plain = view.gain == 1.0;
+    let bright = |v: f64| ((v - view.black).max(0.0) * view.gain).min(255.0) as u8;
+    for gy in 0..gh {
+        let y = gy * st;
+        match frame.format {
+            PixelFormat::Mono8 => {
+                let row = &frame.data[y * w..(y + 1) * w];
+                if plain { px.extend(row.iter().step_by(st).copied()) } else { px.extend(row.iter().step_by(st).map(|&v| bright(v as f64))) }
+            }
+            PixelFormat::Mono16 => {
+                let row = &frame.data[2 * y * w..2 * (y + 1) * w];
+                if plain { px.extend(row.chunks_exact(2).step_by(st).map(|c| c[1])) }
+                else { px.extend(row.chunks_exact(2).step_by(st).map(|c| bright(u16::from_le_bytes([c[0], c[1]]) as f64 / 256.0))) }
+            }
+        }
+    }
+    Samples { gw, gh, px }
+}
+
 /// How much to brighten the frame so the Sun is detected the same in full sun and under cloud or a tree's shadow
 /// (the light can drop a hundredfold within seconds, and the top 8 bits of a dim 16-bit frame hold almost nothing).
 /// Only dim frames are brightened: the 99.5th percentile is brought to 128 (8-bit units). `None`: too dark to hold
@@ -109,24 +137,19 @@ fn view_gain(frame: &Frame) -> Option<View> {
 /// typical disc level, putting the cut inside the disc. Otsu splits sky from disc wherever the
 /// histogram's valley is. A frame needs two clearly different populations (upper class at least twice
 /// as bright as the lower), otherwise there is no limb in view (e.g. a field entirely on the disc).
-fn otsu_threshold(frame: &Frame, view: View) -> Option<u8> {
+fn otsu_threshold(grid: &Samples) -> Option<u8> {
     // Histogram on a log-intensity axis (256 bins over ln(1+v), v in 0..=255): brightness structure on the
     // disc is multiplicative (plage, filaments), so sky-vs-disc then outweighs dark-disc-vs-plage.
     const LN256: f64 = 5.545_177_444_479_562;
-    let bin_of = |v: u8| ((1.0 + v as f64).ln() / LN256 * 255.0).round() as usize;
+    let mut bins = [0usize; 256];
+    for (v, b) in bins.iter_mut().enumerate() { *b = ((1.0 + v as f64).ln() / LN256 * 255.0).round() as usize; }
     let value_of = |bin: usize| ((bin as f64 / 255.0 * LN256).exp() - 1.0).round().clamp(0.0, 255.0) as u8;
 
     let mut hist = [0u32; 256];
     let mut vals = [0u32; 256]; // true value histogram, for the final brightness check
-    let mut n = 0u64;
-    for y in (0..frame.height).step_by(DISC_STEP as usize) {
-        for x in (0..frame.width).step_by(DISC_STEP as usize) {
-            let v = pxs(frame, x, y, view);
-            hist[bin_of(v)] += 1;
-            vals[v as usize] += 1;
-            n += 1;
-        }
-    }
+    let n = grid.px.len() as u64;
+    for &v in &grid.px { vals[v as usize] += 1; }
+    for (v, &c) in vals.iter().enumerate() { hist[bins[v]] += c; }
     if n == 0 {
         return None;
     }
@@ -173,15 +196,10 @@ fn otsu_threshold(frame: &Frame, view: View) -> Option<u8> {
 /// Otsu splits at the biggest brightness jump, which on a disc crossed by a tree's shadow is the shadow edge: the
 /// shadowed part of the disc then counts as "sky", shadow edges become false limb points and the fit swings around.
 /// The sky itself is a dark mode, so cut just above it instead. `None` if no frame fraction looks like sky.
-fn sky_edge_threshold(frame: &Frame, view: View) -> Option<(u8, f64)> {
+fn sky_edge_threshold(grid: &Samples) -> Option<(u8, f64)> {
     let mut vals = [0u32; 256];
-    let mut n = 0u64;
-    for y in (0..frame.height).step_by(DISC_STEP as usize) {
-        for x in (0..frame.width).step_by(DISC_STEP as usize) {
-            vals[pxs(frame, x, y, view) as usize] += 1;
-            n += 1;
-        }
-    }
+    let n = grid.px.len() as u64;
+    for &v in &grid.px { vals[v as usize] += 1; }
     if n == 0 {
         return None;
     }
@@ -205,9 +223,9 @@ fn sky_edge_threshold(frame: &Frame, view: View) -> Option<(u8, f64)> {
     Some((thr as u8, above as f64 / nn))
 }
 
-fn sun_threshold(frame: &Frame, view: View) -> Option<u8> {
-    let otsu = otsu_threshold(frame, view);
-    let Some((sky_thr, _)) = sky_edge_threshold(frame, view) else { return otsu };
+fn sun_threshold(grid: &Samples) -> Option<u8> {
+    let otsu = otsu_threshold(grid);
+    let Some((sky_thr, _)) = sky_edge_threshold(grid) else { return otsu };
     match otsu {
         None => Some(sky_thr),
         Some(o) if sky_thr < o => Some(sky_thr),
@@ -218,13 +236,14 @@ fn sun_threshold(frame: &Frame, view: View) -> Option<u8> {
 /// Centroid and equivalent radius of the bright disc.
 pub fn find_disc(frame: &Frame) -> Option<(Vec2, f64)> {
     let view = view_gain(frame)?;
-    let thr = sun_threshold(frame, view)?;
+    let grid = sample_grid(frame, view);
+    let thr = sun_threshold(&grid)?;
     let (mut sx, mut sy, mut n) = (0f64, 0f64, 0f64);
-    for y in (0..frame.height).step_by(DISC_STEP as usize) {
-        for x in (0..frame.width).step_by(DISC_STEP as usize) {
-            if pxs(frame, x, y, view) >= thr {
-                sx += x as f64;
-                sy += y as f64;
+    for gy in 0..grid.gh {
+        for (gx, &v) in grid.px[gy * grid.gw..(gy + 1) * grid.gw].iter().enumerate() {
+            if v >= thr {
+                sx += (gx * DISC_STEP as usize) as f64;
+                sy += (gy * DISC_STEP as usize) as f64;
                 n += 1.0;
             }
         }
@@ -255,7 +274,7 @@ pub struct SunLocation {
 /// data disagree with it, the radius is fitted freely instead.
 pub fn locate_sun(frame: &Frame, expected_radius: Option<f64>) -> Option<SunLocation> {
     let view = view_gain(frame)?;
-    let thr = sun_threshold(frame, view)?;
+    let thr = sun_threshold(&sample_grid(frame, view))?;
     let (w, h) = (frame.width, frame.height);
     let st = DISC_STEP as usize;
     let touches_edge = (0..w).step_by(st).any(|x| pxs(frame, x, 0, view) >= thr || pxs(frame, x, h - 1, view) >= thr)
@@ -425,18 +444,20 @@ impl Tracker {
 fn limb_points(frame: &Frame, expected: Option<f64>) -> Vec<(f64, f64)> {
     let st = DISC_STEP;
     let Some(view) = view_gain(frame) else { return vec![] };
-    let Some(thr) = sun_threshold(frame, view) else { return vec![] };
+    let grid = sample_grid(frame, view);
+    let Some(thr) = sun_threshold(&grid) else { return vec![] };
     let margin = 2 * st;
     let mut pts = vec![];
+    let gw = grid.gw;
     let mut y = margin;
     while y + margin < frame.height {
+        let gy = (y / st) as usize;
+        let (up, row, down) = (&grid.px[(gy - 1) * gw..gy * gw], &grid.px[gy * gw..(gy + 1) * gw], &grid.px[(gy + 1) * gw..(gy + 2) * gw]);
         let mut x = margin;
         while x + margin < frame.width {
-            if pxs(frame, x, y, view) >= thr {
-                let edge = [(x - st, y), (x + st, y), (x, y - st), (x, y + st)].iter().any(|&(nx, ny)| pxs(frame, nx, ny, view) < thr);
-                if edge {
-                    pts.push((x as f64, y as f64));
-                }
+            let gx = (x / st) as usize;
+            if row[gx] >= thr && (row[gx - 1] < thr || row[gx + 1] < thr || up[gx] < thr || down[gx] < thr) {
+                pts.push((x as f64, y as f64));
             }
             x += st;
         }
@@ -482,6 +503,7 @@ fn ransac_circle(pts: &[(f64, f64)], near: Option<f64>) -> Option<(f64, f64, f64
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15 ^ n as u64;
     let mut next = || { seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; (seed % n as u64) as usize };
     let mut best = None::<(f64, f64, f64, usize)>;
+    let (xs, ys): (Vec<f64>, Vec<f64>) = pts.iter().copied().unzip();
     for _ in 0..300 {
         let (a, b, c) = (pts[next()], pts[next()], pts[next()]);
         let d = 2.0 * (a.0 * (b.1 - c.1) + b.0 * (c.1 - a.1) + c.0 * (a.1 - b.1));
@@ -490,8 +512,22 @@ fn ransac_circle(pts: &[(f64, f64)], near: Option<f64>) -> Option<(f64, f64, f64
         let uy = ((a.0 * a.0 + a.1 * a.1) * (c.0 - b.0) + (b.0 * b.0 + b.1 * b.1) * (a.0 - c.0) + (c.0 * c.0 + c.1 * c.1) * (b.0 - a.0)) / d;
         let r = (a.0 - ux).hypot(a.1 - uy);
         if !(20.0..=20000.0).contains(&r) || near.is_some_and(|e| (r / e - 1.0).abs() > 0.2) { continue; }
-        let inl = pts.iter().filter(|p| ((p.0 - ux).hypot(p.1 - uy) - r).abs() <= tol).count();
-        if best.map_or(true, |b| inl > b.3) { best = Some((ux, uy, r, inl)); }
+        // |d - r| <= tol  <=>  (r - tol)^2 <= d^2 <= (r + tol)^2 (r >= 20 > tol): no square root per point, and a loop the compiler vectorises
+        let (lo, hi) = ((r - tol) * (r - tol), (r + tol) * (r + tol));
+        let need = best.map_or(0, |b: (f64, f64, f64, usize)| b.3 + 1);
+        let mut inl = 0usize;
+        let mut beaten = false;
+        for (i, (cx, cy)) in xs.chunks(256).zip(ys.chunks(256)).enumerate() {
+            let mut c = 0u32;
+            for (&x, &y) in cx.iter().zip(cy) {
+                let d2 = (x - ux) * (x - ux) + (y - uy) * (y - uy);
+                c += (d2 >= lo && d2 <= hi) as u32;
+            }
+            inl += c as usize;
+            // the circle cannot overtake the best one any more: stop counting (same result, less work)
+            if inl + (n - (i * 256 + cx.len())) < need { beaten = true; break; }
+        }
+        if !beaten && best.map_or(true, |b| inl > b.3) { best = Some((ux, uy, r, inl)); }
     }
     best
 }
@@ -964,3 +1000,8 @@ mod tests {
         assert_eq!((p.pos.x, p.pos.y), (307.0, 235.0));
     }
 }
+
+#[cfg(test)]
+mod reference;
+#[cfg(test)]
+mod equiv;
