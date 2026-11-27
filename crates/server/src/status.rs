@@ -355,6 +355,8 @@ pub struct RoiStatus {
     pub height: u32,
     pub sensor_width: u32,
     pub sensor_height: u32,
+    /// Multiples and minimum the camera takes, so the UI snaps the same way the engine does.
+    pub limits: rustflare_core::RoiLimits,
 }
 
 #[derive(Clone, Serialize)]

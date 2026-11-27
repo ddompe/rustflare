@@ -72,6 +72,47 @@ pub fn centred_roi(sensor: (u32, u32), fraction: f64) -> Roi {
     Roi { x: (sensor.0 - w) / 2 / 2 * 2, y: (sensor.1 - h) / 2 / 2 * 2, width: w, height: h }
 }
 
+/// What a camera accepts for a region: the multiples its SDK wants and the smallest window it reads out.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct RoiLimits {
+    pub step_x: u32,
+    pub step_y: u32,
+    pub step_w: u32,
+    pub step_h: u32,
+    pub min_w: u32,
+    pub min_h: u32,
+}
+
+impl Default for RoiLimits {
+    fn default() -> Self { RoiLimits { step_x: 1, step_y: 1, step_w: 1, step_h: 1, min_w: 16, min_h: 16 } }
+}
+
+/// Turns a requested region into one the camera takes: the size is rounded DOWN to the steps, the corner to the NEAREST step, and then the
+/// corner is moved so the window lies inside the sensor. Refuses a region that is empty, larger than the sensor or below the minimum
+/// size (after rounding), so a request is never quietly turned into something very different.
+pub fn fit_roi(req: Roi, sensor: (u32, u32), lim: &RoiLimits) -> std::result::Result<Roi, String> {
+    let step = |v: u32| v.max(1);
+    let down = |v: u32, st: u32| v / step(st) * step(st);
+    let nearest = |v: u32, st: u32| (v + step(st) / 2) / step(st) * step(st);
+    let (min_w, min_h) = (lim.min_w.max(step(lim.step_w)), lim.min_h.max(step(lim.step_h)));
+    let max_w = down(sensor.0, lim.step_w);
+    let max_h = down(sensor.1, lim.step_h);
+    if req.width < min_w || req.height < min_h {
+        return Err(format!("the region must be at least {min_w} x {min_h} pixels"));
+    }
+    if req.width > sensor.0 || req.height > sensor.1 {
+        return Err(format!("the region is larger than the sensor ({} x {})", sensor.0, sensor.1));
+    }
+    if req.x.saturating_add(req.width) > sensor.0 || req.y.saturating_add(req.height) > sensor.1 {
+        return Err(format!("the region lies outside the sensor ({} x {})", sensor.0, sensor.1));
+    }
+    let w = down(req.width, lim.step_w).clamp(min_w, max_w.max(min_w));
+    let h = down(req.height, lim.step_h).clamp(min_h, max_h.max(min_h));
+    let x = nearest(req.x, lim.step_x).min(down(sensor.0 - w, lim.step_x));
+    let y = nearest(req.y, lim.step_y).min(down(sensor.1 - h, lim.step_y));
+    Ok(Roi { x, y, width: w, height: h })
+}
+
 /// An opened camera. Drivers are blocking; the server calls them from a dedicated thread.
 pub trait Camera: Send {
     fn info(&self) -> CameraInfo;
@@ -94,6 +135,8 @@ pub trait Camera: Send {
     fn sensor_size(&self) -> Option<(u32, u32)> { None }
     /// The current region of interest (the whole sensor when none is set).
     fn roi(&self) -> Option<Roi> { None }
+    /// The multiples and minimum size this camera takes for a region (see [`fit_roi`]).
+    fn roi_limits(&self) -> RoiLimits { RoiLimits::default() }
     /// Reads out only `roi`: smaller frames, higher frame rate. Drivers that cannot do it return `Unsupported`.
     fn set_roi(&mut self, _roi: Roi) -> Result<()> {
         Err(crate::Error::Unsupported("region of interest on this camera".into()))
@@ -118,5 +161,49 @@ mod roi_tests {
         assert_eq!(centred_roi((1944, 1472), 1.0), Roi { x: 0, y: 0, width: 1944, height: 1472 });
         let q = centred_roi((1944, 1472), 0.25);
         assert_eq!((q.width % 8, q.height % 4), (0, 0));
+    }
+
+    const ASI: RoiLimits = RoiLimits { step_x: 2, step_y: 2, step_w: 8, step_h: 2, min_w: 64, min_h: 64 };
+    const S: (u32, u32) = (3008, 3008);
+    fn r(x: u32, y: u32, width: u32, height: u32) -> Roi { Roi { x, y, width, height } }
+
+    #[test]
+    fn size_rounds_down_and_the_corner_to_the_nearest_step() {
+        assert_eq!(fit_roi(r(13, 7, 1503, 1501), S, &ASI).unwrap(), r(14, 8, 1496, 1500));
+        assert_eq!(fit_roi(r(0, 0, 3008, 3008), S, &ASI).unwrap(), r(0, 0, 3008, 3008));
+    }
+
+    #[test]
+    fn rounding_never_leaves_the_sensor_and_a_request_past_an_edge_is_refused() {
+        // nearest corner would be 2999 -> 3000, but 3000 + 8 is past the edge: moved back inside
+        let right = fit_roi(r(2999, 100, 9, 100), S, &RoiLimits { min_w: 8, ..ASI }).unwrap();
+        assert_eq!(right, r(3000, 100, 8, 100));
+        let right = fit_roi(r(2511, 100, 497, 500), S, &ASI).unwrap();
+        assert_eq!(right, r(2512, 100, 496, 500));
+        let bottom = fit_roi(r(100, 2745, 200, 263), S, &ASI).unwrap();
+        assert_eq!((bottom.y, bottom.height), (2746, 262));
+        assert!(bottom.y + bottom.height <= S.1);
+        // all four edges, flush
+        assert_eq!(fit_roi(r(0, 0, 64, 64), S, &ASI).unwrap(), r(0, 0, 64, 64));
+        assert_eq!(fit_roi(r(2944, 0, 64, 64), S, &ASI).unwrap(), r(2944, 0, 64, 64));
+        assert_eq!(fit_roi(r(0, 2944, 64, 64), S, &ASI).unwrap(), r(0, 2944, 64, 64));
+        assert_eq!(fit_roi(r(2944, 2944, 64, 64), S, &ASI).unwrap(), r(2944, 2944, 64, 64));
+        // past an edge
+        assert!(fit_roi(r(2900, 100, 500, 500), S, &ASI).unwrap_err().contains("outside"));
+        assert!(fit_roi(r(100, 2900, 100, 200), S, &ASI).unwrap_err().contains("outside"));
+        assert!(fit_roi(r(100, 2990, 200, 18), S, &ASI).unwrap_err().contains("at least"));
+    }
+
+    #[test]
+    fn odd_sensors_and_tiny_or_huge_requests() {
+        let odd = (1281, 961);
+        let o = fit_roi(r(0, 0, 1281, 961), odd, &ASI).unwrap();
+        assert_eq!((o.width, o.height), (1280, 960));
+        assert!(o.x + o.width <= 1281 && o.y + o.height <= 961 && o.x % 2 == 0 && o.y % 2 == 0);
+        assert!(fit_roi(r(0, 0, 63, 100), S, &ASI).unwrap_err().contains("at least 64"));
+        assert!(fit_roi(r(0, 0, 4000, 100), S, &ASI).unwrap_err().contains("larger than the sensor"));
+        assert!(fit_roi(r(5000, 0, 100, 100), S, &ASI).unwrap_err().contains("outside"));
+        assert!(fit_roi(r(0, 0, 0, 0), S, &RoiLimits::default()).is_err());
+        assert_eq!(fit_roi(r(3, 5, 17, 19), S, &RoiLimits::default()).unwrap(), r(3, 5, 17, 19));
     }
 }

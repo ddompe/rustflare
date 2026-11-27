@@ -240,6 +240,8 @@ impl Camera for SimCamera {
 
     fn sensor_size(&self) -> Option<(u32, u32)> { Some((W, H)) }
 
+    fn roi_limits(&self) -> rustflare_core::RoiLimits { rustflare_core::RoiLimits { step_x: 2, step_y: 2, step_w: 4, step_h: 2, min_w: 64, min_h: 64 } }
+
     fn roi(&self) -> Option<rustflare_core::Roi> { Some(self.roi.unwrap_or(rustflare_core::Roi { x: 0, y: 0, width: W, height: H })) }
 
     fn set_roi(&mut self, roi: rustflare_core::Roi) -> Result<()> {
