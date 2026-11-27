@@ -5,6 +5,7 @@ import { useSetting } from '../settings'
 import { DeviceCard } from './DeviceCard'
 import { useDatasheet } from '../datasheet'
 import { isSun, noun, profileForTarget, profileOf, PROFILES } from '../profile'
+import { locate, SiteChoices } from './SiteHelp'
 import { clockSummary, placeText, sendReason, spanWords, timeText } from '../mountclock'
 
 // Speeds the ZWO AM3/AM5 supports, as multiples of the sidereal rate.
@@ -153,6 +154,7 @@ function Offset({ status }: { status: Status }) {
     if (Math.abs(det) > 1e-6) {
       const a = (s.y * dx - s.x * dy) / det
       const b = (-p.y * dx + p.x * dy) / det
+      // the pad's letters are the mount's axes: which ones make the image go where the readout says
       pad = `${a >= 0 ? 'E' : 'W'} and ${b >= 0 ? 'N' : 'S'}`
     }
   }
@@ -166,7 +168,7 @@ function Offset({ status }: { status: Status }) {
           <>
             Move the image <b>{arrow(dx, '→', '←')}{Math.abs(dx) >= 1 ? ` ${Math.abs(dx).toFixed(0)} px` : ''}</b>{' '}
             <b>{arrow(dy, '↓', '↑')}{Math.abs(dy) >= 1 ? ` ${Math.abs(dy).toFixed(0)} px` : ''}</b>
-            {pad && <span className="muted"> · hold {pad}</span>}
+            {pad ? <span className="muted"> · press {pad}</span> : <span className="muted"> · calibrate to see which button</span>}
           </>
         )}
       </div>
@@ -354,12 +356,9 @@ function SearchHome({ disabled }: { disabled: boolean }) {
   )
 }
 
-/** One tap saves where this phone is as the site (the browser only shares its location over HTTPS). */
+/** One tap saves where this phone is as the site (the browser only shares its location over HTTPS; the failure is said in the block that asked). */
 function saveMyLocation(run: (f: () => Promise<unknown>) => unknown) {
-  navigator.geolocation.getCurrentPosition(
-    (p) => { void run(() => api('PUT', '/site', { latitude: p.coords.latitude, longitude: p.coords.longitude })) },
-    (e) => reportError(new Error(`Location unavailable (${e.message}). The browser only shares it over HTTPS: use Type it in instead.`), 'Setting the site'),
-  )
+  void run(async () => { const p = await locate(); await api('PUT', '/site', p) })
 }
 
 /** What the mount itself holds as its site and time, next to the Pi's, and a button that sends the Pi's (nothing moves). */
@@ -400,10 +399,7 @@ function MountClock({ status, openMore, focus }: { status: Status; openMore?: (f
         {st && !status.site && (
           <div className="needs" role="note">
             <b>Set your site first.</b> The Pi sends its saved position and clock.
-            <div className="btnrow tight">
-              <button type="button" className="primary grow" disabled={busy} onClick={() => saveMyLocation(run)}>Use my location</button>
-              {openMore && <button type="button" className="grow" onClick={() => openMore('site')}>Type it in</button>}
-            </div>
+            <SiteChoices busy={busy} onUse={() => saveMyLocation(run)} onType={openMore && (() => openMore('site'))} />
           </div>
         )}
         <ErrorLine error={err} />
@@ -449,10 +445,7 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
           {!status.site && (
             <div className="needs" role="note" id="why-goto-site">
               <b>Set your site first.</b> Go to works out where the Sun is from your position and the clock.
-              <div className="btnrow tight">
-                <button type="button" className="primary grow" disabled={busy} onClick={useHere}>Use my location</button>
-                {openMore && <button type="button" className="grow" onClick={() => openMore('site')}>Type it in</button>}
-              </div>
+              <SiteChoices busy={busy} onUse={useHere} onType={openMore && (() => openMore('site'))} />
             </div>
           )}
         </>

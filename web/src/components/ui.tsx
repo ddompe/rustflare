@@ -1,4 +1,20 @@
-import { ReactNode, useId, useState } from 'react'
+import { ReactNode, useEffect, useId, useRef, useState } from 'react'
+
+/** A small popover: open state, a ref for the box that holds button and sheet, closes on a tap outside and on Escape (focus returns to the button). */
+export function usePopover() {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const away = (e: Event) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { setOpen(false); button.current?.focus() } }
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc) }
+  }, [open])
+  return { open, setOpen, box, button }
+}
 
 /** Runs an async action, reporting failures inline. */
 export function useAction() {

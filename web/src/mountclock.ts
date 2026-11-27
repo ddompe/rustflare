@@ -58,3 +58,12 @@ export function clockNote(status: Status): string | null {
     : 'Go to sends the Pi’s time and place first. Send them now if you also steer from the mount’s handset.'
   return `Mount ${what}. ${fix}`
 }
+
+/** The mount-clock difference in a few words, to lead a chip with: "Clock off 3 min", "Place off 120 km", "Clock and place off". */
+export function clockShort(status: Status): string | null {
+  const st = status.mount?.site_time
+  if (!st || !(st.time_ok === false || st.place_ok === false)) return null
+  if (st.time_ok === false && st.place_ok === false) return 'Clock and place off'
+  if (st.time_ok === false) return `Clock off ${st.time_diff_s != null ? spanWords(st.time_diff_s) : 'some time'}`
+  return `Place off ${st.place_diff_deg != null ? `${km(st.place_diff_deg)} km` : 'some distance'}`
+}

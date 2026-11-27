@@ -22,10 +22,10 @@ type Layout = Record<HudId, W>
 
 export const HUD_ITEMS: { id: HudId; label: string; short: string; when: string }[] = [
   { id: 'rec', label: 'Recording', short: 'Recording', when: 'shows while recording' },
-  { id: 'buffer', label: 'RAM buffer and disk', short: 'Buffer', when: 'shows while recording' },
+  { id: 'buffer', label: 'RAM buffer and storage', short: 'Buffer', when: 'shows while recording' },
   { id: 'guide', label: 'Guiding error', short: 'Guiding', when: 'shows while tracking' },
   { id: 'hist', label: 'Histogram', short: 'Histogram', when: '' },
-  { id: 'strip', label: 'Status: fps, disk, exposure, mount, flats', short: 'Status', when: '' },
+  { id: 'strip', label: 'Status: fps, storage, exposure, mount, flats', short: 'Status', when: '' },
   { id: 'mask', label: 'Prominence mask size', short: 'Mask size', when: 'shows with the prominence view' },
   { id: 'focus', label: 'Focus score', short: 'Focus score', when: 'shows with focus assist' },
   { id: 'flip', label: 'Meridian flip', short: 'Meridian flip', when: 'shows when a flip is near or running' },
@@ -189,7 +189,7 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
         <progress max={c.buffer_capacity || 1} value={c.buffer_queued} className="buf" aria-label="RAM buffer in use" />
         <div className="muted">{c.buffer_queued}/{c.buffer_capacity} frames</div>
         {(c.dropped ?? 0) > 0 && <div className="bad-text"><b>{c.dropped}</b> dropped</div>}
-        <div><b className="cv">{c.disk_mb_s.toFixed(0)}</b> <span className="cl">MB/s to disk</span></div>
+        <div><b className="cv">{c.disk_mb_s.toFixed(0)}</b> <span className="cl">MB/s to storage</span></div>
       </Widget>,
     )
   }
@@ -233,7 +233,7 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
         <dl className="hud-grid">
           <dt>Camera</dt><dd><b className="cv">{cam.fps.toFixed(1)}</b> fps</dd>
           <dt>Screen</dt><dd><b className="cv">{shown.toFixed(0)}</b> fps</dd>
-          <dt>Disk</dt><dd>{recording ? <><b className="cv">{c.disk_mb_s.toFixed(0)}</b> MB/s</> : <span className="muted">idle</span>}</dd>
+          <dt>Storage</dt><dd>{recording ? <><b className="cv">{c.disk_mb_s.toFixed(0)}</b> MB/s</> : <span className="muted">idle</span>}</dd>
           {e && <><dt>Exposure</dt><dd><b>{expo(e.value)}</b></dd></>}
           {gn && <><dt>Gain</dt><dd><b>{Math.round(gn.value)}</b></dd></>}
           {cam.temperature_c != null && <><dt>Sensor</dt><dd>{cam.cooler?.on && <Snow />}<b>{cam.temperature_c.toFixed(1)}</b> °C</dd></>}
@@ -280,22 +280,18 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
 }
 
 /** The menu button (for the live-view tool column) and its popover with one switch per widget. */
-export function HudMenu({ api }: { api: HudApi }) {
-  const [open, setOpen] = useState(false)
+export function HudMenu({ api, open, onClose }: { api: HudApi; open: boolean; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open) return
-    const away = (e: Event) => { if (!box.current?.contains(e.target as Node)) setOpen(false) }
-    const esc = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const away = (e: Event) => { if (!box.current?.contains(e.target as Node)) onClose() }
+    const esc = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('pointerdown', away)
     document.addEventListener('keydown', esc)
     return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', esc) }
-  }, [open])
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div ref={box} className="hud-menu-wrap">
-      <button type="button" aria-label="Overlay widgets" aria-expanded={open} aria-haspopup="true" onClick={() => setOpen(!open)}>
-        <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" strokeWidth="2" /><rect x="11.5" y="2.5" width="6" height="7" rx="1.5" fill="currentColor" /><rect x="2.5" y="11.5" width="7" height="6" rx="1.5" fill="currentColor" /><rect x="11.5" y="11.5" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" strokeWidth="2" /></svg>
-      </button>
       {open && (
         <div className="hud-menu" role="dialog" aria-label="Overlay widgets">
           <b>Overlay widgets</b>

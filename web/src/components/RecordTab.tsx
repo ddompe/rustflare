@@ -1,6 +1,6 @@
 import { api, Status, reportError } from '../api'
 import { AfterBurst } from './AfterBurst'
-import { Disclosure, Empty, endsText, Field, Section, Segmented, Switch, useAction } from './ui'
+import { Disclosure, Empty, endsText, Field, Section, Segmented, Switch, ToneIcon, useAction } from './ui'
 import { StorageLine } from './Storage'
 import { FileManagerButton } from './FileManager'
 import { Flats } from './Flats'
@@ -9,28 +9,44 @@ import { ProminencePair } from './ProminencePair'
 import { LaneEditor, parseLanes, PRESETS } from './BracketLanes'
 import { useSetting } from '../settings'
 import { profileOf, why } from '../profile'
+import { Saved, sizeText } from '../saved'
 
 const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${(b / 1e6).toFixed(0)} MB`)
 
-/** Live progress of whatever is being captured; also used in the status strip's Stop button. */
+/** What was saved last, for five minutes after it ended: the name, the size, and the way to it. */
+export function SavedLine({ saved, onOpen, onDismiss }: { saved: Saved; onOpen: () => void; onDismiss: () => void }) {
+  return (
+    <div className={`saved-line ${saved.early ? 'early' : ''}`} role="status">
+      <ToneIcon tone={saved.early ? 'warn' : 'ok'} />
+      <span className="saved-text"><b>Saved</b> {saved.name}{saved.size != null ? ` · ${sizeText(saved.size)}` : ''}{saved.early ? ' · stopped early' : ''}</span>
+      <button type="button" className="small" onClick={onOpen}>Open in Files</button>
+      <button type="button" className="quiet small" onClick={onDismiss}>Dismiss</button>
+    </div>
+  )
+}
+
+/** Live progress of whatever is being captured: one line of what it is doing, one bar of frames, and the RAM buffer bar named as such. */
 export function Progress({ status, onStop }: { status: Status; onStop: () => void }) {
   const c = status.capture
   const active = ['single', 'sequence', 'bursts', 'flats'].includes(c.state)
+  // the engine's phase says "burst 1/1: capturing" and the burst count is its own field: say each once
+  const burstText = c.burst != null ? `Burst ${c.burst}${c.bursts_total ? ` of ${c.bursts_total}` : ''}` : null
+  const phase = c.phase.replace(/^burst \d+(\/\d+)?:\s*/i, '')
+  const word = c.state === 'flushing' ? 'Saving' : c.state === 'flats' ? 'Flats' : c.state === 'single' ? 'Snap' : 'Recording'
   return (
     <div className="progress">
-      <div className="prog-title"><b>{c.state}</b>: {c.phase}</div>
-      {c.burst != null && <div className="muted">burst {c.burst}{c.bursts_total ? ` of ${c.bursts_total}` : ''}{c.next_in_s != null ? ` · next in ${c.next_in_s.toFixed(0)} s` : ''}</div>}
+      <div className="prog-title"><b>{word}</b>: {c.done}{c.total != null ? ` / ${c.total}` : ''} frames{burstText ? ` · ${burstText.toLowerCase()}` : ''}{phase && phase !== 'capturing' ? ` · ${phase}` : ''}{c.next_in_s != null ? ` · next in ${c.next_in_s.toFixed(0)} s` : ''}</div>
       {c.eta_s != null && c.eta_s > 0 && <div className="muted">Ends {endsText(c.eta_s)}</div>}
       {c.frames_lost && <div className="err" role="alert">{c.frames_lost}</div>}
       {c.stopped_early && <div className="err" role="alert">{c.stopped_early}</div>}
       {c.total != null && c.state !== 'flushing' && <progress max={c.total} value={c.done} aria-label="Frames captured" />}
       {c.state !== 'flats' && c.buffer_capacity > 0 && (
-        <>
-          <progress max={c.buffer_capacity} value={c.buffer_queued} className="buf" aria-label="RAM buffer in use" />
-          <div className="hint-text">RAM buffer {c.buffer_queued}/{c.buffer_capacity} frames · disk writing {c.disk_mb_s.toFixed(0)} MB/s</div>
-        </>
+        <div className="bufline">
+          <span className="hint-text">RAM buffer: {c.buffer_queued} of {c.buffer_capacity} frames waiting to be written · {c.disk_mb_s.toFixed(0)} MB/s</span>
+          <progress max={c.buffer_capacity} value={c.buffer_queued} className="buf" aria-label="RAM buffer" />
+        </div>
       )}
-      <div className="hint-text">{c.done}{c.total != null ? ` / ${c.total}` : ''} frames {c.file && `· ${c.file}`}</div>
+      {c.file && <div className="hint-text">{c.file}</div>}
       <div className="btnrow">
         {['sequence', 'bursts'].includes(c.state) && <button type="button" className="grow big" onClick={() => { api('POST', '/capture/pause').catch((e) => reportError(e, 'Pause')) }}>Pause</button>}
         {active && <button type="button" className="danger grow big" onClick={onStop}>Stop recording</button>}
@@ -40,7 +56,7 @@ export function Progress({ status, onStop }: { status: Status; onStop: () => voi
 }
 
 /** Step 4: record. One recording form: what to record (plain, with a prominence lane, or HDR lanes), then how much and how often. */
-export function RecordTab({ status, goto, openFiles }: { status: Status | null; goto: (t: 'more', focus: string) => void; openFiles: () => void }) {
+export function RecordTab({ status, goto, openFiles, saved, dismissSaved, toCamera }: { status: Status | null; goto: (t: 'more', focus: string) => void; openFiles: (path?: string) => void; saved: Saved | null; dismissSaved: () => void; toCamera: () => void }) {
   const [name, setName] = useSetting('capture.name', '')
   const [kind, setKind] = useSetting<'plain' | 'prominence' | 'hdr'>('capture.kind', 'plain')
   const [format, setFormat] = useSetting<'ser' | 'png' | 'fits'>('capture.format', 'ser')
@@ -60,7 +76,7 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
   const n = (s: string) => (s.trim() === '' ? undefined : parseFloat(s))
   const nm = name.trim() || undefined
 
-  if (!cam || !status || !c) return <Empty>Open the camera first, then record here.</Empty>
+  if (!cam || !status || !c) return <Empty>Open the camera first, then record here.<div className="btnrow"><button type="button" className="primary grow" onClick={toCamera}>Open the camera (Camera tab)</button></div></Empty>
 
   if (busy) {
     return (
@@ -117,6 +133,7 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
 
   return (
     <>
+      {saved && <SavedLine saved={saved} onOpen={() => openFiles(saved.dir)} onDismiss={dismissSaved} />}
       <Section title="Record" error={err}>
         <Segmented label="What to record" value={kind} onChange={setKind} options={[{ id: 'plain', label: 'Sequence' }, { id: 'prominence', label: '+ Prominence', off: why(profileOf(status), 'prominence') }, { id: 'hdr', label: 'HDR lanes', off: why(profileOf(status), 'lanes') }]} />
         <p className="hint-text">
@@ -134,6 +151,7 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
             <Field label="or seconds">{(id) => <input id={id} inputMode="decimal" value={seconds} onChange={(e) => setSeconds(e.target.value)} placeholder="stop after…" />}</Field>
           </div>
         )}
+        {kind !== 'hdr' && <p className="hint-text">Stops at whichever comes first: the frames or the seconds.</p>}
         {kind === 'prominence' && (
           <>
             <Field label="Prominence exposure (times the disc exposure)">{(id) => <input id={id} inputMode="decimal" value={factor} onChange={(e) => setFactor(e.target.value)} />}</Field>
@@ -148,9 +166,9 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
           <p className="hint-text plan">
             {lanesMode ? 'Largest lane' : repeating ? 'Each repeat' : 'This recording'}: ≈ {Math.round(nFrames)} frames, {gb(burstBytes)}{burstSecs ? `, ≈ ${burstSecs.toFixed(1)} s at ${cam.fps.toFixed(0)} fps` : ''}.
             {bufFrames > 0 && (nFrames <= bufFrames
-              ? ` Fits in the RAM buffer (${bufFrames} frames), so the disk can be slower than the camera.`
-              : ` Larger than the RAM buffer (${bufFrames} frames): once it is full, capture slows to disk speed.`)}
-            {diskNeed > 0 && ` Average disk load ≈ ${diskNeed.toFixed(0)} MB/s.`}
+              ? ` Fits in the RAM buffer (${bufFrames} frames), so the storage can be slower than the camera.`
+              : ` Larger than the RAM buffer (${bufFrames} frames): once it is full, capture slows to storage speed.`)}
+            {diskNeed > 0 && ` Average write load ≈ ${diskNeed.toFixed(0)} MB/s.`}
             {planSecs > 0 && <> <b>Ends {endsText(planSecs)}</b> if started now.</>}
           </p>
         )}
@@ -161,8 +179,8 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
         <Switch label="Send the mount home when the recording finishes" checked={home} disabled={!status?.mount} onChange={setHome}
           hint={!status?.mount ? 'Connect the mount first (Aim tab).' : home ? 'Only when it finishes by itself (a set number of repeats or cycles, or a frame or time limit). Guiding stops and the mount slews to its home position: keep the cables and counterweight clear. Stopping the recording, an error or a pause does not move the mount.' : 'Off: the mount stays where it is.'} />
         <Segmented label="File format" value={format} onChange={setFormat} options={lanesMode ? [{ id: 'ser', label: 'SER video' }, { id: 'fits', label: 'FITS' }] : [{ id: 'ser', label: 'SER video' }, { id: 'png', label: 'PNG' }, { id: 'fits', label: 'FITS' }]} />
-        <Segmented label="If the disk cannot keep up" value={onFull} onChange={setOnFull} options={[{ id: 'wait', label: 'Never lose frames' }, { id: 'drop', label: 'Keep camera speed' }]} />
-        <div className="hint-text">{onFull === 'drop' ? 'The camera keeps full speed; frames the disk cannot take are dropped and counted.' : 'Never loses a frame: if the disk is slower than the camera, the camera slows to the disk\'s speed once the RAM buffer is full.'}{format === 'fits' ? ' FITS makes one file per frame, with exposure, gain and time in the header.' : ''}</div>
+        <Segmented label="If the storage cannot keep up" value={onFull} onChange={setOnFull} options={[{ id: 'wait', label: 'Never lose frames' }, { id: 'drop', label: 'Keep camera speed' }]} />
+        <div className="hint-text">{onFull === 'drop' ? 'The camera keeps full speed; frames the storage cannot take are dropped and counted.' : 'Never loses a frame: if the storage is slower than the camera, the camera slows to its speed once the RAM buffer is full.'}{format === 'fits' ? ' FITS makes one file per frame, with exposure, gain and time in the header.' : ''}</div>
         </Disclosure>
         <p className="hint-text">The Start button above starts exactly this recording, on any tab.</p>
       </Section>
@@ -173,7 +191,7 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
       <Disclosure title="Darks" summary={status?.darks?.applied ? 'applied' : 'not applied'}>
         <Darks status={status} />
       </Disclosure>
-      <Disclosure title="Snap" summary="single frame, prominence pair">
+      <Disclosure title="Stills" summary="single frames, prominence pair">
         <button type="button" className="wide" onClick={() => run(() => api('POST', '/capture/single', { name: nm }))}>Snap a single frame (PNG)</button>
         <p className="hint-text">Prominence pair: the disc and a much longer exposure as PNGs plus a composite (processed, for a quick look; use the + Prominence recording for raw data).</p>
         <ProminencePair status={status} />

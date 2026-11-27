@@ -160,6 +160,13 @@ export function CameraTab({ status, next, setup }: { status: Status | null; next
   const cam = status?.camera
   const sheet = useDatasheet('camera', status, cam ? `${cam.driver}|${cam.id}` : null)
   const cat: CameraCatalog | null | undefined = sheet.catalog
+  const [askClose, setAskClose] = useState(false)
+  // what closing the camera would cut short: said before it happens
+  const running = [
+    ...(status && status.capture.state !== 'idle' ? [`the recording (what is already written stays on the drive)`] : []),
+    ...(status?.guiding.state === 'calibrating' ? ['the calibration'] : []),
+    ...(status?.guiding.state === 'guiding' ? ['guiding (the mount keeps tracking, but is no longer corrected)'] : []),
+  ]
 
   const refresh = () => run(async () => {
     const l = await api<CameraInfo[]>('GET', '/cameras')
@@ -171,6 +178,7 @@ export function CameraTab({ status, next, setup }: { status: Status | null; next
   if (!cam) {
     return (
       <Section title="Open the camera" error={err}>
+        {setup}
         <div className="field">
           <label htmlFor="cam-pick">Camera</label>
           <select id="cam-pick" value={sel} onChange={(e) => setSel(e.target.value)}>
@@ -185,7 +193,6 @@ export function CameraTab({ status, next, setup }: { status: Status | null; next
         {status?.startup.retrying && <p className="hint-text">Reconnecting {status.startup.camera ?? ''} {status.startup.mount ?? ''}… (mount tracking is never switched on automatically)</p>}
         <h2 className="sr-only">What are you imaging?</h2>
         <ProfilePicker status={status} />
-        {setup}
       </Section>
     )
   }
@@ -194,17 +201,17 @@ export function CameraTab({ status, next, setup }: { status: Status | null; next
   const rest = cam.controls.filter((c) => !PRIMARY.includes(c.id))
   return (
     <>
+      {setup}
       <h2 className="sr-only">What are you imaging?</h2>
       <ProfilePicker status={status} />
       <Section error={err}>
-        {status?.optics?.setup?.active && <p className="setup-line" aria-label="Optical setup of this camera">Optical setup: {status.optics.setup.active}{status.optics.setup.modified ? ' (modified)' : ''}{status.optics.scale_arcsec_per_px ? ` · ${status.optics.scale_arcsec_per_px.toFixed(2)}″/px` : ''}</p>}
+        {status?.optics?.setup?.active && <p className="setup-line" aria-label={`Optical setup, in use: ${status.optics.setup.active}`}>In use: {status.optics.setup.active}{status.optics.setup.modified ? ' (modified)' : ''}{status.optics.scale_arcsec_per_px ? ` · ${status.optics.scale_arcsec_per_px.toFixed(2)}″/px` : ''}</p>}
         {cam.histogram.length > 0 && <Histogram bins={cam.histogram} saturated={cam.saturated} rgb={cam.histogram_rgb} saturatedRgb={cam.saturated_rgb} planetClip={profileOf(status) === 'planet' ? clipping(cam, 'planet') : null} />}
         {primary.map((c) => {
           const marks = c.id === 'gain' && cat ? gainMarks(cat) : undefined
           return <Slider key={c.id} c={c} marks={marks} />
         })}
       </Section>
-      {setup}
       {cam.cooler?.available && <CoolerPanel cooler={cam.cooler} />}
       {rest.length > 0 && (
         <Disclosure title="Extra controls" summary={rest.map((c) => c.label.split(' (')[0]).join(', ')}>
@@ -223,8 +230,17 @@ export function CameraTab({ status, next, setup }: { status: Status | null; next
         <RoiControl status={status} />
       </Disclosure>
       <DeviceCard kind="camera" data={sheet} />
+      {askClose && (
+        <div className="confirm" role="alertdialog" aria-label="Close the camera">
+          <p>Closing the camera ends {running.join(' and ')}.</p>
+          <div className="btnrow tight">
+            <button type="button" className="grow" onClick={() => setAskClose(false)}>Keep the camera open</button>
+            <button type="button" className="danger grow" onClick={() => { setAskClose(false); run(() => api('POST', '/camera/close')) }}>Close the camera</button>
+          </div>
+        </div>
+      )}
       <div className="btnrow end">
-        <button type="button" className="quiet" onClick={() => run(() => api('POST', '/camera/close'))}>Close camera</button>
+        <button type="button" className="quiet" onClick={() => { if (running.length) setAskClose(true); else run(() => api('POST', '/camera/close')) }}>Close camera</button>
         <button type="button" className="primary" onClick={next}>Next: Aim →</button>
       </div>
     </>

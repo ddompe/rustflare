@@ -10,6 +10,7 @@ import { useSetting } from '../settings'
 import { noun, profileOf, PROFILES, why } from '../profile'
 import { Why } from './Profile'
 import { OpticalSetups } from './OpticalSetups'
+import { canLocate, locate } from './SiteHelp'
 
 const arcmin = (s: number) => `${Math.floor(s / 60)}′ ${(s % 60).toFixed(0)}″`
 
@@ -18,19 +19,18 @@ function SiteSettings({ status }: { status: Status | null }) {
   const [lon, setLon] = useState(status?.site ? String(status.site.longitude) : '')
   const { err, busy, run } = useAction()
   const save = () => run(() => api('PUT', '/site', { latitude: parseFloat(lat), longitude: parseFloat(lon) }))
-  const here = () => navigator.geolocation.getCurrentPosition(
-    (p) => { setLat(p.coords.latitude.toFixed(5)); setLon(p.coords.longitude.toFixed(5)) },
-    (e) => alert(`Location unavailable (${e.message}). Browsers only share location over HTTPS; type the coordinates instead.`),
-  )
+  const here = () => run(async () => { const p = await locate(); setLat(p.latitude.toFixed(5)); setLon(p.longitude.toFixed(5)) })
+  const secure = canLocate()
   const ntp = status?.clock?.ntp_synchronized
   return (
     <div>
       <Field label="Latitude (degrees, north positive)">{(id) => <input id={id} inputMode="decimal" value={lat} onChange={(e) => setLat(e.target.value)} />}</Field>
       <Field label="Longitude (degrees, east positive)">{(id) => <input id={id} inputMode="decimal" value={lon} onChange={(e) => setLon(e.target.value)} />}</Field>
       <div className="btnrow tight">
-        <button type="button" onClick={here}>Use this device's location</button>
+        {secure && <button type="button" onClick={here}>Use this device's location</button>}
         <button type="button" className="grow" disabled={busy || isNaN(parseFloat(lat)) || isNaN(parseFloat(lon))} onClick={save}>Save site</button>
       </div>
+      {!secure && <p className="hint-text" role="note">Type the coordinates: using this device’s location needs HTTPS, and this page is plain http. See Phone setup in the guide (run <code>sudo rustflare-tls</code> on the Pi).</p>}
       <div className="hint-text">Clock: {ntp === true ? 'synchronised to a time server' : ntp === false ? 'NOT synchronised: the Sun position may be off' : 'unknown'}. The site stays on the Pi and is used for Go to Sun.</div>
       <ErrorLine error={err} />
     </div>
@@ -128,7 +128,7 @@ function OpticsSettings({ status }: { status: Status | null }) {
   const mismatch = sun && o.expected_radius_px && Math.abs(sun.radius / o.expected_radius_px - 1) > 0.1
   return (
     <div>
-      <h2 className="subhead">Optical setup in use</h2>
+      <h2 className="subhead">Values in use</h2>
       <div className="grid2">
         <Field label="Focal length (mm)">{(id) => <input id={id} inputMode="decimal" value={focal} onChange={(e) => { setFocal(e.target.value); setDirty(true) }} placeholder="telescope" />}</Field>
         <Field label="Barlow / reducer (×)">
@@ -144,8 +144,8 @@ function OpticsSettings({ status }: { status: Status | null }) {
       </div>
       {o.effective_focal_mm && Math.abs(o.focal_multiplier - 1) > 1e-6 && <div className="hint-text">Effective focal length {o.effective_focal_mm.toFixed(0)} mm.</div>}
       <p className="hint-text">Profile: <b>{PROFILES.find((x) => x.id === profileOf(status))?.label}</b> (change it on the Camera tab).</p>
-      <button type="button" className="primary wide" disabled={!dirty} onClick={() => run(async () => { await api('PUT', '/optics', { focal_length_mm: num(focal), focal_multiplier: num(mult) ?? 1, pixel_size_um: num(pixel), binning: bin }); setDirty(false) })}>Use these values</button>
-      <p className="hint-text">Puts the values to work now. To keep them under a name, use Save below.</p>
+      <button type="button" className="primary wide" disabled={!dirty} aria-describedby={!dirty ? 'why-use-values' : undefined} onClick={() => run(async () => { await api('PUT', '/optics', { focal_length_mm: num(focal), focal_multiplier: num(mult) ?? 1, pixel_size_um: num(pixel), binning: bin }); setDirty(false) })}>Use these values</button>
+      <p className={`hint-text ${dirty ? '' : 'gate-why'}`} id="why-use-values">{dirty ? 'Puts the values to work now. To keep them under a name, use Save below.' : 'Use these values is off until you change one of the values above. To keep them under a name, use Save below.'}</p>
       {o.expected_radius_px ? (
         <p className="hint-text">
           Image scale {o.scale_arcsec_per_px!.toFixed(2)} ″/px · {noun(profileOf(status))==='target' ? 'the target' : `the ${noun(profileOf(status))}`} is {arcmin(o.target_radius_arcsec ?? o.solar_radius_arcsec)} in radius today ⇒ <b>≈ {o.expected_radius_px.toFixed(0)} px</b>. Partial-disc tracking uses this radius.
@@ -173,10 +173,11 @@ function BufferSettings({ status }: { status: Status | null }) {
     <div>
       <div className="btnrow tight">
         <div className="numwrap grow"><input className="num" inputMode="numeric" aria-label="RAM buffer in MB" value={bufMb || String(c?.buffer_mb ?? 1024)} onChange={(e) => setBufMb(e.target.value)} /><span className="unit" aria-hidden="true">MB</span></div>
-        <button type="button" disabled={busy || !bufMb} onClick={() => run(async () => { await api('PUT', '/capture/buffer', { mb: parseFloat(bufMb) }); setBufMb('') })}>Set buffer</button>
+        <button type="button" disabled={busy || !bufMb} aria-describedby={busy || !bufMb ? 'why-set-buffer' : undefined} onClick={() => run(async () => { await api('PUT', '/capture/buffer', { mb: parseFloat(bufMb) }); setBufMb('') })}>Set buffer</button>
       </div>
+      {(busy || !bufMb) && <p className="hint-text gate-why" id="why-set-buffer" role="note">{busy ? 'Set buffer is off while a recording runs.' : 'Set buffer is off until you type a new size in MB.'}</p>}
       <p className="hint-text">
-        Frames are captured into memory and written to disk in the background. {c?.ram_available_mb ? `${c.ram_available_mb} MB of RAM free; the buffer is capped to 70% of that. ` : ''}
+        Frames are captured into memory and written to storage in the background. {c?.ram_available_mb ? `${c.ram_available_mb} MB of RAM free; the buffer is capped to 70% of that. ` : ''}
         {bufFrames > 0 && `Holds ≈ ${bufFrames} frames at the current size.`}
       </p>
       {status?.after_burst && (
@@ -206,6 +207,7 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus, open
   const [open, setOpen] = useState<string | null>(focus?.id ?? (saved || null))
   useEffect(() => { if (focus) setOpen(focus.id) }, [focus?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
   const [stackInfo, reloadStack] = useStackInfo()
+  const [lockSeen, setLockSeen] = useSetting('ui.autolock_seen', false)
   const o = status?.optics
   const sun = status?.sun
   const mismatch = !!(sun && o?.expected_radius_px && Math.abs(sun.radius / o.expected_radius_px - 1) > 0.1)
@@ -214,12 +216,17 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus, open
   )
   return (
     <>
-      <p className="hint-text">At the telescope: set the phone's Auto-Lock to Never (Settings, Display and Brightness) for the session, and use Share, Add to Home Screen for a full-screen app.</p>
+      {!lockSeen && (
+        <div className="needs" role="note">
+          At the telescope: set the phone's Auto-Lock to Never (Settings, Display and Brightness) for the session, and use Share, Add to Home Screen for a full-screen app.
+          <div className="btnrow tight"><button type="button" className="grow" onClick={() => setLockSeen(true)}>Got it</button></div>
+        </div>
+      )}
       {item('display', 'Display', `${display.tint === 'none' ? 'grayscale' : display.tint === 'orange' ? 'H-alpha orange' : 'deep red'} · ${display.rings ? `${display.rings} rings` : 'no rings'}`, <DisplaySettings d={display} set={setDisplay} reset={resetDisplay} status={status} />)}
       {item('optics', 'Optical setup', (o?.setup?.active ? `${o.setup.active}${o.setup.modified ? ' (modified)' : ''} · ` : '') + (o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set'), <OpticsSettings status={status} />)}
       {item('site', 'Site', status?.site ? `${status.site.latitude.toFixed(2)}°, ${status.site.longitude.toFixed(2)}°` : 'not set', <SiteSettings status={status} />)}
       {item('stacking', 'Stacking', stackSummary(stackInfo), <Stacking info={stackInfo} reload={reloadStack} onOpenFiles={() => openFiles('stacks')} />)}
-      {item('storage', 'Storage', 'drive for captures', <StorageSettings status={status} />)}
+      {item('storage', 'Storage', 'where captures are saved', <StorageSettings status={status} />)}
       {item('buffer', 'RAM buffer', status?.capture ? `${status.capture.buffer_mb} MB` : '', <BufferSettings status={status} />)}
       {item('sessionlog', 'Session log', status?.session_log?.enabled ? 'recording' : 'off', <SessionLog status={status} />)}
       {item('startup', 'Startup', status?.startup.enabled ? 'reconnects' : 'manual', <Startup status={status} />)}

@@ -410,7 +410,6 @@ button.danger-outline { border-color: var(--bad); }
 .fm-foot { padding: .6rem 1rem .8rem; border-top: 1px solid var(--line-soft); background: var(--surface); }
 @media (max-width: 699px) { .fm-row { grid-template-columns: auto 1fr; } .fm-actions { grid-column: 2; justify-content: flex-start; } }
 @media (min-width: 900px) { .fm-screen { inset: 3vh 8vw; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .6); } }
-.live-tools button.tool-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
 .lane { border: 1px solid var(--line-soft); border-radius: 8px; padding: .5rem .6rem; margin: .6rem 0; }
 .fm-lanes { margin-top: .3rem; font-size: .9rem; }
@@ -424,7 +423,7 @@ button.danger-outline { border-color: var(--bad); }
 button:disabled.danger { background: var(--raised); color: var(--faint); border-color: var(--line); }
 
 /* Daylight theme: for bright sun on a phone screen. The live image itself stays black. */
-:root[data-theme='day'] { color-scheme: light; --bg: #f6f3ef; --surface: #ffffff; --raised: #e9e3dd; --line: #7d726b; --line-soft: #cfc7c0; --fg: #14110f; --muted: #3a332f; --faint: #554c47; --accent: #c4470f; --accent-ink: #ffffff; --accent-hover: #a63a0b; --ok: #14683a; --bad: #b3261e; --warn: #8a5a00; --info: #0b6a80; --danger: #b3261e; --focus: 0 0 0 3px var(--bg), 0 0 0 5px #14110f; }
+:root[data-theme='day'] { color-scheme: light; --bg: #f6f3ef; --surface: #ffffff; --raised: #e9e3dd; --line: #7d726b; --line-soft: #cfc7c0; --fg: #14110f; --muted: #3a332f; --faint: #554c47; --accent: #b03d0b; --accent-ink: #ffffff; --accent-hover: #8f3209; --ok: #14683a; --bad: #b3261e; --warn: #8a5a00; --info: #0b6a80; --danger: #b3261e; --focus: 0 0 0 3px var(--bg), 0 0 0 5px #14110f; }
 :root[data-theme='day'] .top h1 { color: var(--fg); }
 .hright { margin-left: auto; display: flex; align-items: center; gap: .4rem; }
 .camname { margin-left: 0; margin-right: .5rem; }
@@ -440,7 +439,7 @@ button:disabled.danger { background: var(--raised); color: var(--faint); border-
 :root[data-theme='day'] .hist svg { background: #fff; }
 :root[data-theme='day'] .banner { background: #fde4e0; color: #5c1410; }
 /* controls drawn on top of the (always dark) image keep light-on-dark */
-:root[data-theme='day'] .live-tools button, :root[data-theme='day'] .live .hud, :root[data-theme='day'] .live button { color: #fff; }
+:root[data-theme='day'] .tools-toggle, :root[data-theme='day'] .live .hud, :root[data-theme='day'] .live button { color: #fff; }
 .hidebtn { white-space: nowrap; }
 @media (max-width: 480px) { .hidebtn { font-size: .78rem; padding: 0 .5rem; } .top .conn { display: none; } }
 
@@ -694,13 +693,14 @@ code { font-size: max(.875em, 12px); }
 .live-slot > .placeholder { margin: 0; width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; background: var(--surface); }
 @media (min-width: 900px), (min-width: 700px) and (orientation: landscape) { .live { border: 1px solid var(--line); border-radius: 6px; } .live-slot > .placeholder { border-radius: 6px; } }
 
-/* picture tools: a column on the picture on desktop, a row on the picture on a phone, outside the picture in two columns in landscape */
-.live-tools { position: absolute; z-index: 4; display: flex; gap: .25rem; right: .4rem; top: .4rem; }
-.tools-row { display: flex; flex-direction: column; gap: .35rem; }
-.live-tools .tools-toggle { display: none; }
-.live-tools button { width: 48px; height: 48px; min-height: 0; padding: 0; background: #000c; border-color: #fff6; color: #fff; display: grid; place-items: center; font-size: 1.4rem; line-height: 1; }
-.live-tools button:disabled { background: #000c; color: #b4adaa; border-color: #fff4; }
-.live-tools button.tool-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+/* picture tools: one labelled button on the picture; it opens a sheet that names every tool in words (a phone has no tooltips) */
+.live-tools { position: absolute; z-index: 4; right: .4rem; top: .4rem; display: flex; flex-direction: column; align-items: flex-end; gap: .35rem; }
+.tools-toggle { min-height: 44px; padding: 0 .7rem; background: #000c; border: 1.5px solid #fff6; color: #fff; display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; }
+.tools-sheet { background: var(--surface); border: 1.5px solid var(--control-line); border-radius: var(--radius); padding: .4rem; display: grid; grid-template-columns: 1fr 1fr; gap: .3rem; box-shadow: 0 8px 24px #0009; width: min(21rem, calc(100vw - 1rem)); max-height: 70dvh; overflow-y: auto; }
+.tools-sheet button { min-height: 48px; display: flex; align-items: center; justify-content: flex-start; gap: .5rem; padding: 0 .6rem; background: var(--raised); color: var(--fg); border-color: var(--control-line); font-size: .9rem; text-align: left; }
+.tools-sheet button.tool-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.tools-sheet button:disabled { background: var(--surface); color: var(--disabled-fg); }
+.tools-why { grid-column: 1 / -1; margin: .1rem .2rem; }
 .hud { right: .4rem; bottom: .3rem; }
 .hud-w.min { min-height: 44px; }
 
@@ -710,17 +710,9 @@ code { font-size: max(.875em, 12px); }
   .app[data-tab='track'] { --view-h: 36dvh; }
   .app[data-tab='record'], .app[data-tab='more'] { --view-h: 30dvh; }
   .app[data-nocam] { --view-h: 16dvh; }
-  .live-tools { left: .4rem; right: .4rem; top: auto; bottom: .4rem; flex-direction: row; align-items: flex-end; pointer-events: none; }
-  .live-tools > * { pointer-events: auto; }
-  .tools-row { flex-direction: row; flex-wrap: wrap; gap: .25rem; }
-  .live-tools button { width: 44px; height: 44px; }
+  .live-tools { left: .4rem; right: auto; top: auto; bottom: .4rem; align-items: flex-start; }
+  .tools-sheet { position: fixed; left: .5rem; right: .5rem; width: auto; bottom: calc(98px + 2 * env(safe-area-inset-bottom) + .5rem); z-index: 40; }
   .hud { top: .3rem; bottom: auto; }
-  /* on the tabs that need the room for the panel the tools fold behind one button */
-  .app:not([data-tab='camera']) .live-tools { right: auto; }
-  .app:not([data-tab='camera']) .live-tools .tools-toggle { display: grid; }
-  .app:not([data-tab='camera']) .tools-row { display: none; }
-  .app:not([data-tab='camera']) .live-wrap[data-tools-open] .tools-row { display: flex; }
-
   .hist svg { height: 3.2rem; }
 }
 
@@ -730,11 +722,10 @@ code { font-size: max(.875em, 12px); }
   .top { min-height: 0; }
   .view { padding: .3rem .4rem; gap: .25rem; }
   .strip { padding: .1rem 0 0; gap: .25rem; }
-  .live-wrap { aspect-ratio: auto; display: flex; gap: .4rem; height: min(100cqh, calc((100cqw - 100px) / var(--ar, 1.333))); }
+  .live-wrap { aspect-ratio: auto; display: flex; gap: .4rem; height: min(100cqh, calc((100cqw - 96px) / var(--ar, 1.333))); }
   .live { width: auto; height: 100%; aspect-ratio: var(--ar, 1.333); flex: none; }
   .live-tools { position: static; flex: none; align-self: flex-start; }
-  .tools-row { display: grid; grid-template-columns: repeat(2, 44px); grid-auto-rows: 44px; gap: 4px; }
-  .live-tools button { width: 44px; height: 44px; }
+  .tools-sheet { position: fixed; right: .5rem; top: 58px; z-index: 40; width: min(20rem, 44vw); max-height: calc(100dvh - 58px - 54px); }
   .tabs { border-bottom: 1px solid var(--line); }
   .tabs button { min-height: 48px; }
   .panel { padding: .5rem .75rem calc(1rem + env(safe-area-inset-bottom)); }
@@ -877,3 +868,117 @@ summary { min-height: 44px; }
   .tabs button { flex: 1 1 0; padding-inline: 2px; gap: 3px; font-size: .82rem; }
   .tabs button > span:not(.sr-only) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* =====================================================================================================================
+   Round 3 (UI critique, 2026-11): the header never covers the tab bar, the picture keeps its size, chips are overlays, one set-up line.
+   ===================================================================================================================== */
+
+/* the header may not push past its grid cell (it used to be 441 px wide in a 367 px cell and the tab bar covered Hide controls) */
+.top { min-width: 0; }
+.hright { flex: none; }
+.hfiles, .hidebtn { white-space: nowrap; }
+
+/* tab marks are small badges on the tab's corner: the label always has the whole tab */
+.tabs button .tone-icon { position: absolute; top: 4px; right: 5px; width: 12px; height: 12px; }
+.tabs button > span:not(.sr-only) { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* phone landscape: Files, theme and Hide controls keep their full words; the brand and the Online text give way first */
+@media (max-height: 520px) and (orientation: landscape) {
+  .top { padding-inline: .5rem; gap: .4rem; }
+  .top .conn.ok { display: none; }
+  .hright { gap: .25rem; }
+  .hfiles { padding: 0 .55rem; }
+  .hidebtn { padding: 0 .6rem; font-size: .85rem; }
+  .app { grid-template-columns: minmax(0, 1fr) clamp(300px, 42vw, 400px); }
+  .tabs button { font-size: .8rem; }
+}
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 740px) {
+  .top h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .top .conn { display: none; }
+}
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 600px) {
+  .mark { display: none; }
+}
+
+/* chips (warnings, notes, set up) sit on the picture, top left: they take no height, so the picture never changes size when one comes or goes */
+.strip { position: static; }
+.strip:not(:has(> :not(.sr-only, .chips-wrap))) { padding: 0; gap: 0; height: 0; min-height: 0; }
+.chips-wrap { position: absolute; left: .4rem; top: .4rem; z-index: 6; max-width: calc(100% - 5.5rem); }
+.chips { flex-direction: column; align-items: flex-start; gap: .3rem; }
+.chip { max-width: 100%; }
+.chip.warn { background: var(--surface); }
+.chip .cl { overflow-wrap: anywhere; text-align: left; }
+.notes-sheet { top: calc(100% + .35rem); bottom: auto; right: auto; width: min(22rem, calc(100vw - 1rem)); }
+.chips li { position: static; }
+.setup-pill { position: static; }
+.ss-list { display: grid; gap: .35rem; margin: .35rem 0; }
+.ss-list button { justify-content: flex-start; }
+.notes-sheet p { color: var(--fg); }
+
+/* Aim keeps its picture: as big as the width allows (a 4:3 frame cannot be taller than width / 1.33), fixed for every state */
+@media (max-width: 699px) and (orientation: portrait) {
+  .app[data-tab='aim'] { --view-h: calc(min(40dvh, 75vw) + 60px); }
+}
+
+/* a phone that is not tall: the slew pad is two rows (stop and north above; west, south, east below) and the readout is tight, so the pad is on screen without scrolling */
+@media (max-height: 800px) and (max-width: 699px) and (orientation: portrait) {
+  .pad { max-width: 100%; gap: .3rem; }
+  .pad > * { min-height: 52px; }
+  .pad-gap { display: none; }
+  .pad-stop { grid-area: 1 / 1; }
+  .pad-n { grid-area: 1 / 2; }
+  .pad-w { grid-area: 2 / 1; }
+  .pad-s { grid-area: 2 / 2; }
+  .pad-e { grid-area: 2 / 3; }
+  .offset { padding: .35rem .75rem; margin-bottom: .4rem; }
+  .offset-big { font-size: 1.05rem; }
+  .offset-move { font-size: .95rem; }
+  .panel { padding-top: .5rem; }
+}
+
+/* the one line of set-up steps on the Camera tab: steps scroll sideways rather than wrap */
+.setup-strip { flex-wrap: nowrap; margin: 0 0 .5rem; }
+.setup-strip .ss-label { flex: none; white-space: nowrap; padding-right: .1rem; }
+.ss-steps { display: flex; gap: .35rem; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; padding: 2px; }
+.ss-steps::-webkit-scrollbar { display: none; }
+.ss-steps button { flex: none; white-space: nowrap; }
+.setup-strip .ss-x { margin-left: 0; flex: none; }
+
+/* the status bar: two lines before it cuts a message, and the sheet it opens has all of it */
+.sbar-btn span { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.2; font-size: .85rem; }
+.sbar-btn .sbar-idle { display: inline; }
+.sbar-pop { max-height: 60dvh; overflow-y: auto; line-height: 1.4; }
+
+/* the readout under the picture on Aim: two lines of room for the move and the button to press, so it never changes height while the mount moves */
+.offset-move { white-space: normal; overflow: visible; min-height: 2.6em; line-height: 1.3; font-size: .92rem; }
+/* the mount-clock summary wraps inside its row instead of being cut */
+.disc-sum:has(.mc-sum) { white-space: normal; max-width: 70%; text-align: right; line-height: 1.25; }
+.disc summary:has(.mc-sum) { padding-block: .4rem; }
+
+/* what was saved last */
+.saved-line { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .6rem; padding: .5rem .75rem; margin: 0 0 .75rem; border: 1.5px solid var(--ok); border-radius: var(--radius); background: color-mix(in srgb, var(--ok) 8%, var(--surface)); }
+.saved-line.early { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
+.saved-text { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.saved-line button { min-height: 44px; }
+
+/* the RAM buffer bar says what it is */
+.bufline { display: grid; gap: .25rem; }
+progress.buf { height: .5rem; }
+
+/* on a phone the chips sit on the picture's bottom left (just above the Start row, whatever its height), the tools button bottom right */
+@media (max-width: 699px) and (orientation: portrait), (max-height: 520px) and (orientation: landscape) {
+  .strip { position: relative; }
+  .chips-wrap { top: auto; bottom: calc(100% + .4rem); max-width: calc(100% - .8rem); }
+  .chips { flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
+  .notes-sheet { top: auto; bottom: calc(100% + .35rem); }
+}
+@media (max-width: 699px) and (orientation: portrait) {
+  .live-tools { left: auto; right: .4rem; align-items: flex-end; }
+  .chips-wrap { max-width: calc(100% - 7.5rem); }
+}
+/* a phone that is not tall: a little less bar and pad, so the pad is on screen */
+@media (max-height: 700px) and (max-width: 699px) and (orientation: portrait) {
+  .tabs button { min-height: 48px; }
+  .pad > * { min-height: 48px; }
+}
+.ss-steps { padding-right: 1.5rem; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent); }

@@ -136,13 +136,15 @@ export function OpticalSetups({ status, form, onApplied }: { status: Status | nu
       : undefined
   const diff = updateDiff(cur, { focal: form.focal, mult: form.mult, pixel: form.pixel, bin: form.bin, profile: setupProfile, aperture, notes })
   const edited = !!active && (modified || form.dirty || diff !== '')
+  const whyPick = !picked ? 'Choose an optical setup in the list first.' : null
+  const whyApplyBtn = recording ? 'Applying is off while a recording runs: the optical setup and the profile are written into the files being recorded.' : !picked ? 'Choose an optical setup in the list first.' : picked.name === active && !modified ? `“${picked.name}” is already in use and unchanged.` : null
   const whyApply = recording ? 'Applying is off while a recording runs: the optical setup and the profile are written into the files being recorded.' : null
 
   return (
     <div className="setups" role="group" aria-label="Saved optical setups">
       <h2 className="subhead">Saved optical setups</h2>
-      <div className="setup-head">
-        <b>In use</b>
+      <div className="setup-head" aria-label={active ? `Optical setup, in use: ${active}` : 'Optical setup, none in use'} role="group">
+        <b>In use:</b>
         {active && <span className="setup-name">{active}</span>}
         {active && modified && <span className="setup-badge" role="status"><ToneIcon tone="warn" size={12} /> modified</span>}
         {!active && <span className="hint-text">none</span>}
@@ -151,6 +153,7 @@ export function OpticalSetups({ status, form, onApplied }: { status: Status | nu
         <div className="btnrow tight">
           <p className="hint-text grow">The values or the profile were changed after “{active}” was saved. They are not saved over it unless you press Update.</p>
           <button type="button" disabled={busy || recording} aria-describedby={whyApply ? 'why-setup-recording' : undefined} onClick={() => apply(active)}>Revert</button>
+          {whyApply && <p className="gate-why hint-text" id="why-setup-recording" role="note">{whyApply}</p>}
         </div>
       )}
       <Field label="Optical setup" hint={hint}>
@@ -162,11 +165,13 @@ export function OpticalSetups({ status, form, onApplied }: { status: Status | nu
         )}
       </Field>
       <div className="btnrow tight wrap">
-        <button type="button" className="primary grow" disabled={busy || recording || !picked || (picked.name === active && !modified)} aria-describedby={whyApply ? 'why-setup-recording' : undefined} onClick={() => apply(pick)}>Apply{picked ? ` “${picked.name}”` : ''}</button>
-        <button type="button" disabled={busy || !picked} onClick={duplicate}>Duplicate</button>
-        <button type="button" className="danger-outline" disabled={busy || !picked} onClick={() => setAsk(true)}>Delete…</button>
+        <button type="button" className="primary grow" disabled={busy || recording || !picked || (picked.name === active && !modified)} aria-describedby={whyApplyBtn ? 'why-setup-apply' : undefined} onClick={() => apply(pick)}>Apply{picked ? ` “${picked.name}”` : ''}</button>
+        <button type="button" disabled={busy || !picked} aria-describedby={whyPick ? 'why-setup-pick' : undefined} onClick={duplicate}>Duplicate</button>
+        <button type="button" className="danger-outline" disabled={busy || !picked} aria-describedby={whyPick ? 'why-setup-pick' : undefined} onClick={() => setAsk(true)}>Delete…</button>
       </div>
-      {whyApply && <p className="gate-why hint-text" id="why-setup-recording" role="note">{whyApply}</p>}
+      {whyApplyBtn && <p className="gate-why hint-text" id="why-setup-apply" role="note">{whyApplyBtn}</p>}
+      {whyPick && !whyApplyBtn && <p className="gate-why hint-text" id="why-setup-pick" role="note">{whyPick}</p>}
+      {whyPick && whyApplyBtn && <span className="sr-only" id="why-setup-pick">{whyPick}</span>}
       {ask && picked && (
         <div className="confirm" role="alertdialog" aria-label="Delete the optical setup">
           <p>Delete the optical setup “{picked.name}”?</p>
@@ -187,7 +192,7 @@ export function OpticalSetups({ status, form, onApplied }: { status: Status | nu
       )}
 
       <h2 className="subhead">Save</h2>
-      <Field label="Profile for this optical setup" hint="Applying the optical setup switches to this profile. “Keep the current profile” leaves it alone.">
+      <Field label="Profile to switch to when applied" hint="Applying the optical setup switches to this profile. “Keep the current profile” leaves it alone.">
         {(id) => (
           <select id={id} value={setupProfile} onChange={(e) => setSetupProfile(e.target.value)}>
             <option value="">Keep the current profile</option>
@@ -217,8 +222,8 @@ export function OpticalSetups({ status, form, onApplied }: { status: Status | nu
         </div>
       )}
       <Field label="Name for a new optical setup">{(id) => <input id={id} value={name} maxLength={60} onChange={(e) => setName(e.target.value)} placeholder="e.g. Lunt + Barlow" />}</Field>
-      <button type="button" className="wide" disabled={busy || !nameOk} onClick={() => save(trimmed)}>Save as new…</button>
-      {name && !nameOk && <div className="hint-text" role="note">The name needs 1 to 40 characters.</div>}
+      <button type="button" className="wide" disabled={busy || !nameOk} aria-describedby={!nameOk ? 'why-setup-name' : undefined} onClick={() => save(trimmed)}>Save as new…</button>
+      {!nameOk && <div className="hint-text gate-why" id="why-setup-name" role="note">{name ? 'The name needs 1 to 40 characters.' : 'Type a name above to save the values in use as a new optical setup.'}</div>}
       <ErrorLine error={err} />
     </div>
   )

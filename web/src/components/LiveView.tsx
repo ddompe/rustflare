@@ -4,6 +4,7 @@ import { api, Status, reportError } from '../api'
 import { Display, cssFilter } from '../display'
 import { HudLayer, HudMenu, useHudLayout } from './Hud'
 import { noun, profileOf, why } from '../profile'
+import { usePopover } from './ui'
 
 /** Live image (MJPEG) with display filters, zoom/pan and a measurement overlay in frame-pixel coordinates. */
 export function LiveView({ status, display, setDisplay, anchorPick, onPicked, onDisplay }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; anchorPick: boolean; onPicked: () => void; onDisplay: () => void }) {
@@ -18,7 +19,8 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
   const sun = status?.sun
   const d = display
   const hud = useHudLayout()
-  const [toolsOpen, setToolsOpen] = useState(false)
+  const tools = usePopover()
+  const [widgets, setWidgets] = useState(false)
 
   const clampPan = (zoom: number, px: number, py: number) => {
     const r = box.current!.getBoundingClientRect()
@@ -45,7 +47,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
     const x = ((e.clientX - r.left) / r.width) * cam.width
     const y = ((e.clientY - r.top) / r.height) * cam.height
     onPicked()
-    try { await api('POST', '/tracking/start', { mode: 'anchor', x, y }) } catch (err) { alert((err as Error).message) }
+    try { await api('POST', '/tracking/start', { mode: 'anchor', x, y }) } catch (err) { reportError(err, 'Tracking the feature') }
   }
 
   if (!cam) return <div className="placeholder"><div><b>No camera open</b><br />Open a camera to see the {noun(profileOf(status))}.</div></div>
@@ -58,7 +60,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
   const hint = d.zoom > 1 ? `${d.zoom.toFixed(1)}×` : ''
 
   return (
-    <div className="live-wrap" style={{ '--ar': W / H } as React.CSSProperties} data-tools-open={toolsOpen ? '1' : undefined}>
+    <div className="live-wrap" style={{ '--ar': W / H } as React.CSSProperties}>
     <div ref={box} className={`live ${anchorPick ? 'pick' : ''}`}
       onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onDoubleClick={() => setDisplay({ zoom: 1, panX: 0, panY: 0 })}>
       <svg width="0" height="0" style={{ position: 'absolute' }}>
@@ -114,27 +116,39 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
       <div className="hud">{W}×{H}{hint && ` · ${hint}`}</div>
       {anchorPick && <div className="hint" role="status">Tap a feature (sunspot, filament, plage) to track it</div>}
     </div>
-      <div className="live-tools">
-        <button type="button" className="tools-toggle" aria-label="Picture tools" aria-expanded={toolsOpen} aria-controls="tools-row" onClick={() => setToolsOpen(!toolsOpen)}>
+      <div className="live-tools" ref={tools.box}>
+        <button ref={tools.button} type="button" className="tools-toggle" aria-label="Picture tools" aria-expanded={tools.open} aria-controls="tools-sheet" onClick={() => tools.setOpen(!tools.open)}>
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /></svg>
+          <span aria-hidden="true">Tools</span>
         </button>
-        <div className="tools-row" id="tools-row">
-        <button type="button" aria-label="Zoom in" onClick={() => { const zoom = Math.min(8, d.zoom * 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>+</button>
-        <button type="button" aria-label="Zoom out" disabled={d.zoom <= 1} onClick={() => { const zoom = Math.max(1, d.zoom / 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>−</button>
-        <button type="button" aria-label="Prominence view" aria-pressed={!!status?.coronagraph?.enabled} className={status?.coronagraph?.enabled ? 'tool-on' : ''} disabled={(!status?.sun && !status?.coronagraph?.enabled) || !!why(profileOf(status), 'corona')} title={why(profileOf(status), 'corona') ?? "Black out the Sun's disc to judge the exposure for prominences"} onClick={() => api('PUT', '/coronagraph', { enabled: !status?.coronagraph?.enabled, scale: status?.coronagraph?.scale ?? 1.03 }).catch((e) => reportError(e, 'Prominence view'))}>
-          <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="10" cy="10" r="4.5" fill="currentColor" /></svg>
-        </button>
-        <button type="button" aria-label="Auto-stretch" aria-pressed={stretch} className={stretch ? 'tool-on' : ''} title="Brighten a dim picture for everyone watching (the recording is not changed)" onClick={() => setStretch(!stretch)}>
-          <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M2 17L8 16 12 4 18 3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 17.5h16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".6" /></svg>
-        </button>
-        <button type="button" aria-label={d.overlays ? 'Hide overlays' : 'Show overlays'} aria-pressed={!d.overlays} className={d.overlays ? '' : 'tool-on'} title="Hide the crosshair, rings and Sun marks to see the bare image" onClick={() => setDisplay({ overlays: !d.overlays })}>
-          <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M1.5 10S5 4.5 10 4.5 18.5 10 18.5 10 15 15.5 10 15.5 1.5 10 1.5 10z" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="10" cy="10" r="2.5" fill="currentColor" />{d.overlays && <path d="M3 17L17 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0" />}{!d.overlays && <path d="M3 17L17 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}</svg>
-        </button>
-        <HudMenu api={hud} />
-        <button type="button" aria-label="Display settings" onClick={onDisplay}>
-          <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h8M15 15h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /><circle cx="13" cy="5" r="2" fill="currentColor" /><circle cx="7" cy="10" r="2" fill="currentColor" /><circle cx="13" cy="15" r="2" fill="currentColor" /></svg>
-        </button>
-        </div>
+        {tools.open && (
+          <div className="tools-sheet" id="tools-sheet" role="group" aria-label="Picture tools">
+            <button type="button" onClick={() => { const zoom = Math.min(8, d.zoom * 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>
+              <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg><span>Zoom in</span>
+            </button>
+            <button type="button" disabled={d.zoom <= 1} aria-describedby={d.zoom <= 1 ? 'why-zoomout' : undefined} onClick={() => { const zoom = Math.max(1, d.zoom / 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>
+              <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M4 10h12" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg><span>Zoom out</span>
+            </button>
+            <button type="button" aria-pressed={!!status?.coronagraph?.enabled} className={status?.coronagraph?.enabled ? 'tool-on' : ''} disabled={(!status?.sun && !status?.coronagraph?.enabled) || !!why(profileOf(status), 'corona')} aria-describedby={(!status?.sun && !status?.coronagraph?.enabled) || why(profileOf(status), 'corona') ? 'why-prom' : undefined} title={why(profileOf(status), 'corona') ?? "Black out the Sun's disc to judge the exposure for prominences"} onClick={() => api('PUT', '/coronagraph', { enabled: !status?.coronagraph?.enabled, scale: status?.coronagraph?.scale ?? 1.03 }).catch((e) => reportError(e, 'Prominence view'))}>
+              <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="10" cy="10" r="4.5" fill="currentColor" /></svg><span>Prominence</span>
+            </button>
+            <button type="button" aria-pressed={stretch} className={stretch ? 'tool-on' : ''} title="Brighten a dim picture for everyone watching (the recording is not changed)" onClick={() => setStretch(!stretch)}>
+              <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M2 17L8 16 12 4 18 3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><path d="M2 17.5h16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".6" /></svg><span>Stretch</span>
+            </button>
+            <button type="button" aria-pressed={d.overlays} className={d.overlays ? 'tool-on' : ''} title="Crosshair, rings and Sun marks on the picture. Off shows the bare image." onClick={() => setDisplay({ overlays: !d.overlays })}>
+              <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M1.5 10S5 4.5 10 4.5 18.5 10 18.5 10 15 15.5 10 15.5 1.5 10 1.5 10z" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="10" cy="10" r="2.5" fill="currentColor" />{!d.overlays && <path d="M3 17L17 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}</svg><span>Overlays</span>
+            </button>
+            <button type="button" aria-haspopup="dialog" onClick={() => { tools.setOpen(false); setWidgets(true) }}>
+              <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" strokeWidth="2" /><rect x="11.5" y="2.5" width="6" height="7" rx="1.5" fill="currentColor" /><rect x="2.5" y="11.5" width="7" height="6" rx="1.5" fill="currentColor" /><rect x="11.5" y="11.5" width="6" height="6" rx="1.5" fill="none" stroke="currentColor" strokeWidth="2" /></svg><span>Widgets</span>
+            </button>
+            <button type="button" onClick={() => { tools.setOpen(false); onDisplay() }}>
+              <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h8M15 15h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /><circle cx="13" cy="5" r="2" fill="currentColor" /><circle cx="7" cy="10" r="2" fill="currentColor" /><circle cx="13" cy="15" r="2" fill="currentColor" /></svg><span>Display</span>
+            </button>
+            {d.zoom <= 1 && <p className="gate-why hint-text tools-why" id="why-zoomout">Zoom out is off: the picture is not zoomed in.</p>}
+            {!status?.sun && !status?.coronagraph?.enabled && <p className="gate-why hint-text tools-why" id="why-prom">Prominence is off: {why(profileOf(status), 'corona') ?? 'it needs the Sun in view.'}</p>}
+          </div>
+        )}
+        <HudMenu api={hud} open={widgets} onClose={() => setWidgets(false)} />
       </div>
     </div>
   )

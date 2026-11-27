@@ -8,7 +8,7 @@ import { AFTER_MODE_NAME } from '../vocab'
 const MODES: { id: AfterMode; title: string; text: string; warn?: string }[] = [
   { id: 'video', title: AFTER_MODE_NAME.video, text: 'Write every frame. Stack later from the file if you want to.' },
   { id: 'video_stack', title: AFTER_MODE_NAME.video_stack, text: 'Write every frame and also stack each burst from memory.' },
-  { id: 'stack_only', title: AFTER_MODE_NAME.stack_only, text: 'Stack each burst from memory and write no video. Smallest on disk.', warn: 'The raw frames are not kept' },
+  { id: 'stack_only', title: AFTER_MODE_NAME.stack_only, text: 'Stack each burst from memory and write no video. Smallest files.', warn: 'The raw frames are not kept' },
   { id: 'best_frames', title: AFTER_MODE_NAME.best_frames, text: 'Stack from memory and keep only the best frames of each burst as a short video.' },
 ]
 

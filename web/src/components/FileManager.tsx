@@ -21,7 +21,14 @@ const TYPE_LABEL: Record<string, string> = {
   recording: 'SER', stack: 'Stack', fits: 'FITS', image: 'Picture', notes: 'Notes', file: 'File',
 }
 const size = (b: number) => (b > 1e12 ? `${(b / 1e12).toFixed(2)} TB` : b > 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b > 0 ? `${Math.max(1, Math.round(b / 1e3))} kB` : '0 kB')
-const when = (s: number | null) => (s ? new Date(s * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '')
+/** The modified time in this device's own zone, with the zone named: the file names and the day folders are in UTC. */
+const when = (s: number | null) => (s ? new Date(s * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }) : '')
+/** "seq_051747Z.ser" is named in UTC (05:17:47 UTC); a day folder is a UTC date. The names are not changed, they are explained. */
+const utcNote = (name: string, type: string): string => {
+  const m = /_(\d\d)(\d\d)(\d\d)Z/.exec(name)
+  if (m) return `named in UTC: ${m[1]}:${m[2]}:${m[3]} UTC`
+  return type === 'day' || /^\d{4}-\d\d-\d\d$/.test(name) ? 'UTC date' : ''
+}
 const parentOf = (p: string) => p.split('/').slice(0, -1).join('/')
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
@@ -55,7 +62,7 @@ export function FileManagerButton({ status, onOpen }: { status: Status | null; o
 
 /** Folder tree for wide screens: the drive's folders, opened on demand. */
 function Tree({ cwd, go, refreshKey }: { cwd: string; go: (p: string) => void; refreshKey: unknown }) {
-  return <nav className="fm-tree" aria-label="Folders"><TreeNode path="" name="Drive" cwd={cwd} go={go} depth={0} refreshKey={refreshKey} /></nav>
+  return <nav className="fm-tree" aria-label="Folders"><TreeNode path="" name="Captures" cwd={cwd} go={go} depth={0} refreshKey={refreshKey} /></nav>
 }
 function TreeNode({ path, name, cwd, go, depth, refreshKey }: { path: string; name: string; cwd: string; go: (p: string) => void; depth: number; refreshKey: unknown }) {
   const onPath = cwd === path || cwd.startsWith(path ? path + '/' : '')
@@ -203,7 +210,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
             {s && !s.complete && <span className="tag warn" title="The file ends early: the recording was cut off">Incomplete</span>}
           </div>
           <div className="muted fm-sub">
-            {f.type === 'stacks' && <>Your finished stacks, by day · </>}{when(f.modified)}{f.modified ? ' · ' : ''}{f.dir ? `${plural(f.files, 'file')} · ` : ''}{f.capped ? 'at least ' : ''}{size(f.size)}
+            {f.type === 'stacks' && <>Your finished stacks, by day · </>}{when(f.modified)}{f.modified ? ' · ' : ''}{f.dir ? `${plural(f.files, 'file')} · ` : ''}{f.capped ? 'at least ' : ''}{size(f.size)}{utcNote(f.name, f.type) ? ` · ${utcNote(f.name, f.type)}` : ''}
             {f.type === 'stack' && info && <> · best {info.kept} of {info.frames} frames{info.seconds ? ` · stacked in ${info.seconds.toFixed(0)} s` : ''}{info.dark || info.flat ? ` · ${[info.dark && 'dark', info.flat && 'flat'].filter(Boolean).join(' + ')} applied` : ' · no dark or flat'}</>}
             {s && <> · {s.width}×{s.height} · {s.depth}-bit · {s.frames_present}/{s.frames} frames{s.fps ? ` · ${s.fps.toFixed(1)} fps` : ''}{s.duration_s ? ` · ${s.duration_s.toFixed(1)} s` : ''} · brightness {Math.round(s.mean_avg * 100)}% (min {Math.round(s.mean_min * 100)}, max {Math.round(s.mean_max * 100)})</>}
             {st && 'error' in st && <> · {st.error}</>}
@@ -235,7 +242,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
 
       <nav className="fm-crumbs" aria-label="Folder path" ref={crumbsRef}>
         {cwd && <button type="button" className="fm-up" onClick={() => go(parentOf(cwd))} aria-label="Up one folder"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
-        <button type="button" className="fm-crumb" aria-current={cwd === '' ? 'page' : undefined} onClick={() => go('')}>Drive</button>
+        <button type="button" className="fm-crumb" aria-current={cwd === '' ? 'page' : undefined} onClick={() => go('')}>Captures</button>
         {crumbs.map((c, i) => {
           const p = crumbs.slice(0, i + 1).join('/')
           return <span key={p} className="fm-crumbwrap"><span aria-hidden="true">›</span><button type="button" className="fm-crumb" aria-current={i === crumbs.length - 1 ? 'page' : undefined} onClick={() => go(p)}>{c}</button></span>

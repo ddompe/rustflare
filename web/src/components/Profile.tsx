@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api, Status } from '../api'
 import { PROFILES, profileOf } from '../profile'
 import { useAction, ErrorLine } from './ui'
+import { useSetting } from '../settings'
 import { setupLine } from './OpticalSetups'
 
 /** The reason a control is greyed, shown as a line under it (a phone has no hover). Pair it with `aria-describedby={id}` on the control. */
@@ -13,17 +14,19 @@ export function Why({ id, text, subject }: { id: string; text: string | null; /*
 export function ProfilePicker({ status }: { status: Status | null }) {
   const { err, run } = useAction()
   const [what, setWhat] = useState(false)
+  // the set-up count only believes a profile the user chose or confirmed: never one that merely happened to be the default
+  const [confirmed, setConfirmed] = useSetting('ui.profile_confirmed', false)
   const p = profileOf(status)
   const cur = PROFILES.find((x) => x.id === p)
   return (
     <div className="profile-pick">
       <div className="profile-row">
-        <select aria-label="What are you imaging?" value={p} onChange={(e) => run(() => api('PUT', '/profile', { id: e.target.value }))}>
+        <select aria-label="What are you imaging?" value={p} onChange={(e) => { setConfirmed(true); run(() => api('PUT', '/profile', { id: e.target.value })) }}>
           {PROFILES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
         </select>
         <button type="button" className="quiet" aria-expanded={what} aria-controls="profile-what" onClick={() => setWhat(!what)}>What is this?</button>
       </div>
-      <p className="profile-short">{cur?.short}{setupLine(status) ? <> · <span aria-label="Optical setup in use">{setupLine(status)}</span></> : null}</p>
+      <p className="profile-short">{cur?.short}{setupLine(status) ? <> · <span aria-label={`Optical setup, in use: ${setupLine(status)}`}>In use: {setupLine(status)}</span></> : null}{!confirmed && <> <button type="button" className="small ss-confirm" onClick={() => setConfirmed(true)}>Keep {cur?.label}</button></>}</p>
       {what && (
         <p className="hint-text" id="profile-what">{cur?.blurb} The words and the tools that apply follow this choice. Nothing is hidden: what does not apply is greyed, with the reason under it.</p>
       )}

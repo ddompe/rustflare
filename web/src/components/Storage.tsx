@@ -97,7 +97,7 @@ export function StorageSettings({ status }: { status: Status | null }) {
       <div><b>{cur.label}</b> <span className="muted">{cur.path}</span></div>
       {cur.available ? (
         <>
-          <progress max={1} value={used} aria-label="Disk used" />
+          <progress max={1} value={used} aria-label="Used" />
           <div className="hint-text">{gb(cur.free)} free of {gb(cur.total)}{cur.fstype ? ` · ${cur.fstype}` : ''}{minutes != null ? ` · ≈ ${minutes >= 120 ? `${(minutes / 60).toFixed(1)} h` : `${minutes.toFixed(0)} min`} of recording at ${cam!.fps.toFixed(0)} fps` : ''}</div>
         </>
       ) : (
@@ -112,7 +112,7 @@ export function StorageSettings({ status }: { status: Status | null }) {
         </Field>
       )}
       <div className="field">
-        <label htmlFor="store-sel">Store on</label>
+        <label htmlFor="store-sel">Save to</label>
         <select id="store-sel" value={sel} onChange={(e) => setSel(e.target.value)}>
           <option value="">{others.length ? 'choose a drive…' : 'no other drives found'}</option>
           {others.map((c) => (
@@ -122,12 +122,12 @@ export function StorageSettings({ status }: { status: Status | null }) {
           ))}
         </select>
       </div>
-      <button type="button" className="wide" disabled={!sel || busy} onClick={() => run(async () => { await api('PUT', '/storage', { path: sel }); setSel(''); await load() })}>Use this drive</button>
+      <button type="button" className="wide" disabled={!sel || busy} aria-describedby={!sel || busy ? 'why-use-drive' : undefined} onClick={() => run(async () => { await api('PUT', '/storage', { path: sel }); setSel(''); await load() })}>Use this drive</button>
+      {(!sel || busy) && <div className="hint-text gate-why" id="why-use-drive" role="note">{busy ? "Can't change storage while capturing or writing." : 'Choose a drive in the list first.'}</div>}
       {cur.mount_point && data.candidates.some((c) => c.mount_point === cur.mount_point) && (
-        <button type="button" className="wide" disabled={busy} onClick={() => run(async () => { const r = await api<{ message: string }>('POST', '/storage/eject', { mount_point: cur.mount_point }); setEjected(r.message); await load() })}>Eject drive safely</button>
+        <button type="button" className="wide" disabled={busy} aria-describedby={busy ? 'why-use-drive' : undefined} onClick={() => run(async () => { const r = await api<{ message: string }>('POST', '/storage/eject', { mount_point: cur.mount_point }); setEjected(r.message); await load() })}>Eject drive safely</button>
       )}
       {ejected && <div className="hint-text" role="status">{ejected}</div>}
-      {busy && <div className="hint-text">Can't change or eject storage while capturing or writing.</div>}
       <Switch label="Write recordings directly to the drive" checked={!!status?.capture.direct_io?.wanted} disabled={busy} onChange={(v) => run(async () => { await api('PUT', '/capture/direct-io', { enabled: v }) })}
         hint="Skips the Linux page cache, which can fill memory with frames waiting for a slow USB stick and make the camera stall at full frame rate. Try it if the event log shows frame_gap events; some sticks write slower this way. Takes effect with the next recording." />
       {status?.capture.direct_io?.problem && <div className="warn-text" role="status">Not used for the last recording: {status.capture.direct_io.problem}</div>}

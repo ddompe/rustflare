@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { api, Status } from '../api'
+import { api, Status, CALIBRATION_FAILED, isCalibrationFailure } from '../api'
 import { Disclosure, Empty, Section, Segmented, ToneIcon, useAction } from './ui'
 import { HOLD_WORD, holdLevel as holdLevelOf } from '../vocab'
 import { noun, profileOf, why } from '../profile'
@@ -46,16 +46,20 @@ function Step({ done, bad, warn, title, state, action, children }: { done: boole
 }
 
 /** Step 3: choose what to follow, calibrate once, then hold position. */
-export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: Status | null; anchorPick: boolean; setAnchorPick: (b: boolean) => void; goto: (t: 'aim') => void; next: () => void }) {
-  // what was chosen, or the profile's own default (a setting that was never changed follows the profile)
+export function TrackTab({ status, anchorPick, setAnchorPick, next, toCamera }: { status: Status | null; anchorPick: boolean; setAnchorPick: (b: boolean) => void; goto: (t: 'aim') => void; next: () => void; toCamera: () => void }) {
+  // what was chosen, or the profile's own default (a setting that was never changed, or one this profile cannot use, follows the profile):
+  // Planet centroid for Planet, Feature for Other, Disc edge for the Sun and the Moon
   const [chosen, setMode] = useSetting<Mode | ''>('tracking.mode', '')
-  const mode: Mode = chosen || (profileOf(status) === 'planet' ? 'planet' : 'limb')
+  const prof = profileOf(status)
+  const profileMode: Mode = prof === 'planet' ? 'planet' : prof === 'other' ? 'anchor' : 'limb'
+  const offFor = (m: Mode) => (m === 'anchor' ? null : m === 'planet' ? why(prof, 'planetTracker') : why(prof, 'limb'))
+  const mode: Mode = chosen && !offFor(chosen) ? chosen : profileMode
   const [radius, setRadius] = useSetting('tracking.radius', '')
   const { err, run } = useAction()
   const t = status?.tracking
   const g = status?.guiding
   const cam = status?.camera
-  if (!cam || !status) return <Empty>Open the camera first: tracking follows the {noun(profileOf(status))} in the live view.</Empty>
+  if (!cam || !status) return <Empty>Open the camera first: tracking follows the {noun(profileOf(status))} in the live view.<div className="btnrow"><button type="button" className="primary grow" onClick={toCamera}>Open the camera (Camera tab)</button></div></Empty>
 
   const o = status.optics
   const sun = status.sun
@@ -71,12 +75,16 @@ export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: 
   const holdLevel = holdLevelOf(g?.error_px)
   const calibrating = g?.state === 'calibrating'
   const ready = !!t && !t.lost && calibrated && mountTracking && g?.state === 'off'
+  // a failed calibration stays visible where it happened, says what to do, and offers the retry
+  const calFailed = isCalibrationFailure(status.error) && g?.state === 'off'
+  const calWhy = guiding ? 'Recalibrate is off while guiding: press Stop guiding below first.' : calibrating ? null : !mountTracking ? "Calibrate is off until the mount's solar tracking is on (the step above)." : null
+  const offBy = g?.error_px != null ? Math.round(g.error_px) : null
 
   if (!t) {
     return (
       <>
         <Section title="What should it follow?" error={err}>
-          <Segmented label="Tracking target" value={mode} options={MODES.map((m) => ({ id: m.id, label: m.label, off: m.id === 'anchor' ? null : m.id === 'planet' ? why(profileOf(status), 'planetTracker') : why(profileOf(status), 'limb') }))} onChange={(m) => { setMode(m); setAnchorPick(false) }} />
+          <Segmented label="Tracking target" value={mode} options={MODES.map((m) => ({ id: m.id, label: m.label, off: offFor(m.id) }))} onChange={(m) => { setMode(m); setAnchorPick(false) }} />
           <p className="hint-text">{modeHelp(MODES.find((m) => m.id === mode)?.help ?? '', profileOf(status))}</p>
           {mode === 'limb' && (
             <Disclosure title="Disc radius" summary={radius ? `${radius} px` : status.optics.expected_radius_px ? `${status.optics.expected_radius_px.toFixed(0)} px from the optical setup` : 'automatic'}>
@@ -109,18 +117,30 @@ export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: 
             </Step>
           )}
           <Step
-            done={calibrated}
+            done={calibrated && !calFailed}
+            bad={calFailed}
             title="Calibrate"
-            state={calibrating ? 'calibrating…' : calibrated ? 'done' : 'needed once'}
-            action={
-              <button type="button" className={`small ${!calibrated && mountTracking ? 'primary' : calibrated ? 'quiet' : ''}`} disabled={g?.state !== 'off' || !mountTracking} onClick={() => run(() => api('POST', '/guiding/calibrate'))}>
-                {calibrating ? 'Calibrating…' : calibrated ? 'Recalibrate' : 'Calibrate'}
+            state={calibrating ? 'calibrating…' : calFailed ? 'failed' : calibrated ? 'done' : 'needed once'}
+            action={calibrating ? (
+              <button type="button" className="small danger" onClick={() => run(() => api('POST', '/guiding/stop'))}>Stop calibration</button>
+            ) : (
+              <button type="button" className={`small ${(!calibrated || calFailed) && mountTracking ? 'primary' : calibrated ? 'quiet' : ''}`} disabled={g?.state !== 'off' || !mountTracking} aria-describedby={calWhy ? 'why-cal' : undefined} onClick={() => run(() => api('POST', '/guiding/calibrate'))}>
+                {calFailed ? 'Retry' : calibrated ? 'Recalibrate' : 'Calibrate'}
               </button>
-            }
+            )}
           >
+            {calFailed && <div className="err" role="alert">{CALIBRATION_FAILED}</div>}
+            {calibrating && <div className="hint-text" role="status">The mount is moving each axis for a few seconds. Stop calibration ends it and stops the mount at once.</div>}
+            {calWhy && <div className="gate-why hint-text" id="why-cal">{calWhy}</div>}
             <div className="hint-text">{calibrated ? `Calibrated. Mount directions: RA+ moves the image ${angle(g!.calibration!.primary_dir)}, Dec+ ${angle(g!.calibration!.secondary_dir)}.` : 'Teaches RustFlare which way each mount axis moves the image. Takes a few seconds per axis.'}</div>
           </Step>
           <Step done={guiding && holdLevel === 'locked'} warn={guiding && holdLevel === 'settling'} bad={guiding && holdLevel === 'off'} title="Hold position" state={guiding ? <><ToneIcon tone={holdLevel === 'locked' ? 'ok' : holdLevel === 'settling' ? 'warn' : 'bad'} size={12} /> {HOLD_WORD[holdLevel]} · <b className="bignum">{g?.error_px?.toFixed(1) ?? '–'}</b> px</> : 'not holding'}>
+            {guiding && holdLevel === 'off' && (
+              <div className="err" role="alert">
+                Off target by {offBy} px: wait for it to settle. If it stays this far off, recalibrate (after rotating the camera or a meridian flip) and check that the mount is tracking.
+                <div className="btnrow tight"><button type="button" className="small" onClick={() => run(async () => { await api('POST', '/guiding/stop'); await api('POST', '/guiding/calibrate') })}>Stop guiding and recalibrate</button></div>
+              </div>
+            )}
             {guiding ? (
               <button type="button" className="danger wide big" onClick={() => run(() => api('POST', '/guiding/stop'))}>Stop guiding</button>
             ) : (

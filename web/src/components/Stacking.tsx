@@ -110,7 +110,7 @@ export function Stacking({ info, reload, onOpenFiles }: { info: StackInfo | null
       <Field label="When" hint={POLICY_HINT[c.policy]}>
         {() => <Segmented label="When to stack" value={c.policy} options={POLICIES.map((p) => ({ id: p.id, label: p.label }))} disabled={busy} onChange={(v) => save({ policy: v })} />}
       </Field>
-      <Field label="Best frames kept, stacked from a video file (%)" hint="The best of each recording, by sharpness. Fewer is sharper and noisier. Bursts stacked from memory use the setting under After each burst on the Record tab.">
+      <Field label="Keep best (%): stacked from a video file" hint="The best of each recording, by sharpness. Fewer is sharper and noisier. Bursts stacked from memory use the setting under After each burst on the Record tab.">
         {(id) => <input id={id} type="number" inputMode="numeric" min={1} max={100} step={5} value={keep} onChange={(e) => setKeep(e.target.value)} onBlur={() => { const n = parseFloat(keep); if (n >= 1 && n <= 100 && n !== c.keep_percent) save({ keep_percent: n }) }} />}
       </Field>
       <Switch label="Multi-point alignment" hint="A shift for each patch of the picture, not one per frame: sharper, a little slower." checked={c.multipoint} disabled={busy} onChange={(v) => save({ multipoint: v })} />

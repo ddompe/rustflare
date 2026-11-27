@@ -93,6 +93,39 @@ export function useUiError(): [string | null, () => void] {
   return [uiError, () => { uiError = null; uiErrorListeners.forEach((l) => l()) }]
 }
 
+/**
+ * The server's refusals are short ("a capture is running"). The UI adds what to do next, in the words of the tabs, so no refusal is a dead end.
+ * Matched on the start of the message (lower case); unknown messages pass through unchanged.
+ */
+const HINTS: [RegExp, string][] = [
+  [/^a capture is running$/, 'A capture is running. Stop it first (Record tab), then try again.'],
+  [/^already calibrating\/guiding$/, 'Already calibrating or guiding. Press Stop guiding on the Track tab first.'],
+  [/^calibrate first$/, 'Calibrate first: open the Track tab and press Calibrate.'],
+  [/^start tracking first$/, 'Start tracking first: open the Track tab and press Start tracking.'],
+  [/^target is lost$/, 'The target is lost. Slew it back into view (Aim tab) or start tracking again (Track tab).'],
+  [/^no mount connected$/, 'No mount is connected. Connect it on the Aim tab.'],
+  [/^no camera open$/, 'No camera is open. Open one on the Camera tab.'],
+  [/^enable the mount's sky tracking first$/, "Turn on the mount's solar tracking first (Aim tab, or the button on the Track tab)."],
+  [/^stop guiding before slewing manually$/, 'Stop guiding before slewing by hand: press Stop guiding on the Track tab.'],
+  [/^no frame received yet$/, 'No picture has arrived yet. Wait until the live view shows one, then try again.'],
+  [/^not while capturing flats$/, 'Not while flats are being captured. Wait until they finish or stop them (Record tab).'],
+  [/^nothing is being captured$/, 'Nothing is being captured, so there is nothing to stop or pause.'],
+  [/^a goto is running: press stop first$/, 'A Go to is running. Press STOP on the Aim tab first, then try again.'],
+]
+export function withHint(message: string): string {
+  const m = message.trim().toLowerCase()
+  const h = HINTS.find(([re]) => re.test(m))
+  return h ? h[1] : message
+}
+
+/** The text of a calibration failure, said as what to do (the engine's own wording is for the log). */
+export const CALIBRATION_FAILED = 'Calibration failed: the picture did not move along two different directions. Check that the Sun is in view and the mount is tracking, then Calibrate again.'
+export const isCalibrationFailure = (e: string | null | undefined) => !!e && /^calibration failed/i.test(e)
+/** Engine messages in the status bar, with what to do where the engine only says what happened. */
+export function explainStatus(text: string): string {
+  return isCalibrationFailure(text) ? CALIBRATION_FAILED : text
+}
+
 export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const r = await fetch('/api' + path, {
     method,
@@ -100,7 +133,7 @@ export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'DELETE'
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const j = await r.json().catch(() => ({}))
-  if (!r.ok) throw new Error((j as { error?: string }).error ?? r.statusText)
+  if (!r.ok) throw new Error(withHint((j as { error?: string }).error ?? r.statusText))
   return j as T
 }
 
