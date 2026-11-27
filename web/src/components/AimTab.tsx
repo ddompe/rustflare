@@ -10,11 +10,14 @@ const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 20, 60, 720, 1440]
 
 type Axis = 'primary' | 'secondary'
 
+type Port = { path: string; label: string; driver?: string; model?: string }
+
 function MountConnect() {
   const [drivers, setDrivers] = useState<string[]>([])
   const [driver, setDriver] = useSetting('mount.driver', 'zwo')
   const [device, setDevice] = useSetting('mount.device', '')
-  const [ports, setPorts] = useState<{ path: string; label: string }[]>([])
+  const [ports, setPorts] = useState<Port[]>([])
+  const [probing, setProbing] = useState(false)
   const [transport, setTransport] = useSetting<'usb' | 'ble'>('mount.transport', 'usb')
   const [bleAddr, setBleAddr] = useSetting('mount.ble_address', '')
   const [found, setFound] = useState<{ address: string; name: string; rssi: number | null }[] | null>(null)
@@ -29,8 +32,22 @@ function MountConnect() {
     } finally { setScanning(false) }
   })
   useEffect(() => { api<string[]>('GET', '/mount/drivers').then(setDrivers).catch((e) => reportError(e, 'Listing the mount drivers')) }, [])
-  const scan = () => api<{ path: string; label: string }[]>('GET', '/mount/ports').then((p) => { setPorts(p); if (!device) setDevice(p[0]?.path || '/dev/ttyACM0') }).catch((e) => reportError(e, 'Listing the serial ports'))
-  useEffect(() => { scan() }, [])
+  // Lists the serial ports at once, then asks each one (read-only) which mount is behind it, so nobody has to know a device path or a driver name.
+  const scan = async () => {
+    setProbing(true)
+    try {
+      const plain = await api<Port[]>('GET', '/mount/ports')
+      setPorts(plain)
+      const p = await api<Port[]>('GET', '/mount/detect')
+      setPorts(p)
+      const saved = p.find((x) => x.path === device)
+      const known = saved?.driver ? saved : p.find((x) => x.driver)
+      // adopt a recognised mount; otherwise keep a saved path that still exists, or take the first port
+      if (known?.driver && (known.path !== device || driver !== known.driver)) { setDevice(known.path); setDriver(known.driver) }
+      else if (!saved) setDevice(p[0]?.path ?? '')
+    } catch (e) { reportError(e as Error, 'Looking for the mount') } finally { setProbing(false) }
+  }
+  useEffect(() => { void scan() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Section title="Connect the mount" error={err}>
       <p className="lead">Connect the mount to slew, track and hold the Sun in view.</p>
@@ -75,13 +92,28 @@ function MountConnect() {
       {driver === 'ioptron' && <div className="hint-text">iOptron mounts (CEM70 series and relatives, HAE69): connect the mount's USB port to the Pi. It appears as a serial port; the 115200 baud setting is applied for you. Set the mount's own time zone and site once on its hand controller, or let RustFlare send them with Go to Sun. Not yet tried on a real mount.</div>}
       {driver !== 'simulator' && !(driver === 'zwo' && transport === 'ble') && (
         <div className="field">
-          <label htmlFor="mount-device">Serial device</label>
+          <label id="mount-ports-label">USB mount</label>
+          {ports.length > 0 && (
+            <ul className="mount-found" role="radiogroup" aria-labelledby="mount-ports-label">
+              {ports.map((p) => (
+                <li key={p.path}>
+                  <button type="button" role="radio" aria-checked={device === p.path} className="mount-pick" onClick={() => { setDevice(p.path); if (p.driver) setDriver(p.driver) }}>
+                    <MountMark />
+                    <span className="mp-name">{p.model ?? (probing ? 'looking…' : 'a serial device (no mount answered)')}<span className="mp-sub">{p.label.replace(/^usb-/, '').replace(/-if00.*$/, '')}</span></span>
+                    <span className="mp-state">{device === p.path ? 'Selected' : 'Select'}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="btnrow tight">
-            <input id="mount-device" className="grow" list="mount-ports" value={device} onChange={(e) => setDevice(e.target.value)} />
-            <button type="button" onClick={scan} aria-label="Rescan serial ports">Rescan</button>
+            <button type="button" className="grow" disabled={probing} onClick={() => void scan()}>{probing ? 'Looking for the mount…' : 'Find my mount'}</button>
           </div>
-          <datalist id="mount-ports">{ports.map((p) => <option key={p.path} value={p.path}>{p.label}</option>)}</datalist>
-          {ports.length === 0 && <div className="hint-text">No serial devices found: is the mount's USB cable plugged in and the mount powered?</div>}
+          {ports.length === 0 && !probing && <div className="hint-text">No serial devices found: is the mount's USB cable plugged in and the mount powered?</div>}
+          {ports.length > 0 && !probing && !ports.some((p) => p.driver) && <div className="hint-text">The mount did not answer on any port. Switch it on, check the cable, and pick the driver above: iOptron mounts need their USB-to-serial adapter plugged into the mount's RS-232 or USB socket.</div>}
+          <Disclosure title="Type a device path" summary={device || 'none'}>
+            <input id="mount-device" aria-label="Serial device path" value={device} onChange={(e) => setDevice(e.target.value)} />
+          </Disclosure>
         </div>
       )}
       <button type="button" className="primary wide" disabled={busy || scanning || (driver === 'zwo' && transport === 'ble' && !bleAddr)} onClick={() => run(() => api('POST', '/mount/connect', driver === 'zwo' && transport === 'ble' ? { driver, transport: 'ble', device: bleAddr } : { driver, device: driver === 'simulator' ? null : device }))}>{busy && transport === 'ble' && driver === 'zwo' ? 'Connecting over Bluetooth...' : 'Connect mount'}</button>
