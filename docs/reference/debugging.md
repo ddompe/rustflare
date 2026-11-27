@@ -5,7 +5,7 @@ The logs can be read over the HTTP API, so a problem can be investigated remotel
 | What | Where | Always on? |
 |---|---|---|
 | **Events**: tracking lost/found, guiding start/stop/resume, dead reckoning, calibration, exposure changes, lane switches, capture start/end/abort/resume, flips, the Sun model holding or measuring again | `events.jsonl`, `GET /api/debug/events` | yes, on the Pi's disk (20 MB a day, 200 MB and 14 days in total) |
-| **Mount commands**: every command sent to the mount and its reply, with the time it took | `mount.jsonl`, `GET /api/debug/mount` | yes, on the Pi's disk (40 MB a day, within the same total) |
+| **Mount commands**: every command sent to the mount and its reply, with the time it took (every mount driver writes here: ZWO and iOptron alike, in the mount's own command language) | `mount.jsonl`, `GET /api/debug/mount` | yes, on the Pi's disk (40 MB a day, within the same total) |
 | **Lost-tracking frames**: the full frame the tracker could not use, plus a note (exposure, gain, lane, mask, last Sun position, engine state) | `lost/lost_<time>.png` and `.json` | yes, at most one every 10 s and 100 per run; switch under More > Session log |
 | **Session log**: once a second what the tracker and guider saw and the pulses sent, plus a small picture every few seconds | `session_<time>.jsonl` and `_fNNNNN.png` | opt in (More > Session log) |
 | **Snapshots**: the latest full frame and a note on request | `debug/debug_<time>.png` and `.json` | on request: `POST /api/debug/snapshot` |
