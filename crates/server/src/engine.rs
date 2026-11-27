@@ -127,6 +127,8 @@ pub enum Command {
     OpenCamera { driver: String, id: String },
     CloseCamera,
     SetControl { id: String, value: f64 },
+    /// Cooler on/off, target temperature, fan, anti-dew heater. Switching off a cold sensor ramps unless `immediate`.
+    SetCooler { req: rustflare_core::CoolerRequest, immediate: bool },
     ConnectMount { driver: String, device: Option<String> },
     DisconnectMount,
     MountTracking { enabled: bool, rate: Option<TrackingRate> },
@@ -498,6 +500,8 @@ pub struct Engine {
     last_preview: Instant,
     last_publish: Instant,
     last_temp: Instant,
+    /// Set while a cold sensor is being warmed before the cooler goes off: when the target was last raised.
+    cooler_warmup: Option<Instant>,
     fps_ema: f64,
     last_frame_at: Option<Instant>,
 }
@@ -638,6 +642,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         last_preview: Instant::now(),
         last_publish: Instant::now(),
         last_temp: Instant::now(),
+        cooler_warmup: None,
         fps_ema: 0.0,
         last_frame_at: None,
     };
@@ -1376,6 +1381,25 @@ impl Engine {
                     }
                 }
                 Ok(json!({}))
+            }
+            Command::SetCooler { mut req, immediate } => {
+                let cam = self.camera.as_mut().ok_or("no camera open")?;
+                let cur = cam.cooler().ok_or("this camera has no cooler")?;
+                let temp = cam.temperature_c();
+                let ramp = req.on == Some(false) && !immediate && crate::cooler::needs_ramp(cur.on, temp);
+                if ramp {
+                    // warm the sensor first: the target, the fan and the on/off state are the warm-up's to move
+                    req = rustflare_core::CoolerRequest { heater: req.heater, ..Default::default() };
+                    self.cooler_warmup = Some(Instant::now() - crate::cooler::STEP_EVERY); // the first step is due now
+                } else if req.on.is_some() || req.target_c.is_some() {
+                    self.cooler_warmup = None; // the user took over
+                }
+                let cam = self.camera.as_mut().ok_or("no camera open")?;
+                cam.set_cooler(&req).map_err(s)?;
+                if let Some(c) = self.status.camera.as_mut() { c.temperature_c = temp.or(c.temperature_c); }
+                self.refresh_cooler();
+                self.step_warmup();
+                Ok(json!({ "warming_up": ramp }))
             }
             Command::ConnectMount { driver, device } => {
                 self.connect_mount(&driver, device.as_deref())?;
@@ -2219,8 +2243,63 @@ impl Engine {
         let bayer = self.camera.as_ref().and_then(|c| c.bayer()).map(|b| b.name());
         self.status.camera = Some(CameraStatus { driver: info.driver, id: info.id, name: info.name, controls, bayer, ..Default::default() });
         self.camera = Some(cam);
+        self.cooler_warmup = None;
         self.refresh_roi();
+        self.refresh_cooler();
         Ok(())
+    }
+
+    /// Reads the cooler into the status (an uncooled camera gets `available: false`).
+    fn refresh_cooler(&mut self) {
+        let st = self.camera.as_mut().and_then(|c| c.cooler());
+        let warming = self.cooler_warmup.is_some();
+        let Some(c) = self.status.camera.as_mut() else { return };
+        c.cooler = match st {
+            Some(s) => CoolerView {
+                available: true, on: s.on, target_c: s.target_c, target_min_c: s.target_min_c, target_max_c: s.target_max_c,
+                power_pct: s.power_pct, temp_c: c.temperature_c, fan: s.fan, heater: s.heater, warming_up: warming && s.on,
+            },
+            None => CoolerView::default(),
+        };
+    }
+
+    /// One move of the gentle switch-off (`cooler.rs`), when one is due.
+    fn step_warmup(&mut self) {
+        use crate::cooler::*;
+        let Some(last) = self.cooler_warmup else { return };
+        let Some(v) = self.status.camera.as_ref().map(|c| c.cooler.clone()) else { return };
+        if !v.on {
+            self.cooler_warmup = None; // already off (by hand or by the camera)
+            self.refresh_cooler();
+            return;
+        }
+        if last.elapsed() < STEP_EVERY { return }
+        let (Some(temp), Some(target)) = (v.temp_c, v.target_c) else {
+            // no way to tell: a plain switch-off
+            self.finish_warmup();
+            return;
+        };
+        match warmup_step(temp, target, v.power_pct, v.target_max_c.unwrap_or(30.0)) {
+            Warmup::Finish => self.finish_warmup(),
+            Warmup::Raise(t) => {
+                let r = rustflare_core::CoolerRequest { target_c: Some(t), ..Default::default() };
+                if let Some(cam) = self.camera.as_mut() {
+                    if let Err(e) = cam.set_cooler(&r) { log::warn!("cooler warm-up: {e}"); }
+                }
+                self.cooler_warmup = Some(Instant::now());
+                self.refresh_cooler();
+            }
+            Warmup::Wait => {}
+        }
+    }
+
+    fn finish_warmup(&mut self) {
+        let r = rustflare_core::CoolerRequest { on: Some(false), ..Default::default() };
+        if let Some(cam) = self.camera.as_mut() {
+            if let Err(e) = cam.set_cooler(&r) { log::warn!("cooler switch-off: {e}"); }
+        }
+        self.cooler_warmup = None;
+        self.refresh_cooler();
     }
 
     fn connect_mount(&mut self, driver: &str, device: Option<&str>) -> Result<(), String> {
@@ -2319,6 +2398,7 @@ impl Engine {
     }
 
     fn close_camera(&mut self) {
+        self.cooler_warmup = None;
         self.sun_model.reset();
         self.camera = None;
         self.focus = None;
@@ -2480,6 +2560,10 @@ impl Engine {
                 if refresh_temp {
                     c.temperature_c = temp;
                 }
+            }
+            if refresh_temp {
+                self.refresh_cooler();
+                self.step_warmup();
             }
             // In a lane recording only the reference lane (the shortest exposure that is not coronagraph-masked) shows the
             // disc properly. The long prominence frames are saturated: measuring the Sun on them gives a wrong circle, which

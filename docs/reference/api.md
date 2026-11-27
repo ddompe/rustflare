@@ -28,6 +28,9 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `POST /api/camera/open` | `{"driver","id"}` |
 | `POST /api/camera/close` | |
 | `PUT /api/camera/control` | `{"id","value"}` (ids come from `status.camera.controls`) |
+| `PUT /api/camera/cooler` | any of `{"on":bool,"target_c":number,"fan":bool,"heater":bool,"immediate":bool}`; 400 when nothing is given, the camera has no cooler, or the control is missing. Switching **off** a cooler while the sensor is below 15 degrees does not switch it off at once: the target is raised 1 degree every 15 s first and the answer is `{"warming_up":true}`; `"immediate":true` skips that. A new `on` or `target_c` cancels a warm-up. |
+
+`status.camera.cooler` is `{available, on, target_c, target_min_c, target_max_c, power_pct, temp_c, fan, heater, warming_up}`; `available` is false (and the rest empty) for an uncooled camera, and `fan` and `heater` are null where the camera has no such switch. The target is in whole degrees Celsius.
 
 ## Mount
 

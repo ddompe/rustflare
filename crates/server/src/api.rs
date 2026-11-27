@@ -36,6 +36,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/camera/open", post(camera_open))
         .route("/api/camera/close", post(|s| run(s, Command::CloseCamera)))
         .route("/api/camera/control", put(camera_control))
+        .route("/api/camera/cooler", put(camera_cooler))
         .route("/api/mount/ports", get(mount_ports))
         .route("/api/mount/detect", get(mount_detect))
         .route("/api/mount/scan", get(mount_scan))
@@ -152,6 +153,26 @@ async fn camera_open(s: State<AppState>, Json(b): Json<OpenCamera>) -> Res {
 struct Control { id: String, value: f64 }
 async fn camera_control(s: State<AppState>, Json(b): Json<Control>) -> Res {
     run(s, Command::SetControl { id: b.id, value: b.value }).await
+}
+
+#[derive(Deserialize)]
+struct CoolerBody {
+    on: Option<bool>,
+    target_c: Option<f64>,
+    fan: Option<bool>,
+    heater: Option<bool>,
+    /// Switch off at once even when the sensor is cold (otherwise the target is raised step by step first).
+    immediate: Option<bool>,
+}
+async fn camera_cooler(s: State<AppState>, Json(b): Json<CoolerBody>) -> Res {
+    if b.on.is_none() && b.target_c.is_none() && b.fan.is_none() && b.heater.is_none() {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "nothing to change: give on, target_c, fan or heater" }))).into_response();
+    }
+    if b.target_c.is_some_and(|t| !t.is_finite() || !(-100.0..=60.0).contains(&t)) {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": "target_c must be a temperature in degrees Celsius" }))).into_response();
+    }
+    let req = rustflare_core::CoolerRequest { on: b.on, target_c: b.target_c, fan: b.fan, heater: b.heater };
+    run(s, Command::SetCooler { req, immediate: b.immediate.unwrap_or(false) }).await
 }
 
 #[derive(Deserialize)]
@@ -834,4 +855,33 @@ async fn mount_autoflip(s: State<AppState>, Json(b): Json<AutoFlipBody>) -> Res 
 struct SiteBody { latitude: f64, longitude: f64 }
 async fn site_put(s: State<AppState>, Json(b): Json<SiteBody>) -> Res {
     run(s, Command::SetSite { latitude: b.latitude, longitude: b.longitude }).await
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::*;
+
+    /// The device name a ZWO camera reports through the SDK, as the datasheet endpoint matches it.
+    fn entry_for(name: &str) -> Value {
+        let cat: Value = serde_json::from_str(CATALOG).unwrap();
+        let l = name.to_lowercase();
+        cat["cameras"].as_array().unwrap().iter()
+            .filter(|e| e["match"].as_str().is_some_and(|m| l.contains(&m.to_lowercase())))
+            .max_by_key(|e| e["match"].as_str().map_or(0, str::len)).cloned().unwrap_or_default()
+    }
+
+    #[test]
+    fn the_asi533_shows_its_hcg_and_unity_gain_marks() {
+        let e = entry_for("ZWO ASI533MC Pro");
+        assert_eq!(e["hcg_gain"], 100);
+        assert_eq!(e["unity_gain"], 100);
+        assert!(e["hcg_note"].as_str().is_some_and(|n| !n.is_empty()));
+    }
+
+    #[test]
+    fn zwo_cameras_with_a_verified_switch_point_have_it() {
+        for (name, gain) in [("ZWO ASI294MC Pro", 120), ("ZWO ASI662MC", 200), ("ZWO ASI2600MC Pro", 100), ("ZWO ASI664MC", 180)] {
+            assert_eq!(entry_for(name)["hcg_gain"], gain, "{name}");
+        }
+    }
 }

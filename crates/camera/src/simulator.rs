@@ -29,18 +29,51 @@ impl CameraDriver for SimulatorDriver {
         Ok(vec![
             CameraInfo { driver: "simulator".into(), id: "sim0".into(), name: "Simulated solar camera".into() },
             CameraInfo { driver: "simulator".into(), id: "sim_osc".into(), name: "Simulated colour camera (RGGB)".into() },
+            CameraInfo { driver: "simulator".into(), id: "sim_cooled".into(), name: "Simulated cooled colour camera (RGGB)".into() },
         ])
     }
 
     fn open(&self, id: &str) -> Result<Box<dyn Camera>> {
-        if id != "sim0" && id != "sim_osc" {
+        if !["sim0", "sim_osc", "sim_cooled"].contains(&id) {
             return Err(Error::NotFound(format!("simulator camera {id}")));
         }
-        Ok(Box::new(SimCamera { colour: id == "sim_osc", sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, roi: None, zoom: 1.0, defocus: 0.0, rng: 0x9E3779B97F4A7C15 }))
+        Ok(Box::new(SimCamera { colour: id != "sim0", cooler: (id == "sim_cooled").then(SimCooler::new), sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, roi: None, zoom: 1.0, defocus: 0.0, rng: 0x9E3779B97F4A7C15 }))
+    }
+}
+
+/// A thermoelectric cooler that moves the sensor temperature towards the target at 1 degree a second (fast, so tests do not wait).
+struct SimCooler {
+    on: bool,
+    target: f64,
+    fan: bool,
+    heater: bool,
+    temp: f64,
+    last: Instant,
+}
+
+const SIM_AMBIENT_C: f64 = 22.0;
+const SIM_COOLER_RANGE: (f64, f64) = (-40.0, 30.0);
+
+impl SimCooler {
+    fn new() -> Self { SimCooler { on: false, target: -10.0, fan: true, heater: false, temp: SIM_AMBIENT_C, last: Instant::now() } }
+
+    fn step(&mut self) {
+        let dt = self.last.elapsed().as_secs_f64();
+        self.last = Instant::now();
+        let goal = if self.on { self.target.max(SIM_AMBIENT_C - 35.0) } else { SIM_AMBIENT_C };
+        let d = (goal - self.temp).clamp(-dt, dt);
+        self.temp += d;
+    }
+
+    fn power(&self) -> f64 {
+        if !self.on { return 0.0; }
+        // the further the sensor is below ambient, the harder the cooler works to hold it
+        (((SIM_AMBIENT_C - self.temp) / 35.0).clamp(0.0, 1.0) * 100.0).round()
     }
 }
 
 struct SimCamera {
+    cooler: Option<SimCooler>,
     /// Simulated one-shot-colour sensor (RGGB mosaic of a warm-white Sun).
     colour: bool,
     sky: SimSky,
@@ -75,7 +108,7 @@ impl SimCamera {
 
 impl Camera for SimCamera {
     fn info(&self) -> CameraInfo {
-        CameraInfo { driver: "simulator".into(), id: if self.colour { "sim_osc" } else { "sim0" }.into(), name: if self.colour { "Simulated colour camera (RGGB)" } else { "Simulated solar camera" }.into() }
+        CameraInfo { driver: "simulator".into(), id: if self.cooler.is_some() { "sim_cooled" } else if self.colour { "sim_osc" } else { "sim0" }.into(), name: if self.cooler.is_some() { "Simulated cooled colour camera (RGGB)" } else if self.colour { "Simulated colour camera (RGGB)" } else { "Simulated solar camera" }.into() }
     }
 
     fn bayer(&self) -> Option<rustflare_core::BayerPattern> { self.colour.then_some(rustflare_core::BayerPattern::Rggb) }
@@ -192,7 +225,31 @@ impl Camera for SimCamera {
         Ok(())
     }
 
-    fn temperature_c(&mut self) -> Option<f64> { Some(24.5) }
+    fn temperature_c(&mut self) -> Option<f64> {
+        match self.cooler.as_mut() {
+            Some(c) => { c.step(); Some((c.temp * 10.0).round() / 10.0) }
+            None => Some(24.5),
+        }
+    }
+
+    fn cooler(&mut self) -> Option<CoolerStatus> {
+        let c = self.cooler.as_mut()?;
+        c.step();
+        Some(CoolerStatus {
+            on: c.on, target_c: Some(c.target), target_min_c: Some(SIM_COOLER_RANGE.0), target_max_c: Some(SIM_COOLER_RANGE.1),
+            power_pct: Some(c.power()), fan: Some(c.fan), heater: Some(c.heater),
+        })
+    }
+
+    fn set_cooler(&mut self, req: &CoolerRequest) -> Result<()> {
+        let c = self.cooler.as_mut().ok_or_else(|| Error::Unsupported("cooler on this camera".into()))?;
+        c.step();
+        if let Some(t) = req.target_c { c.target = t.round().clamp(SIM_COOLER_RANGE.0, SIM_COOLER_RANGE.1); }
+        if let Some(on) = req.on { c.on = on; }
+        if let Some(f) = req.fan { c.fan = f; }
+        if let Some(h) = req.heater { c.heater = h; }
+        Ok(())
+    }
 
     fn pixel_size_um(&self) -> Option<f64> { Some(PIXEL_SIZE_UM) }
 }
@@ -200,6 +257,20 @@ impl Camera for SimCamera {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_simulated_cooler_cools_and_only_the_cooled_camera_has_one() {
+        let d = SimulatorDriver::new(SimSky::new());
+        assert!(d.open("sim0").unwrap().cooler().is_none());
+        let mut cam = d.open("sim_cooled").unwrap();
+        let st = cam.cooler().unwrap();
+        assert!(!st.on && st.power_pct == Some(0.0));
+        cam.set_cooler(&CoolerRequest { on: Some(true), target_c: Some(-500.0), ..Default::default() }).unwrap();
+        assert_eq!(cam.cooler().unwrap().target_c, Some(-40.0));
+        std::thread::sleep(Duration::from_millis(1200));
+        assert!(cam.temperature_c().unwrap() < 22.0);
+        assert!(cam.cooler().unwrap().power_pct.unwrap() > 0.0);
+    }
 
     #[test]
     fn exposure_changes_brightness() {

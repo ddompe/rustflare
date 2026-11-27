@@ -29,6 +29,31 @@ pub struct ControlDesc {
     pub log: bool,
 }
 
+/// What a cooled camera reports about its thermoelectric cooler. `None` from [`Camera::cooler`] means no cooler.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct CoolerStatus {
+    pub on: bool,
+    /// Target sensor temperature in degrees Celsius, whole degrees.
+    pub target_c: Option<f64>,
+    /// The range the camera accepts for the target.
+    pub target_min_c: Option<f64>,
+    pub target_max_c: Option<f64>,
+    /// Cooler power, 0 to 100 percent (read only).
+    pub power_pct: Option<f64>,
+    /// `None` when the camera has no switch for it.
+    pub fan: Option<bool>,
+    pub heater: Option<bool>,
+}
+
+/// A change to the cooler: every field that is `Some` is applied (the target first, then the switches).
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize)]
+pub struct CoolerRequest {
+    pub on: Option<bool>,
+    pub target_c: Option<f64>,
+    pub fan: Option<bool>,
+    pub heater: Option<bool>,
+}
+
 /// Region of interest in sensor pixels (top-left origin).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Roi {
@@ -57,6 +82,12 @@ pub trait Camera: Send {
     /// Colour filter layout when the sensor is a one-shot-colour one (frames are then raw Bayer mosaics).
     fn bayer(&self) -> Option<crate::BayerPattern> { None }
     fn temperature_c(&mut self) -> Option<f64> { None }
+    /// The cooler of a cooled camera (state and what it can do), or `None` when there is none.
+    fn cooler(&mut self) -> Option<CoolerStatus> { None }
+    /// Changes the cooler, target temperature, fan or anti-dew heater. Cameras without them return `Unsupported`.
+    fn set_cooler(&mut self, _req: &CoolerRequest) -> Result<()> {
+        Err(crate::Error::Unsupported("cooler on this camera".into()))
+    }
     /// Physical pixel size in micrometres, if the driver knows it (used to compute the image scale).
     fn pixel_size_um(&self) -> Option<f64> { None }
     /// Full sensor size, if the driver can report it (needed for ROI).

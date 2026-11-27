@@ -25,6 +25,12 @@ const ASI_EXPOSURE: c_int = 1;
 const ASI_OFFSET: c_int = 5;
 const ASI_BANDWIDTHOVERLOAD: c_int = 6;
 const ASI_TEMPERATURE: c_int = 8;
+// Cooler controls: counted from the enum in ASICamera2.h (GAIN = 0, ..., HIGH_SPEED_MODE = 14, then these).
+const ASI_COOLER_POWER_PERC: c_int = 15;
+const ASI_TARGET_TEMP: c_int = 16; // whole degrees, not times ten
+const ASI_COOLER_ON: c_int = 17;
+const ASI_FAN_ON: c_int = 19;
+const ASI_ANTI_DEW_HEATER: c_int = 21;
 // ASI_IMG_TYPE
 const IMG_RAW8: c_int = 0;
 const IMG_RAW16: c_int = 2;
@@ -84,6 +90,8 @@ pub(crate) struct Prop {
     /// ASI_BAYER_PATTERN: 0 RG, 1 BG, 2 GR, 3 GB.
     pub bayer: i32,
     pub pixel_size_um: f64,
+    /// `IsCoolerCam`.
+    pub is_cooler: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -247,6 +255,7 @@ impl Sdk for RealSdk {
             is_color: i.is_color != 0,
             bayer: i.bayer,
             pixel_size_um: i.pixel_size,
+            is_cooler: i.is_cooler != 0,
         })
     }
     fn open(&self, id: i32) -> std::result::Result<(), i32> {
@@ -532,6 +541,61 @@ impl Camera for AsiCam {
     fn pixel_size_um(&self) -> Option<f64> {
         (self.prop.pixel_size_um > 0.0).then_some(self.prop.pixel_size_um)
     }
+
+    /// Only a camera that says it is cooled (`IsCoolerCam`) and offers a writable cooler switch has one. The fan and the anti-dew heater
+    /// appear only where the SDK lists them. Reading never touches the stream.
+    fn cooler(&mut self) -> Option<CoolerStatus> {
+        if !self.prop.is_cooler || !self.cap(ASI_COOLER_ON).is_some_and(|c| c.writable) {
+            return None;
+        }
+        let id = self.prop.id;
+        let get = |ctl: i32| self.sdk.get_control(id, ctl).ok();
+        let target = self.cap(ASI_TARGET_TEMP);
+        let flag = |ctl: i32| self.cap(ctl).and_then(|_| get(ctl)).map(|v| v != 0);
+        Some(CoolerStatus {
+            on: get(ASI_COOLER_ON).is_some_and(|v| v != 0),
+            target_c: target.and_then(|_| get(ASI_TARGET_TEMP)).map(|v| v as f64),
+            target_min_c: target.map(|c| c.min as f64),
+            target_max_c: target.map(|c| c.max as f64),
+            power_pct: self.cap(ASI_COOLER_POWER_PERC).and_then(|_| get(ASI_COOLER_POWER_PERC)).map(|v| v as f64),
+            fan: flag(ASI_FAN_ON),
+            heater: flag(ASI_ANTI_DEW_HEATER),
+        })
+    }
+
+    fn set_cooler(&mut self, req: &CoolerRequest) -> Result<()> {
+        if self.cooler().is_none() {
+            return Err(Error::Unsupported("cooler on this camera".into()));
+        }
+        let id = self.prop.id;
+        // validate everything before changing anything
+        let target = match req.target_c {
+            Some(t) => {
+                let c = self.cap(ASI_TARGET_TEMP).filter(|c| c.writable).ok_or_else(|| Error::Unsupported("target temperature on this camera".into()))?;
+                Some((t.round() as i64).clamp(c.min, c.max))
+            }
+            None => None,
+        };
+        for (want, ctl, what) in [(req.fan, ASI_FAN_ON, "fan"), (req.heater, ASI_ANTI_DEW_HEATER, "anti-dew heater")] {
+            if want.is_some() && !self.cap(ctl).is_some_and(|c| c.writable) {
+                return Err(Error::Unsupported(format!("{what} on this camera")));
+            }
+        }
+        // the target first, so a cooler switched on does not first chase an old target
+        if let Some(t) = target {
+            self.sdk.set_control(id, ASI_TARGET_TEMP, t).map_err(|e| err("target temperature", e))?;
+        }
+        if let Some(on) = req.on {
+            self.sdk.set_control(id, ASI_COOLER_ON, on as i64).map_err(|e| err("cooler", e))?;
+        }
+        if let Some(f) = req.fan {
+            self.sdk.set_control(id, ASI_FAN_ON, f as i64).map_err(|e| err("fan", e))?;
+        }
+        if let Some(h) = req.heater {
+            self.sdk.set_control(id, ASI_ANTI_DEW_HEATER, h as i64).map_err(|e| err("anti-dew heater", e))?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -544,6 +608,7 @@ mod tests {
         state: Mutex<FakeState>,
         color: bool,
         big: bool,
+        cooled: bool,
     }
     #[derive(Default)]
     struct FakeState {
@@ -561,7 +626,7 @@ mod tests {
         fn property(&self, i: i32) -> std::result::Result<Prop, i32> {
             if i != 0 { return Err(1); }
             let (max_w, max_h) = if self.big { (64, 32) } else { (4, 2) };
-            Ok(Prop { name: "ZWO ASI174MM Mini".into(), id: 0, max_w, max_h, is_color: self.color, bayer: 0, pixel_size_um: 5.86 })
+            Ok(Prop { name: "ZWO ASI174MM Mini".into(), id: 0, max_w, max_h, is_color: self.color, bayer: 0, pixel_size_um: 5.86, is_cooler: self.cooled })
         }
         fn open(&self, _: i32) -> std::result::Result<(), i32> {
             if self.state.lock().unwrap().fail_open { Err(5) } else { Ok(()) }
@@ -570,8 +635,13 @@ mod tests {
         fn close(&self, _: i32) { self.state.lock().unwrap().closed = true; }
         fn caps(&self, _: i32) -> std::result::Result<Vec<Caps>, i32> {
             let c = |t, min, max, writable| Caps { control_type: t, min, max, default: min, writable };
-            Ok(vec![c(ASI_GAIN, 0, 510, true), c(ASI_EXPOSURE, 32, 2_000_000_000, true), c(ASI_OFFSET, 0, 80, true),
-                    c(ASI_BANDWIDTHOVERLOAD, 40, 100, true), c(ASI_TEMPERATURE, -500, 1000, false)])
+            let mut v = vec![c(ASI_GAIN, 0, 510, true), c(ASI_EXPOSURE, 32, 2_000_000_000, true), c(ASI_OFFSET, 0, 80, true),
+                    c(ASI_BANDWIDTHOVERLOAD, 40, 100, true), c(ASI_TEMPERATURE, -500, 1000, false)];
+            if self.cooled {
+                v.extend([c(ASI_COOLER_POWER_PERC, 0, 100, false), c(ASI_TARGET_TEMP, -40, 30, true), c(ASI_COOLER_ON, 0, 1, true),
+                          c(ASI_FAN_ON, 0, 1, true), c(ASI_ANTI_DEW_HEATER, 0, 1, true)]);
+            }
+            Ok(v)
         }
         fn get_control(&self, _: i32, ctl: i32) -> std::result::Result<i64, i32> {
             Ok(*self.state.lock().unwrap().values.get(&ctl).unwrap_or(&if ctl == ASI_TEMPERATURE { 253 } else { 7 }))
@@ -697,6 +767,54 @@ mod tests {
     fn temperature_is_tenths_of_a_degree() {
         let f = Arc::new(Fake::default());
         assert_eq!(cam(&f).temperature_c(), Some(25.3));
+    }
+
+    #[test]
+    fn control_numbers_match_the_sdk_header() {
+        // ASICamera2.h counts: GAIN 0, EXPOSURE 1, GAMMA 2, WB_R 3, WB_B 4, OFFSET 5, BANDWIDTHOVERLOAD 6, OVERCLOCK 7, TEMPERATURE 8,
+        // FLIP 9, AUTO_MAX_GAIN 10, AUTO_MAX_EXP 11, AUTO_TARGET_BRIGHTNESS 12, HARDWARE_BIN 13, HIGH_SPEED_MODE 14, COOLER_POWER_PERC 15,
+        // TARGET_TEMP 16, COOLER_ON 17, MONO_BIN 18, FAN_ON 19, PATTERN_ADJUST 20, ANTI_DEW_HEATER 21
+        assert_eq!([ASI_TEMPERATURE, ASI_COOLER_POWER_PERC, ASI_TARGET_TEMP, ASI_COOLER_ON, ASI_FAN_ON, ASI_ANTI_DEW_HEATER], [8, 15, 16, 17, 19, 21]);
+    }
+
+    #[test]
+    fn an_uncooled_camera_has_no_cooler() {
+        let f = Arc::new(Fake::default());
+        let mut c = cam(&f);
+        assert_eq!(c.cooler(), None);
+        assert!(matches!(c.set_cooler(&CoolerRequest { on: Some(true), ..Default::default() }), Err(Error::Unsupported(_))));
+        // the cooler controls do not leak into the control list
+        assert_eq!(c.controls().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn a_cooled_camera_reports_and_sets_the_cooler() {
+        let f = Arc::new(Fake { cooled: true, ..Default::default() });
+        let mut c = cam(&f);
+        {
+            let mut s = f.state.lock().unwrap();
+            s.values.insert(ASI_TARGET_TEMP, -10);
+            s.values.insert(ASI_COOLER_POWER_PERC, 42);
+            s.values.insert(ASI_COOLER_ON, 0);
+        }
+        let st = c.cooler().unwrap();
+        assert_eq!((st.on, st.target_c, st.power_pct, st.fan, st.heater), (false, Some(-10.0), Some(42.0), Some(true), Some(true)));
+        assert_eq!((st.target_min_c, st.target_max_c), (Some(-40.0), Some(30.0)));
+        // the target is clamped to the range and sent as whole degrees, not times ten
+        c.set_cooler(&CoolerRequest { on: Some(true), target_c: Some(-55.4), fan: Some(false), heater: Some(true) }).unwrap();
+        {
+            let s = f.state.lock().unwrap();
+            assert_eq!((s.values[&ASI_TARGET_TEMP], s.values[&ASI_COOLER_ON], s.values[&ASI_FAN_ON], s.values[&ASI_ANTI_DEW_HEATER]), (-40, 1, 0, 1));
+        }
+        assert!(c.cooler().unwrap().on);
+        c.set_cooler(&CoolerRequest { target_c: Some(-12.6), ..Default::default() }).unwrap();
+        assert_eq!(f.state.lock().unwrap().values[&ASI_TARGET_TEMP], -13);
+        // changing the cooler does not interrupt a running stream
+        c.capture(Duration::from_millis(5)).unwrap();
+        c.set_cooler(&CoolerRequest { on: Some(false), ..Default::default() }).unwrap();
+        assert!(f.state.lock().unwrap().streaming);
+        // it does not show among the ordinary controls
+        assert_eq!(c.controls().unwrap().len(), 5);
     }
 
     #[test]

@@ -172,12 +172,14 @@
       "model": "ASI664MC",
       "sensor": "Sony IMX664, 1/1.8-inch CMOS, colour, rolling shutter",
       "adc_bits": 12,
-      "notes": "Manufacturer page only provides the product listing and no key-specification table in the fetched page.",
+      "notes": "Manufacturer page only provides the product listing and no key-specification table in the fetched page. HCG gain from the ZWO page.",
       "sources": [
         "https://www.zwoastro.com/product/asi664mc/"
       ],
       "image": "zwo-asi664mc.webp",
-      "image_source": "https://www.zwoastro.com/product/asi664mc/"
+      "image_source": "https://www.zwoastro.com/product/asi664mc/",
+      "hcg_gain": 180,
+      "hcg_note": "HCG mode is automatically turned on at gain 180 (ZWO product page)."
     },
     {
       "match": "ASI174MM",
@@ -368,12 +370,17 @@
       "full_well_e": 50000,
       "read_noise_e": 1.0,
       "qe_peak_pct": 80,
-      "notes": "Full-resolution; USB 3.0; cooled to 35°C delta.",
+      "notes": "Full-resolution 20 fps on USB 3.0; two-stage TEC, Delta T 35 C below ambient (ASI533 manual; the product page lists \"35 C\" cooling); read noise 1.0 to 3.8 e- depending on gain (manual), 1.53 e- at gain 100 (ZWO product page); QE peak about 80% for the colour camera (91% for the mono); 14-bit ADC, 50 ke- full well, DDR3 256 MB buffer. Cooler, target temperature, fan and anti-dew heater are in the Camera tab.",
       "sources": [
-        "https://www.zwoastro.com/product/asi533-pro-series/"
+        "https://www.zwoastro.com/product/asi533-pro-series/",
+        "https://www.zwoastro.com/product/asi533mc-pro/",
+        "https://astronomy-imaging-camera.com/manuals/ASI533_Manual_EN.pdf"
       ],
       "image": "zwo-asi533mc-pro.webp",
-      "image_source": "https://www.zwoastro.com/product/asi533-pro-series/"
+      "image_source": "https://www.zwoastro.com/product/asi533-pro-series/",
+      "hcg_gain": 100,
+      "hcg_note": "High conversion gain switches on at gain 100. ZWO names gain 100 (offset 70) the default \"Unity Gain\" of the ASI533MC Pro, with 1.53 e- read noise there; ZWO documents HCG switching on at gain 100 for its IMX571 cameras (ASI2600) and its manuals say the ASI533 read noise falls as gain rises. The ASI533 pages themselves do not use the word HCG, so this point is the vendor default plus user experience, not a datasheet statement.",
+      "unity_gain": 100
     },
     {
       "match": "Saturn-M SQR",
