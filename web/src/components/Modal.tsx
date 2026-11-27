@@ -21,7 +21,7 @@ export function Modal({ title, onClose, children, className = '', canEscape, bar
       if (e.key !== 'Tab' || !boxRef.current) return
       // a dialog on top of the dialog (the file preview) holds the focus until it closes
       const scope = boxRef.current.querySelector<HTMLElement>('[role="dialog"]') ?? boxRef.current
-      const items = Array.from(scope.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]')).filter((el) => el.getClientRects().length > 0)
+      const items = Array.from(scope.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary' + (bare ? '' : ', [tabindex="0"]'))).filter((el) => el.getClientRects().length > 0)
       if (!items.length) return
       const first = items[0], last = items[items.length - 1]
       const at = document.activeElement

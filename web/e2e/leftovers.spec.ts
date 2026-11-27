@@ -81,6 +81,18 @@ test.describe('Escape in the optical setup form', () => {
   })
 })
 
+test('on a portrait phone the picture size label does not sit under the Tools button', async ({ page }, info) => {
+  test.skip(info.project.name === 'desktop', 'the portrait phone layout is the phone project')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  const size = page.getByTestId('size-label')
+  const tools = page.getByRole('button', { name: 'Picture tools' })
+  await expect(size).toBeVisible()
+  const a = (await size.boundingBox())!, b = (await tools.boundingBox())!
+  const ov = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y))
+  expect(ov, 'size label and Tools button overlap').toBe(0)
+})
+
 test('the file manager runs on the shared Modal: labelled, focus in, page inert, Escape and Close, focus back', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('tab', { name: /^Record/ }).click()
