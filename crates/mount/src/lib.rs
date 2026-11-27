@@ -12,6 +12,15 @@ use rustflare_core::{sim::SimSky, Error, Mount, Result};
 /// Names accepted by [`connect`].
 pub const DRIVERS: &[&str] = &["zwo", "ioptron", "simulator"];
 
+/// Finds out which driver a serial port belongs to, by asking it a read-only question of each protocol in turn. Returns the driver name and
+/// the model, or `None` when nothing that this application drives answers (an unknown device, or a mount that is off).
+pub fn detect(device: &str) -> Option<(&'static str, String)> {
+    if let Some(m) = zwo::probe(device) {
+        return Some(("zwo", format!("ZWO {m}")));
+    }
+    ioptron::probe(device).map(|m| ("ioptron", format!("iOptron {m}")))
+}
+
 /// Prefix of a `device` string that selects the Bluetooth transport: `ble:<address>` (stored that way in the
 /// startup settings, so old settings files with plain serial paths keep working).
 pub const BLE_PREFIX: &str = "ble:";

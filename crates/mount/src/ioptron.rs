@@ -77,6 +77,14 @@ impl Ioptron<Box<dyn serialport::SerialPort>> {
     }
 }
 
+/// Asks a serial port whether an iOptron mount is behind it (read-only: `:MountInfo#` at 115200 baud). Returns the model name.
+pub fn probe(device: &str) -> Option<String> {
+    let mut port = serialport::new(device, 115_200).timeout(Duration::from_millis(400)).open().ok()?;
+    let r = send(&mut port, ":MountInfo#", Reply::Fixed(4)).ok()?;
+    let code = String::from_utf8_lossy(&r).to_string();
+    (code.len() == 4 && code.bytes().all(|b| b.is_ascii_digit())).then(|| model_name(&code))
+}
+
 impl<P: Read + Write + Send> Ioptron<P> {
     /// Sends `:MountInfo#` first, as the protocol document says every program must, and fails if nothing answers (wrong port or baud rate).
     pub fn new(mut port: P, device: &str) -> Result<Self> {

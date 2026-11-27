@@ -37,6 +37,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/camera/close", post(|s| run(s, Command::CloseCamera)))
         .route("/api/camera/control", put(camera_control))
         .route("/api/mount/ports", get(mount_ports))
+        .route("/api/mount/detect", get(mount_detect))
         .route("/api/mount/scan", get(mount_scan))
         .route("/api/mount/drivers", get(|| async { Json(json!(rustflare_mount::DRIVERS)) }))
         .route("/api/mount/connect", post(mount_connect))
@@ -666,6 +667,31 @@ async fn preview_put(State(st): State<AppState>, Json(b): Json<PreviewSettings>)
 }
 
 /// Serial devices that could be a mount: stable `/dev/serial/by-id/*` names when available.
+/// Which of the serial ports has a mount we can drive on it, and which driver: asks each port a read-only question of each protocol
+/// (a few hundred milliseconds a port). Not while a mount is connected (its port is in use): the list comes back without answers.
+async fn mount_detect(State(st): State<AppState>) -> Json<Value> {
+    let connected = st.engine.status.borrow().mount.is_some();
+    let Json(ports) = mount_ports().await;
+    let list: Vec<Value> = ports.as_array().cloned().unwrap_or_default();
+    if connected {
+        return Json(json!(list));
+    }
+    let found = tokio::task::spawn_blocking(move || {
+        list.into_iter()
+            .map(|mut p| {
+                if let Some((driver, model)) = p["path"].as_str().and_then(rustflare_mount::detect) {
+                    p["driver"] = json!(driver);
+                    p["model"] = json!(model);
+                }
+                p
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_default();
+    Json(json!(found))
+}
+
 async fn mount_ports() -> Json<Value> {
     let mut ports: Vec<Value> = vec![];
     if let Ok(d) = std::fs::read_dir("/dev/serial/by-id") {

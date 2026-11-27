@@ -106,6 +106,8 @@ pub(crate) trait Sdk: Send + Sync {
     fn get_control(&self, id: i32, ctl: i32) -> std::result::Result<i64, i32>;
     fn set_control(&self, id: i32, ctl: i32, v: i64) -> std::result::Result<(), i32>;
     fn set_format(&self, id: i32, w: i32, h: i32, img: i32) -> std::result::Result<(), i32>;
+    /// Top-left corner of the readout window; must be set after `set_format`, which centres the window.
+    fn set_start_pos(&self, id: i32, x: i32, y: i32) -> std::result::Result<(), i32>;
     fn start_video(&self, id: i32) -> std::result::Result<(), i32>;
     fn stop_video(&self, id: i32);
     fn video_data(&self, id: i32, buf: &mut [u8], wait_ms: i32) -> std::result::Result<(), i32>;
@@ -150,6 +152,7 @@ type FnCaps = unsafe extern "C" fn(c_int, c_int, *mut RawCaps) -> c_int;
 type FnGet = unsafe extern "C" fn(c_int, c_int, *mut c_long, *mut c_int) -> c_int;
 type FnSet = unsafe extern "C" fn(c_int, c_int, c_long, c_int) -> c_int;
 type FnRoi = unsafe extern "C" fn(c_int, c_int, c_int, c_int, c_int) -> c_int;
+type FnStart = unsafe extern "C" fn(c_int, c_int, c_int) -> c_int;
 type FnData = unsafe extern "C" fn(c_int, *mut c_uchar, c_long, c_int) -> c_int;
 
 struct RealSdk {
@@ -165,6 +168,7 @@ struct RealSdk {
     get: FnGet,
     set: FnSet,
     roi: FnRoi,
+    start_pos: FnStart,
     start: FnId,
     stop: FnId,
     data: FnData,
@@ -211,6 +215,7 @@ impl RealSdk {
             get: sym!("ASIGetControlValue", FnGet),
             set: sym!("ASISetControlValue", FnSet),
             roi: sym!("ASISetROIFormat", FnRoi),
+            start_pos: sym!("ASISetStartPos", FnStart),
             start: sym!("ASIStartVideoCapture", FnId),
             stop: sym!("ASIStopVideoCapture", FnId),
             data: sym!("ASIGetVideoData", FnData),
@@ -287,6 +292,10 @@ impl Sdk for RealSdk {
     fn set_format(&self, id: i32, w: i32, h: i32, img: i32) -> std::result::Result<(), i32> {
         let _g = self.lock.lock();
         rc(unsafe { (self.roi)(id, w, h, 1, img) })
+    }
+    fn set_start_pos(&self, id: i32, x: i32, y: i32) -> std::result::Result<(), i32> {
+        let _g = self.lock.lock();
+        rc(unsafe { (self.start_pos)(id, x, y) })
     }
     fn start_video(&self, id: i32) -> std::result::Result<(), i32> {
         let _g = self.lock.lock();
@@ -367,7 +376,10 @@ fn open_with(s: Arc<dyn Sdk>, id: &str) -> Result<AsiCam> {
         Ok(caps)
     })();
     match setup {
-        Ok(caps) => Ok(AsiCam { sdk: s, prop, caps, bits16: true, streaming: false }),
+        Ok(caps) => {
+            let roi = Roi { x: 0, y: 0, width: prop.max_w as u32, height: prop.max_h as u32 };
+            Ok(AsiCam { sdk: s, prop, caps, bits16: true, streaming: false, roi })
+        }
         Err(e) => {
             s.close(want);
             Err(e)
@@ -381,6 +393,8 @@ struct AsiCam {
     caps: Vec<Caps>,
     bits16: bool,
     streaming: bool,
+    /// The readout window now (the whole sensor until a region of interest is set).
+    roi: Roi,
 }
 
 impl AsiCam {
@@ -453,7 +467,9 @@ impl Camera for AsiCam {
         if ctl < 0 {
             let want16 = value >= 0.5;
             let img = if want16 { IMG_RAW16 } else { IMG_RAW8 };
-            self.sdk.set_format(cid, self.prop.max_w, self.prop.max_h, img).map_err(|c| err("set format", c))?;
+            self.sdk.set_format(cid, self.roi.width as i32, self.roi.height as i32, img).map_err(|c| err("set format", c))?;
+            // setting the format re-centres the window: put it back where it was
+            self.sdk.set_start_pos(cid, self.roi.x as i32, self.roi.y as i32).map_err(|c| err("set start position", c))?;
             self.bits16 = want16;
             return Ok(());
         }
@@ -462,8 +478,30 @@ impl Camera for AsiCam {
         self.sdk.set_control(cid, ctl, v).map_err(|e| err(id, e))
     }
 
+    fn sensor_size(&self) -> Option<(u32, u32)> { Some((self.prop.max_w as u32, self.prop.max_h as u32)) }
+
+    fn roi(&self) -> Option<Roi> { Some(self.roi) }
+
+    /// The SDK wants a width that is a multiple of 8 and a height that is a multiple of 2, a window inside the sensor, and an even corner
+    /// (an odd one would swap the colours of a one-shot-colour camera). `ASISetROIFormat` re-centres the window, so the corner is set after it.
+    fn set_roi(&mut self, roi: Roi) -> Result<()> {
+        let (mw, mh) = (self.prop.max_w as u32, self.prop.max_h as u32);
+        let (w, h) = (roi.width / 8 * 8, roi.height / 2 * 2);
+        let (x, y) = (roi.x / 2 * 2, roi.y / 2 * 2);
+        if w == 0 || h == 0 || x + w > mw || y + h > mh {
+            return Err(Error::Invalid("region outside the sensor".into()));
+        }
+        self.stop_stream();
+        let cid = self.prop.id;
+        let img = if self.bits16 { IMG_RAW16 } else { IMG_RAW8 };
+        self.sdk.set_format(cid, w as i32, h as i32, img).map_err(|c| err("set region size", c))?;
+        self.sdk.set_start_pos(cid, x as i32, y as i32).map_err(|c| err("set region position", c))?;
+        self.roi = Roi { x, y, width: w, height: h };
+        Ok(())
+    }
+
     fn capture(&mut self, timeout: Duration) -> Result<Frame> {
-        let (w, h) = (self.prop.max_w as usize, self.prop.max_h as usize);
+        let (w, h) = (self.roi.width as usize, self.roi.height as usize);
         let (pf, bpp) = if self.bits16 { (PixelFormat::Mono16, 2) } else { (PixelFormat::Mono8, 1) };
         if !self.streaming {
             self.sdk.start_video(self.prop.id).map_err(|c| err("start video capture", c))?;
@@ -505,6 +543,7 @@ mod tests {
     struct Fake {
         state: Mutex<FakeState>,
         color: bool,
+        big: bool,
     }
     #[derive(Default)]
     struct FakeState {
@@ -515,12 +554,14 @@ mod tests {
         closed: bool,
         fail_open: bool,
         fail_data: Option<i32>,
+        window: (i32, i32, i32, i32),
     }
     impl Sdk for Fake {
         fn num_cameras(&self) -> i32 { 1 }
         fn property(&self, i: i32) -> std::result::Result<Prop, i32> {
             if i != 0 { return Err(1); }
-            Ok(Prop { name: "ZWO ASI174MM Mini".into(), id: 0, max_w: 4, max_h: 2, is_color: self.color, bayer: 0, pixel_size_um: 5.86 })
+            let (max_w, max_h) = if self.big { (64, 32) } else { (4, 2) };
+            Ok(Prop { name: "ZWO ASI174MM Mini".into(), id: 0, max_w, max_h, is_color: self.color, bayer: 0, pixel_size_um: 5.86 })
         }
         fn open(&self, _: i32) -> std::result::Result<(), i32> {
             if self.state.lock().unwrap().fail_open { Err(5) } else { Ok(()) }
@@ -539,10 +580,18 @@ mod tests {
             self.state.lock().unwrap().values.insert(ctl, v);
             Ok(())
         }
-        fn set_format(&self, _: i32, _: i32, _: i32, img: i32) -> std::result::Result<(), i32> {
+        fn set_format(&self, _: i32, w: i32, h: i32, img: i32) -> std::result::Result<(), i32> {
             let mut s = self.state.lock().unwrap();
             if s.streaming { return Err(12); }
             s.img = img;
+            s.window = (0, 0, w, h); // the real library centres the window here
+            Ok(())
+        }
+        fn set_start_pos(&self, _: i32, x: i32, y: i32) -> std::result::Result<(), i32> {
+            let mut s = self.state.lock().unwrap();
+            if s.streaming { return Err(12); }
+            s.window.0 = x;
+            s.window.1 = y;
             Ok(())
         }
         fn start_video(&self, _: i32) -> std::result::Result<(), i32> {
@@ -606,6 +655,30 @@ mod tests {
         let fr = c.capture(t).unwrap();
         assert_eq!((fr.format, fr.data.len()), (PixelFormat::Mono8, 8));
         assert_eq!(f.state.lock().unwrap().starts, 2);
+    }
+
+    #[test]
+    fn a_region_of_interest_is_read_out_and_survives_a_change_of_bit_depth() {
+        let f = Arc::new(Fake { big: true, ..Default::default() });
+        let mut c = cam(&f);
+        assert_eq!(c.sensor_size(), Some((64, 32)));
+        assert_eq!(c.roi(), Some(Roi { x: 0, y: 0, width: 64, height: 32 }));
+        // the size is rounded down to what the SDK takes (width x8, height x2), the corner to even numbers
+        c.set_roi(Roi { x: 13, y: 7, width: 30, height: 15 }).unwrap();
+        assert_eq!(c.roi(), Some(Roi { x: 12, y: 6, width: 24, height: 14 }));
+        assert_eq!(f.state.lock().unwrap().window, (12, 6, 24, 14));
+        let fr = c.capture(Duration::from_millis(5)).unwrap();
+        assert_eq!((fr.width, fr.height, fr.data.len()), (24, 14, 24 * 14 * 2));
+        // 8-bit again: the window stays where it was (the SDK re-centres it on every format call)
+        c.set_control(CTRL_HIGH_BIT_DEPTH, 0.0).unwrap();
+        assert_eq!(f.state.lock().unwrap().window, (12, 6, 24, 14));
+        assert_eq!(c.capture(Duration::from_millis(5)).unwrap().data.len(), 24 * 14);
+        // outside the sensor, or empty
+        assert!(c.set_roi(Roi { x: 60, y: 0, width: 24, height: 14 }).is_err());
+        assert!(c.set_roi(Roi { x: 0, y: 0, width: 4, height: 14 }).is_err());
+        // back to the whole sensor
+        c.set_roi(Roi { x: 0, y: 0, width: 64, height: 32 }).unwrap();
+        assert_eq!(c.capture(Duration::from_millis(5)).unwrap().width, 64);
     }
 
     #[test]

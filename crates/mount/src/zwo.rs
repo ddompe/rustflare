@@ -72,6 +72,16 @@ impl Zwo<Box<dyn serialport::SerialPort>> {
     }
 }
 
+/// Asks a serial port whether a ZWO mount is behind it (read-only: `:GVP#` at 9600 baud). Returns the model.
+pub fn probe(device: &str) -> Option<String> {
+    let mut port = serialport::new(device, 9600).timeout(Duration::from_millis(400)).open().ok()?;
+    let r = send(&mut port, ":GVP#", Reply::EndsWith(END_CHAR)).ok()?;
+    match String::from_utf8_lossy(&r).as_ref() {
+        m @ ("AM3" | "AM5") => Some(m.to_string()),
+        _ => None,
+    }
+}
+
 impl<P: Read + Write + Send> Zwo<P> {
     pub fn new(port: P, device: &str) -> Result<Self> {
         Self::with_link(port, device, "usb", None)
