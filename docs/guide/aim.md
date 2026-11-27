@@ -35,7 +35,7 @@ The selector above the button lists the Sun, Moon, Mars, Jupiter and Saturn with
 - **Accuracy:** positions are computed on the Pi (planets from approximate orbital elements, the Moon from a short series with parallax for your site), good to a few arcminutes. That puts the target in the field of a narrow camera; centre it by hand with the N/S/E/W pad.
 - The Moon is large: with a long focal length you see only part of it, so aim for the limb or a crater and use short exposures.
 
-**Send home** goes to the mount's home (zero) position, with confirmation. Mounts whose driver can do it also show **Search home...** (the iOptron): the mount moves both axes until its home sensors find the mechanical zero and **makes that its new zero**. It is not the same as Send home; use it only when the zero is wrong, with someone at the mount. Neither has been tried on the iOptron yet.
+**Send home** goes to the mount's home (zero) position, with confirmation. Mounts whose driver can do it also show **Search home...** (the iOptron): the mount moves both axes until its home sensors find the mechanical zero and **makes that its new zero**. It is not the same as Send home; use it only when the zero is wrong, with someone at the mount.
 
 ## Move by hand
 

@@ -2,9 +2,9 @@
 
 Work is tracked on the [GitHub project board](https://github.com/users/ddompe/projects/1) (one issue per item; closed = done). This page is the narrative summary.
 
-**Where we are:** version 0.8.2 (2026-11-27). The recorder, mount, tracker and guider have run on the Sun with the owner's Player One Apollo-M MINI, ZWO AM3 and Lunt LS50 on a Raspberry Pi 5; the stacker (`rustflare-stack`) stacks finished recordings from disk and, new in 0.5.0, bursts straight from the recorder's shared frame ring ([After each burst](../guide/recording-modes.md), [ADR 0019](../adr/0019-shared-frame-ring.md)). What still needs real equipment is on the [hardware checklist](hardware-checklist.md) and the issues labelled `hardware-verification`.
+**Where we are:** version 0.8.2 (2026-11-27). The recorder, mount, tracker and guider have run on the Sun with the owner's Player One Apollo-M MINI, ZWO AM3 and Lunt LS50 on a Raspberry Pi 5 (an iOptron HAE69C and a ZWO ASI174MM Mini have also been connected); the stacker (`rustflare-stack`) stacks finished recordings from disk and, new in 0.5.0, bursts straight from the recorder's shared frame ring ([After each burst](../guide/recording-modes.md), [ADR 0019](../adr/0019-shared-frame-ring.md)). What still needs real equipment is on the [hardware checklist](hardware-checklist.md) and the issues labelled `hardware-verification`.
 
-**Next, in rough order:** stacking from memory on the Sun for an hour ([#87](https://github.com/ddompe/rustflare/issues/87)); the stacker compared with AutoStakkert and Siril ([#91](https://github.com/ddompe/rustflare/issues/91)); the rest of the UI critique ([#88](https://github.com/ddompe/rustflare/issues/88)); the ZWO ASI camera and colour cameras (#30, #56, #92); the Dec slide (#82) and the stick's stalls (#86).
+**Next, in rough order:** stacking from memory on the Sun for an hour ([#87](https://github.com/ddompe/rustflare/issues/87)); the stacker compared with AutoStakkert and Siril ([#91](https://github.com/ddompe/rustflare/issues/91)); the Moon and a planet on real equipment (profiles); the ZWO ASI camera on USB 3, colour ASI cameras and the cooler (#30, #56, #92); the iOptron guiding and Go to Sun; the Dec slide (#82) and the stick's stalls (#86).
 
 ## Verified on the real system (first session, 2026-11-21)
 
@@ -24,27 +24,23 @@ Released: 0.3.0 (first release), 0.3.1, 0.4.0 (field fixes from the first day on
 
 ## Planned
 
-- **ZWO ASI camera follow-ups:** the driver exists (ADR 0014; ASI174MM Mini enumerates, opens and streams on the Pi, USB 2 only so far). Still to do: measure on a USB 3 port, ROI/binning (frame rate), colour ASI cameras, cooler/fan controls.
-- **Focus assist ([#78](https://github.com/ddompe/rustflare/issues/78))**: no focuser needed. A person turns the focuser while a short burst is scored per frame and as a lucky-imaging stack, shown as a live score, trend and best-so-far, so focus can be judged on a bright day. The same metric later drives the EAF autofocus.
-- **EAF support and seeing-robust autofocus**: drive a ZWO EAF; compute a focus metric on an *average of several frames* (aligned on the limb) so turbulence does not corrupt the metric.
-- **Colour (OSC) cameras**: Bayer frame formats, debayering for preview and stills, raw Bayer SER recording, tracking on a luminance/green image, colour UI (white balance, per-channel histogram).
-- **Device datasheets and inventory**: images and spec sheets (including the HCG point) for ZWO and Player One planetary/solar cameras and the AM3, shown in the Camera and Mount panels.
-- **Software coronagraph for prominences** (built in 0.4.0, see the prominence lanes): a second, longer exposure recorded after the regular one (disc saturated on purpose), with disc masks from the fitted limb, stacked separately and blended in post-processing; plus a live coronagraph preview (disc blacked out, rest stretched).
-- **Send-home button** (`POST /api/mount/home`, implemented; to be verified on the mount) and a UI for the mount's real state. Connecting no longer switches tracking off; to be verified with the mount actually tracking.
-- **iPhone web app**: responsive layout, Home Screen app (part of the UI redesign); HTTPS later enables a service worker and wake lock.
-- **Field networking**: Pi hotspot / access-point mode for use away from Wi-Fi.
-- **Guided flats** (cap-on, adjust, OK, capture, restore); darks; FITS output.
-- **Browser-level UI tests** (Playwright, Chromium and WebKit) in CI, with an opt-in profile for the real Pi.
-- Signed apt repository; authentication and HTTPS; configurable guiding parameters; ROI/binning/cooler controls; colour cameras; more drivers.
+Still open (see the board for the numbers):
 
-- **Bluetooth mount link** (issue #53): implemented (ADR 0015); needs a first live session with the mount in pairing mode to verify scanning, the session opener, guiding and slewing over BLE.
+- **ZWO ASI camera follow-ups:** measure the ASI174MM Mini on a USB 3 port and cable; try a colour ASI, the ASI region of interest and the cooler, fan and anti-dew controls (built in 0.7.1 and 0.8.0, tested on the simulator and a fake SDK only); binning.
+- **EAF support and seeing-robust autofocus**: drive a ZWO EAF; compute a focus metric on an *average of several frames* (aligned on the limb) so turbulence does not corrupt the metric. Focus assist by hand (0.6.1) is built and its score is not yet tuned on real data (#84).
+- **The Moon and planets on real targets:** the profiles, the Moon and planet measurers, Go to for the Moon and planets, per-channel colour display, a planet focus metric, the dead band in arcseconds and per-profile recording defaults ([proposal](proposal-use-profiles.md) lists what is built). Nothing here has run on a real Moon or planet.
+- **More mounts:** Sky-Watcher (SynScan / EQMOD, a separate protocol, [research](research-skywatcher.md)); the rest of the iOptron range beyond the HAE69C (guiding and Go to Sun after a time sync are still to be checked on the real mount).
+- **Stacking:** from memory on the Sun for an hour, against AutoStakkert and Siril (#87, #91); colour recordings (the stacker is mono only).
+- **Real-hardware checks** of what was built on the simulators: the [hardware checklist](hardware-checklist.md).
+
+Built since the first plan (all in the releases above): the Bluetooth mount link (verified on the AM3), focus assist, colour (OSC) cameras with a live colour view, white balance and raw Bayer SER, device datasheets with photos, the software coronagraph and prominence lanes, Send home and the mount's real state, the iPhone Home Screen app, the field hotspot, guided flats and darks, FITS output, Playwright browser tests in CI, the signed apt repository, optional password and HTTPS, configurable guiding parameters, the region of interest, the cooler controls and the iOptron driver.
 
 ## Known limitations
 
-- Mono only (colour cameras deliver Bayer, treated as mono).
-- The day-of-year solar radius model is good to ≈ 0.1 %: fine for tracking, not for astrometry.
+- The stacker handles mono recordings only; colour cameras record raw Bayer SER, which AutoStakkert, PIPP and Siril stack.
+- The day-of-year solar radius model is good to ≈ 0.1 %: fine for tracking, not for astrometry. The Moon's limb fit is right for a nearly full Moon; with a terminator it takes the lit part for the disc.
 - Limb fitting needs some limb in view; thresholds assume the sky is darker than the disc.
-- No authentication; keep the Pi on a trusted network.
+- By default there is no authentication; keep the Pi on a trusted network, or set a password and HTTPS ([Phone setup](../guide/phone-setup.md)).
 - The SER header's local-time field carries UTC.
 - Released packages redistribute Player One's proprietary library (see [ADR 0006](../adr/0006-playerone-via-vendor-sdk.md), [0010](../adr/0010-debian-package-and-updates.md)).
 
@@ -53,7 +49,7 @@ Released: 0.3.0 (first release), 0.3.1, 0.4.0 (field fixes from the first day on
 
 - **M1 Hardware-verified field use**: Go to Sun, Bluetooth and USB mount links, USB 3 capture path (done and verified); safe eject, USB recovery, flats, guider on a real sky, H-alpha tracking (built; see [hardware-checklist.md](hardware-checklist.md)).
 - **M2 UI for the telescope**: overlays, one control scale, phone layout, file manager, user guide, datasheets (built); real iPhone check and the second UI review (open).
-- **M3 More gear** (last): ASI174MM, colour cameras, EAF/autofocus.
+- **M3 More gear** (last): ASI174MM and colour cameras (built, USB 3 and colour not yet measured), the iOptron driver (built, partly verified), EAF/autofocus (open).
 - **M4 Workflows and release**: flats (done), coronagraph, HTTPS/auth, signed apt repository, performance audit (first pass done).
 
 ## Reading the project board

@@ -17,13 +17,13 @@ Crates:
 | Crate | Role |
 |---|---|
 | `rustflare-core` | `Frame`, `Camera`/`CameraDriver`/`Mount` traits, `Vec2`/`Mat2`, `SimSky` |
-| `rustflare-camera` | `simulator`; `playerone` (feature) |
-| `rustflare-mount` | `zwo` (serial), `simulator` |
+| `rustflare-camera` | `simulator` (mono, colour, cooled colour; scenes for the Sun, a flat, the Moon and a planet); `playerone` (feature); `asi` (feature, loads `libASICamera2` at run time) |
+| `rustflare-mount` | `zwo` (serial and Bluetooth, feature `ble`), `ioptron` (serial), `simulator`; `detect` asks a serial port which of them answers |
 | `rustflare-tracking` | `Tracker` (disc, limb, anchor), `Calibrator`, `Guider` — pure, time-injected |
 | `rustflare-ring` | the shared frame ring: one producer, any number of consumers, in memory that another process can map (ADR 0019); `ipc` passes its descriptor over a unix socket |
 | `rustflare-capture` | `FrameSink` (the frame ring and a writer thread that is one consumer of it: SER/PNG/FITS, FAT32 rollover, wait or drop when full, deferred bursts), `SerWriter`, `write_png`, flats logic — pure, tested |
 | `rustflare-stack` | the stacker; `serve` takes bursts from the recorder's ring over `stack.sock`, `watch` stacks finished recordings from disk |
-| `rustflare-server` | `engine` (state machine; after each burst it hands the burst to the stacker through `stackbridge` and decides what is written), `api` (axum), `preview` (JPEG thread, auto-stretch), `storage` (drive selection and safety), `config` (settings file), `status` |
+| `rustflare-server` | `engine` (state machine; after each burst it hands the burst to the stacker through `stackbridge` and decides what is written), `api` (axum), `stack_api` and `browse` (stacker settings, the file manager's listing and tar download), `preview` (JPEG thread, auto-stretch), `storage` (drive selection and safety, the internal-disk reserve), `setups` (named optical setups), `sitetime` (the mount's own site and clock against the Pi's), `cooler` (the gentle warm-up), `config` (settings file), `status` |
 
 The engine loop: *apply commands → capture one frame → (at ~10 Hz) statistics, Sun location, tracker, guider/calibrator → preview (throttled) → capture job (the frame is moved into the RAM buffer) → throttled status publish*.
 Anything that needs the hardware goes through the engine, so there is exactly one place where camera, mount and jobs interact.
@@ -31,8 +31,13 @@ Rationale and alternatives: [ADR 0004](../adr/0004-engine-actor-and-transport.md
 
 ## Where the Sun is, and who may move the mount
 
-- `sunmodel` (server crate): the one estimate of the Sun's centre, radius and drift. Fed by the limb tracker when tracking, by the detector otherwise; read by the overlay, the coronagraph mask and the guider. It gates out measurements that disagree, predicts through dropouts and follows directly while the mount slews.
+- `sunmodel` (server crate): the one estimate of the target's centre, radius and drift (named for the Sun; for the Moon and a planet the same model is fed by their own measurer, see below). Fed by the limb tracker when tracking, by the detector otherwise; read by the overlay, the coronagraph mask and the guider. It gates out measurements that disagree, predicts through dropouts and follows directly while the mount slews.
 - `guiding` (tracking crate): `Calibrator` (median positions, re-issues its move every 2.5 s because the mount ends a guide command after 3 s), `Guider` (windowed average, dead band, gentle chained pulses, drift feed-forward, per-burst judgement in lane recordings), `DriftModel` and `DeadReckoning` (keep the framing while the Sun is hidden).
+- **Profiles and the target** ([ADR 0021](../adr/0021-use-profiles.md)): `status.profile` (`sun_white`, `sun_ha`, `moon`, `planet`, `other`) is kept by the engine, because the engine needs it. It chooses the measurer that feeds the one model (the disc and limb detector for the Sun and Moon, `locate_planet` for a planet, none for `other`), the expected radius (`status.optics.target_radius_arcsec`), the target of the meridian flip (`status.flip_target`, with its own tracking rate), the FITS `OBJECT` and the clipping rule. `status.target` says what the profile images. The API refuses nothing because of the profile; the UI greys controls with a reason.
+- **Optical setups** (`setups.rs`): named trains saved in the settings file, applied through the same code as `PUT /api/optics` and `PUT /api/profile`; `status.optics.setup` says which is in use and whether it was modified.
+- **The mount's own site and time** (`sitetime.rs`): the driver reads what the mount holds (`Mount::read_site_time`), the engine compares it with the Pi's every 30 s (`status.mount.site_time`) and can send the Pi's, by request or once after connecting ([ADR 0023](../adr/0023-mount-site-and-time-sync.md)). A mount without a battery (the HAE69C) restarts from 2017-01-01.
+- **Mount drivers** report what the UI needs (`slew_speeds`, `can_search_home`, `link`, `site_time`): the UI builds its controls from them, so a new mount needs no UI change.
+- **The screen** is fixed-size with overlay chips ([ADR 0022](../adr/0022-fixed-view-and-overlay-chips.md)); the status carries what it needs (`version`, `notices`, `capture`, `after_burst`).
 - Lane recordings (`CaptureLanes`): only the reference lane (shortest non-masked exposure) is analysed; long-exposure frames move the Sun model by their frame-to-frame displacement.
 - Automatic meridian flip, pause and resume (`ResumeSpec`): the flip pauses a running recording and restarts what is left afterwards.
 - Logs (`events.jsonl`, `mount.jsonl` via `rustflare_mount::trace`, lost frames, session log): see [Debugging and logs](../reference/debugging.md).

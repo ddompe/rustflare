@@ -1,6 +1,6 @@
 # 0007. ZWO mount: direct serial protocol, solar rate, guide-rate fix
 
-- Status: Accepted — protocol logic unit-tested against a mock port; **not yet run against a real AM3/AM5 in this project** (upstream code was tested on AM3 and AM5)
+- Status: Accepted. Protocol logic unit-tested against a mock port; run against a real AM3 over USB since 2026-11-21 (connect, tracking, nudge, Send home, Go to Sun; see the [hardware checklist](../project/hardware-checklist.md)). The AM5 has not been tried
 - Date: 2026-11-21
 
 ## Context

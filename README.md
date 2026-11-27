@@ -93,7 +93,7 @@ Developed against a Raspberry Pi 5, a Player One Apollo-M MINI, a ZWO ASI174MM M
 | Capture path: camera and USB stick on separate USB 3 controllers (~57 fps at 1944x1472, 3.4 GB sequence) | **Verified on the Pi** |
 | Storage, 4 GB FAT32 split, camera settings restore, package install and upgrade | **Verified on the Pi** |
 | Flats, guider on a real sky, prominence tools, USB recovery, iPhone app, HTTPS on the phone | Built and tested on the simulators; **waiting for a real-hardware check** ([checklist](docs/project/hardware-checklist.md)). Tracking on real H-alpha images, safe eject, focus assist and the coronagraph lanes have been run on the Sun and are listed there |
-| iOptron HAE69C over USB: connect (model code `0066`), state, tracking, reading the mount's site and clock | **Verified on a real mount** (replies take 300 to 600 ms). Go to, guiding, Send home, Search home and the clock writes are still to be checked |
+| iOptron HAE69C over USB: connect (model code `0066`), slews, home, search home, tracking, the mount's site and time | **Verified on a real mount**: slews, Send home, Search home, tracking, site and time (replies take 300 to 600 ms). Guiding and Go to Sun after a time sync are still to be checked |
 | ZWO ASI174MM Mini: open, controls, frames | **Verified on the Pi on a USB 2 port** (8.7 fps at 16-bit); the USB 3 frame rate is not measured |
 | ZWO ASI cooler, fan and anti-dew; ASI colour cameras; the Moon and Planet profiles; optical setups on a real telescope | Built and tested on the simulators (and a fake SDK); **waiting for the real device** |
 
