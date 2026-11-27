@@ -92,7 +92,7 @@ function MountConnect() {
           <div className="hint-text">Press the mount's pairing button, close the ZWO phone app (the mount talks to one device at a time) and keep the mount within a few metres.</div>
         </div>
       )}
-      {driver === 'ioptron' && <div className="hint-text">iOptron mounts (CEM70 series and relatives, HAE69): connect the mount's USB port to the Pi. It appears as a serial port; the 115200 baud setting is applied for you. Set the mount's own time zone and site once on its hand controller, or let RustFlare send them with Go to Sun. Not yet tried on a real mount.</div>}
+      {driver === 'ioptron' && <div className="hint-text">iOptron mounts (CEM70 series and relatives, HAE69): connect the mount's USB port to the Pi. It appears as a serial port; the 115200 baud setting is applied for you. A mount with no clock battery starts from a default time at every power-up: RustFlare sends its site and time after connecting (see Mount time and place below). Checked on a HAE69C; Go to and guiding are not yet checked.</div>}
       {driver !== 'simulator' && !(driver === 'zwo' && transport === 'ble') && (
         <div className="field">
           <label id="mount-ports-label">USB mount</label>

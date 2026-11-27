@@ -1,8 +1,10 @@
 //! iOptron mounts over the RS-232 command language 2014 version 3 (CEM70 series, CEM120, CEM40, GEM45, CEM26, GEM28, and the
 //! HAE69 family that AsiAir drives as a CEM70). USB mounts show up as a serial port; the settings are 115200 8N1.
 //!
-//! Source: "iOptron Mount RS-232 Command Language, version 3.10" (2021-01-04). **Written from that document, tested against a mock
-//! only: no iOptron mount has been connected yet** (see docs/project/hardware-checklist.md).
+//! Source: "iOptron Mount RS-232 Command Language, version 3.10" (2021-01-04), written from that document and tested against a mock port.
+//! **Checked on a real HAE69C (model code 0066)** over a Prolific USB-serial adapter: slews, Send home, Search home, tracking on and off at
+//! the sidereal, lunar and solar rates, `:GLS#`/`:GUT#` read-back and the site and time send. Not yet tried on a real mount: Go to, guide
+//! pulses and a meridian pass (see docs/project/hardware-checklist.md). Replies take 300 to 600 ms.
 //!
 //! What the protocol looks like: ASCII, every command `:...#`; a set command answers a single `1` (or `0` when it refuses) with no
 //! terminator; a get command answers its data and a closing `#`; `:MountInfo#` answers four digits; the motion commands `:m?#`, `:Z?nnnnn#`

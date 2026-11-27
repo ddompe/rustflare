@@ -3401,9 +3401,21 @@ impl Engine {
         self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == CTRL_EXPOSURE_US)).map(|c| c.value).unwrap_or(0.0)
     }
 
+    /// The sensor temperature now and the cooler's target (only while the cooler is on), for the FITS header and the notes file: darks must be matched to
+    /// the temperature the lights were taken at.
+    fn sensor_temps(&self) -> (Option<f64>, Option<f64>) {
+        let Some(c) = self.status.camera.as_ref() else { return (None, None) };
+        let temp = c.temperature_c.or(c.cooler.temp_c);
+        let target = if c.cooler.available && c.cooler.on { c.cooler.target_c } else { None };
+        (temp, target)
+    }
+
     fn sidecar(&self, kind: &str, extra: Value) -> Value {
         let cam = self.status.camera.as_ref();
+        let (sensor_temp_c, set_temp_c) = self.sensor_temps();
         json!({
+            "sensor_temp_c": sensor_temp_c,
+            "cooler_target_c": set_temp_c,
             "kind": kind,
             "written_utc": chrono::Utc::now().to_rfc3339(),
             "camera": cam.map(|c| &c.name),
@@ -3429,7 +3441,7 @@ impl Engine {
             Job::Single { stem, fits } => {
                 let path = stem.with_extension(if fits { "fits" } else { "png" });
                 let ctl = |id: &str| self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == id)).map(|c| c.value);
-                let meta = rustflare_capture::FitsMeta { instrument: self.status.camera.as_ref().map(|c| c.name.clone()), exposure_us: ctl(CTRL_EXPOSURE_US), gain: ctl("gain"), object: crate::status::profile_object(self.status.profile), comments: vec![] };
+                let meta = rustflare_capture::FitsMeta { instrument: self.status.camera.as_ref().map(|c| c.name.clone()), exposure_us: ctl(CTRL_EXPOSURE_US), gain: ctl("gain"), object: crate::status::profile_object(self.status.profile), sensor_temp_c: self.sensor_temps().0, set_temp_c: self.sensor_temps().1, comments: vec![] };
                 let gains = { let c = self.colour.lock().unwrap(); match c.mode { "off" => [1.0; 3], "manual" => [c.r, 1.0, c.b], _ => frame.bayer.map(|p| rustflare_capture::debayer::auto_white_balance(&frame, p)).unwrap_or([1.0; 3]) } };
                 let r = std::fs::create_dir_all(path.parent().unwrap()).map_err(s).and_then(|_| {
                     if fits {
@@ -3510,6 +3522,8 @@ impl Engine {
                 exposure_us: ctl(CTRL_EXPOSURE_US),
                 gain: ctl("gain"),
                 object: crate::status::profile_object(self.status.profile),
+                sensor_temp_c: self.sensor_temps().0,
+                set_temp_c: self.sensor_temps().1,
                 comments: vec![format!("flat applied to preview only: {}", if self.status.flats.applied { "yes" } else { "no" }), "frames are raw".into()],
             };
             let spec = BurstSpec { stem: stem.clone(), format: job.format, instrument, max_file_bytes: job.max_file, fits_meta };

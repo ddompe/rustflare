@@ -13,6 +13,10 @@ pub struct FitsMeta {
     pub exposure_us: Option<f64>,
     pub gain: Option<f64>,
     pub object: Option<String>,
+    /// Sensor temperature in degrees Celsius when the frame (or burst) started: `CCD-TEMP`. Dark frames only match light frames taken at the same temperature.
+    pub sensor_temp_c: Option<f64>,
+    /// The cooler's target in degrees Celsius, only while the cooler is on: `SET-TEMP`.
+    pub set_temp_c: Option<f64>,
     /// Extra free-text history cards (e.g. "flat applied: no").
     pub comments: Vec<String>,
 }
@@ -83,6 +87,12 @@ pub fn encode(frame: &Frame, meta: &FitsMeta) -> Vec<u8> {
     }
     if let Some(g) = meta.gain {
         cards.push(card("GAIN", &format!("{g}"), "camera gain setting"));
+    }
+    if let Some(t) = meta.sensor_temp_c {
+        cards.push(card("CCD-TEMP", &format!("{t:.1}"), "sensor temperature, Celsius"));
+    }
+    if let Some(t) = meta.set_temp_c {
+        cards.push(card("SET-TEMP", &format!("{t:.1}"), "cooler target, Celsius"));
     }
     for c in &meta.comments {
         let t: String = c.chars().filter(|c| c.is_ascii()).take(72).collect();
@@ -163,5 +173,20 @@ mod tests {
         f.bayer = Some(rustflare_core::BayerPattern::Rggb);
         let b = encode(&f, &FitsMeta::default());
         assert!(std::str::from_utf8(&b[..2880]).unwrap().contains("BAYERPAT= 'RGGB"));
+    }
+
+    #[test]
+    fn the_sensor_temperature_and_the_cooler_target_are_in_the_header_only_when_known() {
+        let f = Frame::new(2, 2, PixelFormat::Mono8, vec![1, 2, 3, 4]);
+        let cold = encode(&f, &FitsMeta { sensor_temp_c: Some(-9.84), set_temp_c: Some(-10.0), ..Default::default() });
+        let head = std::str::from_utf8(&cold[..2880]).unwrap();
+        assert!(head.contains("-9.8 / sensor temperature, Celsius"), "{head}");
+        assert!(head.contains("-10.0 / cooler target, Celsius"), "{head}");
+        let warm = encode(&f, &FitsMeta { sensor_temp_c: Some(25.3), ..Default::default() });
+        let head = std::str::from_utf8(&warm[..2880]).unwrap();
+        assert!(head.contains("25.3 / sensor temperature, Celsius") && !head.contains("SET-TEMP"));
+        let none = encode(&f, &FitsMeta::default());
+        let head = std::str::from_utf8(&none[..2880]).unwrap();
+        assert!(!head.contains("CCD-TEMP") && !head.contains("SET-TEMP"));
     }
 }
