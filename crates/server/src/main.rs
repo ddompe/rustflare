@@ -18,6 +18,8 @@ mod stackbridge;
 mod status;
 mod storage;
 mod sunmodel;
+#[cfg(test)]
+mod target_tests;
 
 use clap::Parser;
 use std::path::PathBuf;

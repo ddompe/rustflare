@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api, Status, reportError } from '../api'
 import { endsText } from './ui'
 import { recipeLabel, recordRequest, savedRecipe } from '../recipe'
-import { isSun, noun, profileOf, PROFILES } from '../profile'
+import { clipping, isSun, noun, profileOf, PROFILES } from '../profile'
 
 export type TabId = 'camera' | 'aim' | 'track' | 'record' | 'more'
 
@@ -17,7 +17,8 @@ export function chipsFor(status: Status | null): ChipSpec[] {
   const chips: ChipSpec[] = []
   const g = status.guiding
   if (!isSun(profileOf(status)) ) chips.push({ key: 'profile', tone: 'info', label: PROFILES.find((x) => x.id === profileOf(status))?.label ?? '', tab: 'camera', title: 'What you are imaging: change it on the Camera tab' })
-  if (cam.saturated > 0.001) chips.push({ key: 'clip', tone: 'bad', value: `${(cam.saturated * 100).toFixed(1)}%`, label: 'clipping', tab: 'camera', title: 'Pixels at full scale: reduce exposure or gain' })
+  const clip = clipping(cam, profileOf(status))
+  if (clip.clipped) chips.push({ key: 'clip', tone: 'bad', value: clip.value, label: clip.label, tab: 'camera', title: clip.help })
   if (!status.sun && !status.tracking?.lost) chips.push({ key: 'sun', tone: 'warn', label: `No ${noun(profileOf(status))} found`, tab: 'camera', title: 'Too dark? Try more exposure' })
   if (status.mount?.park === 'parked' || status.mount?.park === 'parking') chips.push({ key: 'park', tone: 'warn', label: 'Mount parked', tab: 'aim', title: 'Parked on the mount: motion is disabled' })
   // a lost target is shown once, in the status bar at the bottom

@@ -3,6 +3,7 @@ import { Snow } from './ui'
 import { api as callApi, Status, reportError } from '../api'
 import { FocusBody } from './FocusAssist'
 import { clipText, HistPlot } from './Histogram'
+import { clipping, profileOf } from '../profile'
 import { useSetting } from '../settings'
 
 /**
@@ -208,12 +209,14 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
     )
   }
   if (w('hist').on && cam.histogram.length > 0) {
-    const clipped = cam.saturated > 0.001
+    const pc = profileOf(status) === 'planet' ? clipping(cam, 'planet') : null
+    const clipped = pc ? pc.clipped : cam.saturated > 0.001
+    const clipWord = pc ? pc.value : clipText(cam.saturated_rgb) || (cam.saturated * 100).toFixed(1) + '%'
     out.push(
       <Widget key="hist" id="hist" label="Histogram" w={w('hist')} api={api}
-        mini={<span className={clipped ? 'bad-text' : ''}>{clipped ? <>Clip <b className="cv">{clipText(cam.saturated_rgb) || (cam.saturated * 100).toFixed(1) + '%'}</b></> : 'No clipping'}</span>}>
+        mini={<span className={clipped ? 'bad-text' : ''}>{clipped ? <>Clip <b className="cv">{clipWord}</b></> : 'No clipping'}</span>}>
         <HistPlot className="hud-hist" bins={cam.histogram} rgb={cam.histogram_rgb} saturatedRgb={cam.saturated_rgb} clipped={clipped} hidden />
-        <div className={clipped ? 'bad-text' : 'ok'}>{clipped ? `Clipping ${clipText(cam.saturated_rgb) || (cam.saturated * 100).toFixed(1) + '%'}` : 'No clipping'}</div>
+        <div className={clipped ? 'bad-text' : 'ok'}>{clipped ? `Clipping ${clipWord}` : 'No clipping'}</div>
       </Widget>,
     )
   }

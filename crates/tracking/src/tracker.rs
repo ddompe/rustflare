@@ -35,6 +35,8 @@ enum State {
     /// Partial disc: centre inferred from the visible limb arc, radius locked after the first fit.
     Limb { pos: Vec2, radius: f64 },
     Anchor { pos: (i32, i32), block: Vec<u8> },
+    /// A small bright disc (a planet): the centroid of the brightest blob, radius from its area.
+    Planet { pos: Vec2, radius: f64 },
 }
 
 pub struct Tracker {
@@ -266,6 +268,81 @@ pub fn locate_sun(frame: &Frame, expected_radius: Option<f64>) -> Option<SunLoca
     Some(SunLocation { pos: fit.pos, radius: fit.radius, partial: true, radius_from_optics: Some(fit.radius_from_optics), fit_rms: Some(fit.rms) })
 }
 
+/// Where a small bright disc (a planet) is, independent of any tracker: the centroid of the brightest blob.
+/// The sky level and its noise come from a sparse grid; the brightest 4x4 block seeds a flood fill of everything above half way
+/// a quarter of the way from the sky to that block, and the centroid is weighted by brightness above the sky. `near` (last position and radius)
+/// restricts the search to its neighbourhood. `None` when nothing stands out clearly (under 8 sigma and half a percent of full scale
+/// above the sky), when the blob is under 7 px in area (a star, a hot pixel) or larger than a tenth of the frame (that is the Sun or
+/// the Moon: use the disc detector). The radius is that of a disc of the blob's area at that level.
+pub fn locate_planet(frame: &Frame, near: Option<(Vec2, f64)>) -> Option<SunLocation> {
+    let (w, h) = (frame.width as usize, frame.height as usize);
+    if w < 32 || h < 32 { return None; }
+    let full = frame.format.full_scale();
+    let fv = |x: usize, y: usize| frame.pixel(x as u32, y as u32) as f64;
+    let mut grid: Vec<f64> = Vec::with_capacity((w / 8 + 1) * (h / 8 + 1));
+    for y in (0..h).step_by(8) { for x in (0..w).step_by(8) { grid.push(fv(x, y)); } }
+    grid.sort_by(|a, b| a.total_cmp(b));
+    let bg = grid[grid.len() / 2];
+    let mut dev: Vec<f64> = grid.iter().map(|v| (v - bg).abs()).collect();
+    dev.sort_by(|a, b| a.total_cmp(b));
+    let sigma = (1.4826 * dev[dev.len() / 2]).max(full / 8192.0);
+    // the search window
+    let (x0, y0, x1, y1) = match near {
+        Some((p, r)) => {
+            let half = (6.0 * r).max(60.0);
+            (((p.x - half).max(0.0) as usize) & !3, ((p.y - half).max(0.0) as usize) & !3, ((p.x + half).min(w as f64 - 1.0)) as usize, ((p.y + half).min(h as f64 - 1.0)) as usize)
+        }
+        None => (0, 0, w - 1, h - 1),
+    };
+    // the brightest 4x4 block
+    let (mut best, mut bx, mut by) = (f64::MIN, 0usize, 0usize);
+    let mut y = y0;
+    while y + 4 <= y1 + 1 {
+        let mut x = x0;
+        while x + 4 <= x1 + 1 {
+            let mut sum = 0.0;
+            for yy in y..y + 4 { for xx in x..x + 4 { sum += fv(xx, yy); } }
+            if sum > best { best = sum; bx = x; by = y; }
+            x += 4;
+        }
+        y += 4;
+    }
+    if best == f64::MIN { return None; }
+    let bm = best / 16.0;
+    if bm - bg < (8.0 * sigma).max(0.005 * full) { return None; }
+    // the brightest pixel of that block seeds the fill
+    let (mut sx, mut sy, mut sv) = (bx, by, f64::MIN);
+    for yy in by..by + 4 { for xx in bx..bx + 4 { let v = fv(xx, yy); if v > sv { sv = v; sx = xx; sy = yy; } } }
+    // a quarter of the way up (not half): dark bands and a soft edge then move the centroid less; never below 4 sigma of noise
+    let thr = bg + (0.25 * (bm - bg)).max(4.0 * sigma);
+    let limit = ((w * h) / 10).min(40_000);
+    let side = 241usize; // the blob must fit in a window of this size around the seed
+    let (ox, oy) = (sx as i64 - 120, sy as i64 - 120);
+    let mut seen = vec![false; side * side];
+    let mut stack = vec![(sx, sy)];
+    seen[120 * side + 120] = true;
+    let (mut n, mut sw, mut swx, mut swy) = (0usize, 0.0, 0.0, 0.0);
+    while let Some((x, y)) = stack.pop() {
+        let v = fv(x, y);
+        n += 1;
+        let wgt = (v - bg).max(0.0);
+        sw += wgt; swx += wgt * x as f64; swy += wgt * y as f64;
+        if n > limit { return None; }
+        for (dx, dy) in [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)] {
+            let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+            if nx < 0 || ny < 0 || nx >= w as i64 || ny >= h as i64 { continue; }
+            let (lx, ly) = (nx - ox, ny - oy);
+            if lx < 0 || ly < 0 || lx >= side as i64 || ly >= side as i64 { return None; } // too big for a planet
+            let k = ly as usize * side + lx as usize;
+            if seen[k] { continue; }
+            if fv(nx as usize, ny as usize) >= thr { seen[k] = true; stack.push((nx as usize, ny as usize)); }
+        }
+    }
+    if n < 7 || sw <= 0.0 { return None; }
+    // the pixel centres are at integer coordinates, as everywhere else in this module
+    Some(SunLocation { pos: Vec2::new(swx / sw, swy / sw), radius: (n as f64 / std::f64::consts::PI).sqrt(), partial: false, radius_from_optics: None, fit_rms: None })
+}
+
 impl Tracker {
     /// Tracks the centroid of the whole solar disc. Works while the entire disc is in frame.
     pub fn sun_disc(frame: &Frame) -> Result<Tracker, TrackError> {
@@ -281,6 +358,13 @@ impl Tracker {
         Ok(Tracker { state: State::Limb { pos: fit.pos, radius: fit.radius } })
     }
 
+    /// Tracks a planet: the centroid of the brightest small blob on a dark sky (see `locate_planet`). For a disc a few tens of
+    /// pixels across, which has no limb worth fitting.
+    pub fn planet(frame: &Frame) -> Result<Tracker, TrackError> {
+        let l = locate_planet(frame, None).ok_or(TrackError::NoDisc)?;
+        Ok(Tracker { state: State::Planet { pos: l.pos, radius: l.radius } })
+    }
+
     /// Tracks a surface feature (e.g. a sunspot) by block matching around `pos`.
     /// Use this when the disc is larger than the frame.
     pub fn anchor(frame: &Frame, pos: Vec2) -> Result<Tracker, TrackError> {
@@ -290,7 +374,7 @@ impl Tracker {
     }
 
     pub fn mode(&self) -> &'static str {
-        match self.state { State::Disc { .. } => "sun_disc", State::Limb { .. } => "limb", State::Anchor { .. } => "anchor" }
+        match self.state { State::Disc { .. } => "sun_disc", State::Limb { .. } => "limb", State::Anchor { .. } => "anchor", State::Planet { .. } => "planet" }
     }
 
     pub fn position(&self) -> Position {
@@ -298,6 +382,7 @@ impl Tracker {
             State::Disc { pos, radius } => Position { pos: *pos, radius: Some(*radius), held: false },
             State::Limb { pos, radius } => Position { pos: *pos, radius: Some(*radius), held: false },
             State::Anchor { pos, .. } => Position { pos: Vec2::new(pos.0 as f64, pos.1 as f64), radius: None, held: false },
+            State::Planet { pos, radius } => Position { pos: *pos, radius: Some(*radius), held: false },
         }
     }
 
@@ -320,6 +405,13 @@ impl Tracker {
                 }
                 *pos = new_pos;
                 Ok(Position { pos: new_pos, radius: Some(*radius), held: false })
+            }
+            State::Planet { pos, radius } => {
+                // only the neighbourhood of the last position is searched: a bright moon or a star elsewhere cannot take over
+                let l = locate_planet(frame, Some((*pos, *radius))).ok_or(TrackError::NoDisc)?;
+                *pos = l.pos;
+                *radius = l.radius;
+                Ok(Position { pos: l.pos, radius: Some(l.radius), held: false })
             }
             State::Anchor { pos, block } => {
                 update_anchor(pos, block, frame)?;
@@ -643,6 +735,50 @@ mod tests {
             }
         }
         Frame::new(w, h, PixelFormat::Mono8, d)
+    }
+
+    /// A planet: a limb-darkened disc of radius `r` with soft edge, a 3 px moon nearby and noise, on a 16-bit sky.
+    fn planet_frame(cx: f64, cy: f64, r: f64, seed: u32) -> Frame {
+        let (w, h) = (1280u32, 960u32);
+        let mut d = Vec::with_capacity((w * h * 2) as usize);
+        let mut s = seed.wrapping_mul(2654435761).wrapping_add(1);
+        for y in 0..h {
+            for x in 0..w {
+                s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+                let noise = ((s >> 16) as f64 / 65536.0 - 0.5) * 500.0;
+                let (dx, dy) = (x as f64 - cx, y as f64 - cy);
+                let rr = (dx * dx + dy * dy).sqrt();
+                let planet = if rr < r { 30000.0 * (1.0 - 0.4 * (rr / r).powi(2)) } else { 0.0 };
+                let moon = (-(((dx - 90.0).powi(2) + (dy + 40.0).powi(2)) / 4.0)).exp() * 8000.0;
+                let v = (1500.0 + planet + moon + noise).clamp(0.0, 65535.0) as u16;
+                d.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        Frame::new(w, h, PixelFormat::Mono16, d)
+    }
+
+    #[test]
+    fn a_small_planet_is_found_and_followed_by_its_centroid() {
+        let f = planet_frame(612.3, 470.8, 25.0, 1);
+        let l = locate_planet(&f, None).expect("a planet is found");
+        assert!((l.pos.x - 612.3).abs() < 0.7 && (l.pos.y - 470.8).abs() < 0.7, "{:?}", l.pos);
+        assert!((l.radius - 22.0).abs() < 6.0, "radius {}", l.radius); // half maximum of a limb-darkened disc: a little inside the edge
+        let mut t = Tracker::planet(&f).unwrap();
+        assert_eq!(t.mode(), "planet");
+        for (i, (x, y)) in [(615.0, 472.0), (618.5, 469.0), (609.0, 475.5)].into_iter().enumerate() {
+            let p = t.update(&planet_frame(x, y, 25.0, i as u32 + 2)).unwrap();
+            assert!((p.pos.x - x).abs() < 0.7 && (p.pos.y - y).abs() < 0.7, "{:?} vs {x},{y}", p.pos);
+        }
+    }
+
+    #[test]
+    fn the_planet_tracker_is_not_taken_by_a_moon_or_by_noise() {
+        // the 3 px moon alone (no planet in view) is not a planet
+        assert!(locate_planet(&planet_frame(-500.0, -500.0, 25.0, 3), None).is_none(), "a 3 px moon is smaller than a planet");
+        // an empty sky
+        let mut d = vec![0u8; 1280 * 960 * 2];
+        for (i, px) in d.chunks_exact_mut(2).enumerate() { px.copy_from_slice(&((1500 + (i * 7919) % 400) as u16).to_le_bytes()); }
+        assert!(locate_planet(&Frame::new(1280, 960, PixelFormat::Mono16, d), None).is_none());
     }
 
     #[test]

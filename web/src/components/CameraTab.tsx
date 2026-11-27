@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ProfilePicker } from './Profile'
-import { noun, profileOf } from '../profile'
+import { clipping, noun, profileOf } from '../profile'
 import { api, CameraInfo, Control, Status } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
@@ -197,7 +197,7 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
         <ProfilePicker status={status} />
       </Section>
       <Section error={err}>
-        {cam.histogram.length > 0 && <Histogram bins={cam.histogram} saturated={cam.saturated} rgb={cam.histogram_rgb} saturatedRgb={cam.saturated_rgb} />}
+        {cam.histogram.length > 0 && <Histogram bins={cam.histogram} saturated={cam.saturated} rgb={cam.histogram_rgb} saturatedRgb={cam.saturated_rgb} planetClip={profileOf(status) === 'planet' ? clipping(cam, 'planet') : null} />}
         {primary.map((c) => {
           const marks = c.id === 'gain' && cat ? gainMarks(cat) : undefined
           return <Slider key={c.id} c={c} marks={marks} />

@@ -5,11 +5,12 @@ import { noun, profileOf, why } from '../profile'
 import { useSetting } from '../settings'
 import { GuideSettings } from './GuideSettings'
 
-type Mode = 'limb' | 'anchor' | 'sun_disc'
+type Mode = 'limb' | 'anchor' | 'sun_disc' | 'planet'
 const MODES: { id: Mode; label: string; help: string }[] = [
   { id: 'limb', label: 'Disc edge', help: 'Fits the visible solar edge (limb), so it works when only part of the disc is in frame, typical for H-alpha. Needs some limb in view.' },
   { id: 'anchor', label: 'Feature', help: 'Follow a sunspot, filament or plage. Use this when the field is entirely on the disc, with no limb in view.' },
   { id: 'sun_disc', label: 'Full disc', help: 'Centroid of the whole disc. Only when the whole disc is in frame.' },
+  { id: 'planet', label: 'Planet centroid', help: 'Follows the brightest small disc: the centre of a planet on a dark sky. No edge is fitted, so it works for a disc only a few pixels across. Put the planet in the frame with the slew pad, then start.' },
 ]
 
 /** The mode help in the words of the profile: the texts are written for the Sun. */
@@ -45,7 +46,9 @@ function Step({ done, bad, warn, title, state, action, children }: { done: boole
 
 /** Step 3: choose what to follow, calibrate once, then hold position. */
 export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: Status | null; anchorPick: boolean; setAnchorPick: (b: boolean) => void; goto: (t: 'aim') => void; next: () => void }) {
-  const [mode, setMode] = useSetting<Mode>('tracking.mode', 'limb')
+  // what was chosen, or the profile's own default (a setting that was never changed follows the profile)
+  const [chosen, setMode] = useSetting<Mode | ''>('tracking.mode', '')
+  const mode: Mode = chosen || (profileOf(status) === 'planet' ? 'planet' : 'limb')
   const [radius, setRadius] = useSetting('tracking.radius', '')
   const { err, run } = useAction()
   const t = status?.tracking
@@ -73,7 +76,7 @@ export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: 
     return (
       <>
         <Section title="What should it follow?" error={err}>
-          <Segmented label="Tracking target" value={mode} options={MODES.map((m) => ({ id: m.id, label: m.label, off: m.id === 'anchor' ? null : why(profileOf(status), 'limb') }))} onChange={(m) => { setMode(m); setAnchorPick(false) }} />
+          <Segmented label="Tracking target" value={mode} options={MODES.map((m) => ({ id: m.id, label: m.label, off: m.id === 'anchor' ? null : m.id === 'planet' ? why(profileOf(status), 'planetTracker') : why(profileOf(status), 'limb') }))} onChange={(m) => { setMode(m); setAnchorPick(false) }} />
           <p className="hint-text">{modeHelp(MODES.find((m) => m.id === mode)?.help ?? '', profileOf(status))}</p>
           {mode === 'limb' && (
             <Disclosure title="Disc radius" summary={radius ? `${radius} px` : status.optics.expected_radius_px ? `${status.optics.expected_radius_px.toFixed(0)} px from Optics` : 'automatic'}>

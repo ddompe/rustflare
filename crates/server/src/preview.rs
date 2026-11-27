@@ -93,7 +93,16 @@ pub type JpegTx = watch::Sender<Option<Arc<Vec<u8>>>>;
 
 /// Display range (in the frame's own units) that maps to black..white when auto-stretching:
 /// the 0.5th and 99.8th percentile, so a few hot pixels or dark corners don't flatten the picture.
+/// White point of the peak-based stretch.
+const PEAK_QUANTILE: f64 = 0.9999;
+
 fn stretch_range(frame: &Frame, skip_zero: bool) -> (f64, f64) {
+    stretch_range_to(frame, skip_zero, 0.998)
+}
+
+/// The same with the white point at the `hi_q` quantile. A planet is well under 0.2 % of the frame, so the 99.8th percentile is the sky
+/// beside it and the planet would clip to white: for it the white point is the 99.99th (the brightest few samples).
+fn stretch_range_to(frame: &Frame, skip_zero: bool, hi_q: f64) -> (f64, f64) {
     let full = frame.format.full_scale();
     let mut hist = vec![0u32; 4096];
     let mut n = 0u64;
@@ -118,18 +127,18 @@ fn stretch_range(frame: &Frame, skip_zero: bool) -> (f64, f64) {
         }
         full
     };
-    let (lo, hi) = (pick(0.005), pick(0.998));
+    let (lo, hi) = (pick(0.005), pick(hi_q));
     if hi - lo < full / 256.0 { (lo, lo + full / 256.0) } else { (lo, hi) }
 }
 
 /// Colour preview of a raw Bayer frame: each 2x2 block becomes one RGB pixel (the two greens averaged), so there is no
 /// interpolation, no colour fringes and the cost is one pass over the pixels. The picture has half the sensor resolution
 /// (further reduced to fit the preview width); recordings keep the full raw mosaic.
-fn encode_bayer(frame: &Frame, pattern: rustflare_core::BayerPattern, stretch: bool, masked: bool, gains: [f64; 3]) -> Option<Vec<u8>> {
+fn encode_bayer(frame: &Frame, pattern: rustflare_core::BayerPattern, stretch: bool, masked: bool, gains: [f64; 3], hi_q: f64) -> Option<Vec<u8>> {
     let (bw, bh) = (frame.width as usize / 2, frame.height as usize / 2);
     let f = bw.div_ceil(MAX_WIDTH as usize).max(1);
     let (w, h) = (bw / f, bh / f);
-    let (lo, hi) = if stretch { stretch_range(frame, masked) } else { (0.0, frame.format.full_scale() + 1.0) };
+    let (lo, hi) = if stretch { stretch_range_to(frame, masked, hi_q) } else { (0.0, frame.format.full_scale() + 1.0) };
     let lo_i = lo as i64;
     let mul = ((255.0 / (hi - lo).max(1.0)) * 65536.0) as i64;
     let sixteen = frame.format == PixelFormat::Mono16;
@@ -164,12 +173,18 @@ pub fn encode(frame: &Frame, stretch: bool, masked: bool) -> Option<Vec<u8>> {
 
 /// `gains`: white balance for a colour (Bayer) frame; ignored for mono.
 pub fn encode_with(frame: &Frame, stretch: bool, masked: bool, gains: [f64; 3]) -> Option<Vec<u8>> {
+    encode_peak(frame, stretch, masked, gains, false)
+}
+
+/// `peak`: auto-stretch to the brightest part of the frame (a small bright target) instead of the 99.8th percentile.
+pub fn encode_peak(frame: &Frame, stretch: bool, masked: bool, gains: [f64; 3], peak: bool) -> Option<Vec<u8>> {
+    let hi_q = if peak { PEAK_QUANTILE } else { 0.998 };
     if let Some(p) = frame.bayer {
-        return encode_bayer(frame, p, stretch, masked, gains);
+        return encode_bayer(frame, p, stretch, masked, gains, hi_q);
     }
     let f = frame.width.div_ceil(MAX_WIDTH).max(1) as usize;
     let (w, h) = (frame.width as usize / f, frame.height as usize / f);
-    let (lo, hi) = if stretch { stretch_range(frame, masked) } else { (0.0, frame.format.full_scale() + 1.0) };
+    let (lo, hi) = if stretch { stretch_range_to(frame, masked, hi_q) } else { (0.0, frame.format.full_scale() + 1.0) };
     // Fixed point (16.16) multiplier: one integer multiply and shift per output pixel, no floating point in the loop.
     let lo_i = lo as i64;
     let mul = ((255.0 / (hi - lo).max(1.0)) * 65536.0) as i64;
@@ -207,7 +222,7 @@ pub fn encode_with(frame: &Frame, stretch: bool, masked: bool, gains: [f64; 3]) 
 }
 
 /// Returns a sender; frames are dropped (never queued) while the encoder is busy.
-pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::SharedFlat, corona: SharedCorona, colour: SharedColour) -> SyncSender<Frame> {
+pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, peak_stretch: Arc<AtomicBool>, flat: rustflare_capture::SharedFlat, corona: SharedCorona, colour: SharedColour) -> SyncSender<Frame> {
     let (ftx, frx) = sync_channel::<Frame>(1);
     std::thread::Builder::new()
         .name("preview".into())
@@ -246,7 +261,7 @@ pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::Shar
                         g
                     }
                 };
-                if let Some(jpg) = encode_with(&frame, st, mask.is_some(), gains) {
+                if let Some(jpg) = encode_peak(&frame, st, mask.is_some(), gains, peak_stretch.load(Ordering::Relaxed)) {
                     tx.send_replace(Some(Arc::new(jpg)));
                 }
             }
@@ -258,6 +273,24 @@ pub fn spawn(tx: JpegTx, stretch: Arc<AtomicBool>, flat: rustflare_capture::Shar
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_small_planet_does_not_clip_with_the_peak_stretch() {
+        // 16-bit: sky 1000, a 25 px planet at 40000 (0.16 % of the frame)
+        let (w, h) = (1280u32, 960u32);
+        let mut data = vec![0u8; (w * h * 2) as usize];
+        for y in 0..h { for x in 0..w {
+            let d = ((x as f64 - 640.0).powi(2) + (y as f64 - 480.0).powi(2)).sqrt();
+            let v: u16 = if d < 25.0 { 40000 } else { 1000 };
+            let i = 2 * (y * w + x) as usize;
+            data[i..i + 2].copy_from_slice(&v.to_le_bytes());
+        } }
+        let f = Frame::new(w, h, rustflare_core::PixelFormat::Mono16, data);
+        let (_, hi_std) = stretch_range(&f, false);
+        let (_, hi_peak) = stretch_range_to(&f, false, PEAK_QUANTILE);
+        assert!(hi_std < 5000.0, "the 99.8th percentile is the sky beside the planet, so the planet saturates: {hi_std}");
+        assert!(hi_peak >= 39000.0, "the peak stretch puts white at the planet: {hi_peak}");
+    }
 
     #[test]
     fn stretch_expands_a_dim_frame() {

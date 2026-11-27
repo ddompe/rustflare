@@ -21,6 +21,9 @@ pub struct CameraStatus {
     pub mean: f64,
     /// Fraction of (subsampled) pixels at full scale: clipping indicator.
     pub saturated: f64,
+    /// How bright the brightest part of the frame is: the 99.99th percentile of the sampled pixels, 0..1 of full scale. A planet covers
+    /// a tenth of a percent of the frame, so `mean` and `saturated` cannot see it; the planet profile judges clipping by this.
+    pub peak: f64,
     /// 64-bin normalised histogram over full scale.
     pub histogram: Vec<f32>,
     /// Colour (Bayer) cameras only: normalised R, G and B histograms of the raw mosaic, `[r, g, b]`, 64 bins each. Absent for mono.

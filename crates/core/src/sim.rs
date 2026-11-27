@@ -63,6 +63,13 @@ impl SimSky {
         s.axis_rate = [primary, secondary];
     }
 
+    /// Puts the image back at the frame centre (a new simulated scene starts there).
+    pub fn recentre(&self) {
+        let mut s = self.0.lock().unwrap();
+        Self::advance(&mut s);
+        s.offset = Vec2::default();
+    }
+
     /// Current displacement of the Sun image from frame centre, in pixels.
     pub fn offset(&self) -> Vec2 {
         let mut s = self.0.lock().unwrap();

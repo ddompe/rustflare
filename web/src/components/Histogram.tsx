@@ -47,9 +47,10 @@ export function clipText(sat: number[] | null | undefined): string {
 }
 
 /** Pixel-level histogram with a clipping warning. A colour camera gets one curve per channel, in its colour. */
-export function Histogram({ bins, saturated, rgb, saturatedRgb }: { bins: number[]; saturated: number; rgb?: number[][] | null; saturatedRgb?: number[] | null }) {
+export function Histogram({ bins, saturated, rgb, saturatedRgb, planetClip }: { bins: number[]; saturated: number; rgb?: number[][] | null; saturatedRgb?: number[] | null; planetClip?: { clipped: boolean; value: string } | null }) {
   if (!bins.length) return null
-  const clipped = saturated > 0.001
+  // the planet profile judges clipping by the brightest part of the picture (a planet is a tenth of a percent of the frame)
+  const clipped = planetClip ? planetClip.clipped : saturated > 0.001
   const which = clipText(saturatedRgb)
   return (
     <div className="hist">
@@ -60,7 +61,9 @@ export function Histogram({ bins, saturated, rgb, saturatedRgb }: { bins: number
         </div>
       )}
       <div className={`hist-msg ${clipped ? 'bad' : 'ok'}`} role={clipped ? 'alert' : undefined}>
-        {clipped
+        {planetClip
+          ? (clipped ? `Clipping: the brightest part of the picture (the planet) is at ${planetClip.value} of full scale. Reduce exposure or gain.` : 'No clipping')
+          : clipped
           ? (which ? `Clipping: ${which} of the ${which.includes(',') ? 'channels' : 'channel'}'s pixels at full scale. Reduce exposure or gain.` : `Clipping: ${(saturated * 100).toFixed(1)}% of pixels at full scale. Reduce exposure or gain.`)
           : 'No clipping'}
       </div>

@@ -75,6 +75,9 @@ pub struct FrameStats {
     pub mean: f64,
     pub saturated: f64,
     pub histogram: Vec<f32>,
+    /// The 99.99th percentile of the sampled pixels as a fraction of full scale (0..1): how bright the brightest part is. The mean and
+    /// the saturated fraction say nothing about a planet, which is a tenth of a percent of the frame.
+    pub peak: f64,
     /// One-shot-colour frames only: normalised R, G and B histograms from the raw mosaic (see `Frame::channel_stats`).
     pub channels: Option<ChannelStats>,
 }
@@ -86,6 +89,9 @@ pub struct ChannelStats {
     /// Fraction of each channel's sampled photosites at full scale.
     pub saturated: [f64; 3],
 }
+
+/// Resolution of the peak statistic's histogram.
+const PEAK_BINS: usize = 1024;
 
 impl Frame {
     pub fn new(width: u32, height: u32, format: PixelFormat, data: Vec<u8>) -> Frame {
@@ -111,8 +117,11 @@ impl Frame {
         let max = full as u16;
         let scale = bins as f64 / (full + 1.0);
         let mut hist = vec![0u32; bins];
+        let mut fine = vec![0u32; PEAK_BINS];
+        let fine_scale = PEAK_BINS as f64 / (full + 1.0);
         let (mut sum, mut sat, mut n) = (0u64, 0u64, 0u64);
         let mut tally = |v: u16| {
+            fine[((v as f64 * fine_scale) as usize).min(PEAK_BINS - 1)] += 1;
             sum += v as u64;
             sat += (v >= max) as u64;
             hist[((v as f64 * scale) as usize).min(bins - 1)] += 1;
@@ -135,7 +144,15 @@ impl Frame {
             }
         }
         let nn = n.max(1) as f64;
-        FrameStats { mean: if n == 0 { 0.0 } else { sum as f64 / nn / full }, saturated: if n == 0 { 0.0 } else { sat as f64 / nn }, histogram: hist.into_iter().map(|c| c as f32 / nn as f32).collect(), channels: self.channel_stats(bins) }
+        // the upper edge of the bin that holds the 99.99th percentile (the brightest 0.01 % of the samples lie above it)
+        let target = (n as f64 * 0.9999).ceil() as u64;
+        let (mut acc, mut peak_bin) = (0u64, PEAK_BINS - 1);
+        for (i, c) in fine.iter().enumerate() {
+            acc += *c as u64;
+            if acc >= target { peak_bin = i; break; }
+        }
+        let peak = if n == 0 { 0.0 } else { ((peak_bin + 1) as f64 / PEAK_BINS as f64).min(1.0) };
+        FrameStats { peak, mean: if n == 0 { 0.0 } else { sum as f64 / nn / full }, saturated: if n == 0 { 0.0 } else { sat as f64 / nn }, histogram: hist.into_iter().map(|c| c as f32 / nn as f32).collect(), channels: self.channel_stats(bins) }
     }
 
     /// R, G and B histograms of a Bayer frame, None for mono. Samples the 2x2 blocks at every 8th column and row (the same 1/16 of
@@ -269,6 +286,26 @@ mod stats_tests {
             assert!((st.saturated - f.saturated_fraction()).abs() < 1e-12);
             assert_eq!(st.histogram, f.histogram(64));
         }
+    }
+
+    #[test]
+    fn the_peak_sees_a_small_bright_target_that_the_mean_and_saturation_miss() {
+        // a 25 px disc (0.16 % of a 1280x960 frame) at 90 % of full scale on a 1 % sky
+        let (w, h) = (1280usize, 960usize);
+        let mut data = vec![0u8; w * h * 2];
+        for y in 0..h { for x in 0..w {
+            let d = ((x as f64 - 640.0).powi(2) + (y as f64 - 480.0).powi(2)).sqrt();
+            let v: u16 = if d < 25.0 { 59000 } else { 650 };
+            data[2 * (y * w + x)..2 * (y * w + x) + 2].copy_from_slice(&v.to_le_bytes());
+        } }
+        let st = Frame::new(w as u32, h as u32, PixelFormat::Mono16, data).stats(64);
+        assert!(st.mean < 0.03, "the mean is the sky: {}", st.mean);
+        assert!(st.peak > 0.89 && st.peak <= 0.92, "the peak is the planet: {}", st.peak);
+        // a frame with the planet clipped has a peak at full scale
+        let mut f = Frame::new(32, 32, PixelFormat::Mono16, vec![0xFF; 32 * 32 * 2]);
+        assert_eq!(f.stats(64).peak, 1.0);
+        f.data.iter_mut().for_each(|b| *b = 0);
+        assert!(f.stats(64).peak < 0.01);
     }
 
     #[test]

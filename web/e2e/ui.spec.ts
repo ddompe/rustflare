@@ -903,3 +903,62 @@ test.describe('use profiles, stage 2: the engine knows the target', () => {
     await expect.poll(() => names().some((n) => /^Moon/.test(n) || /Moon/.test(n))).toBe(true)
   })
 })
+
+test.describe('use profiles, stage 3: a planet and a phased Moon on the simulated camera', () => {
+  const setProfile = (page: Page, id: string) => put(page, '/profile', { id })
+  const status = async (page: Page) => (await (await page.request.get('/api/status')).json())
+  const control = (page: Page, id: string, value: number) => put(page, '/camera/control', { id, value })
+  test.afterEach(async ({ page }) => {
+    await post(page, '/tracking/stop')
+    await control(page, 'sim_scene', 0); await control(page, 'sim_seeing', 0); await control(page, 'sim_zoom', 1); await control(page, 'exposure_us', 2000)
+    await setProfile(page, 'sun_ha')
+  })
+
+  test('Planet centroid: off with its reason on the Sun profile, the default on the Planet profile, and it finds and follows the planet', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Track/ }).click()
+    // not a planet profile: greyed, on the page, with the reason
+    await expect(page.getByRole('radio', { name: 'Planet centroid' })).toBeDisabled()
+    await expect(page.getByText(/Planet centroid finds a small bright disc on a dark sky/)).toBeVisible()
+    await post(page, '/mount/tracking', { enabled: true }) // the simulated sky drifts 15 px/s untracked
+    await control(page, 'sim_scene', 3) // a new scene starts at the frame centre
+    await control(page, 'sim_seeing', 2)
+    await setProfile(page, 'planet')
+    await expect(page.getByRole('radio', { name: 'Planet centroid' })).toBeEnabled()
+    await expect(page.getByRole('radio', { name: 'Planet centroid' })).toBeChecked()
+    await expect(page.getByRole('radio', { name: 'Disc edge' })).toBeDisabled() // there is no edge to fit
+    // the engine finds the planet by itself (no Sun detector phantom), within a few pixels of the sim's planet at the frame centre
+    await expect.poll(async () => { const s = (await status(page)).sun; return s ? Math.hypot(s.pos.x - 640, s.pos.y - 480) : 999 }, { timeout: 10_000 }).toBeLessThan(10)
+    const sun = (await status(page)).sun
+    expect(sun.radius).toBeLessThan(40)
+    await page.waitForTimeout(800) // the engine keeps a frame for starting a tracker every half second: make sure it is one of the planet
+    await page.getByRole('button', { name: 'Start tracking' }).click()
+    await expect.poll(async () => (await status(page)).tracking?.mode, { timeout: 10_000 }).toBe('planet')
+    await page.waitForTimeout(2500) // under 2 px of seeing it is followed, not lost
+    const t = (await status(page)).tracking
+    expect(t.lost).toBe(false)
+    expect(Math.hypot(t.x - 640, t.y - 480)).toBeLessThan(10)
+  })
+
+  test('the Moon scene has a phase, and the planet profile judges clipping by the brightest part', async ({ page }) => {
+    await post(page, '/mount/tracking', { enabled: true })
+    await control(page, 'sim_scene', 2)
+    await control(page, 'sim_phase', 0.5)
+    await setProfile(page, 'moon')
+    await expect.poll(async () => (await status(page)).sun?.radius ?? 0, { timeout: 10_000 }).toBeGreaterThan(250)
+    await control(page, 'sim_phase', 0.25)
+    await expect.poll(async () => (await status(page)).sun?.radius ?? 999, { timeout: 10_000 }).toBeLessThan(250) // the lit part: the terminator is not the limb
+    // the planet: the mean and the saturated fraction cannot see it; the peak can
+    await control(page, 'sim_scene', 3)
+    await setProfile(page, 'planet')
+    await expect.poll(async () => (await status(page)).camera.peak, { timeout: 10_000 }).toBeGreaterThan(0.2)
+    expect((await status(page)).camera.mean).toBeLessThan(0.05)
+    await page.goto('/')
+    await expect(page.locator('.chip', { hasText: 'planet at full scale' })).toHaveCount(0)
+    await control(page, 'exposure_us', 20000)
+    await expect.poll(async () => (await status(page)).camera.peak, { timeout: 10_000 }).toBeGreaterThanOrEqual(0.98)
+    await expect(page.locator('.chip', { hasText: 'planet at full scale' })).toBeVisible()
+    await page.getByRole('tab', { name: /^Camera/ }).click()
+    await expect(page.getByRole('alert').filter({ hasText: /the planet\) is at/ })).toBeVisible()
+  })
+})

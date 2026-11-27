@@ -1,5 +1,5 @@
 //! Simulated camera: a limb-darkened solar disc displaced by the shared
-//! [`SimSky`] (driven by the simulated mount), or a vignetted flat field.
+//! [`SimSky`] (driven by the simulated mount), a vignetted flat field, a Moon with a phase, or a small planet with seeing jitter.
 
 use std::time::{Duration, Instant};
 use rustflare_core::camera::*;
@@ -12,6 +12,10 @@ const DISC_RADIUS: f64 = 300.0;
 const CTRL_SCENE: &str = "sim_scene";
 const CTRL_ZOOM: &str = "sim_zoom";
 const CTRL_DEFOCUS: &str = "sim_defocus";
+const CTRL_PHASE: &str = "sim_phase";
+const CTRL_SEEING: &str = "sim_seeing";
+/// Scene 3: the planet's radius at zoom 1, pixels.
+const PLANET_RADIUS: f64 = 25.0;
 const PIXEL_SIZE_UM: f64 = 3.75;
 
 pub struct SimulatorDriver {
@@ -37,7 +41,7 @@ impl CameraDriver for SimulatorDriver {
         if !["sim0", "sim_osc", "sim_cooled"].contains(&id) {
             return Err(Error::NotFound(format!("simulator camera {id}")));
         }
-        Ok(Box::new(SimCamera { colour: id != "sim0", cooler: (id == "sim_cooled").then(SimCooler::new), sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, roi: None, zoom: 1.0, defocus: 0.0, rng: 0x9E3779B97F4A7C15 }))
+        Ok(Box::new(SimCamera { colour: id != "sim0", cooler: (id == "sim_cooled").then(SimCooler::new), sky: self.sky.clone(), exposure_us: 2000.0, gain: 100.0, offset: 10.0, high_bit: true, scene: 0, roi: None, zoom: 1.0, defocus: 0.0, phase: 0.5, seeing: 0.0, rng: 0x9E3779B97F4A7C15 }))
     }
 }
 
@@ -87,6 +91,10 @@ struct SimCamera {
     zoom: f64,
     /// Simulated focus error: edge softness in pixels (0 = sharp). Detail contrast drops with it too.
     defocus: f64,
+    /// Scene 2 (Moon): 0 new, 0.5 full, 1 new again (waxing before 0.5).
+    phase: f64,
+    /// Scene 3 (planet): random displacement of the whole picture each frame, pixels (the seeing).
+    seeing: f64,
     rng: u64,
 }
 
@@ -122,9 +130,11 @@ impl Camera for SimCamera {
             c(CTRL_GAIN, "Gain", 0.0, 400.0, 1.0, self.gain, None, false),
             c(CTRL_OFFSET, "Offset", 0.0, 100.0, 1.0, self.offset, None, false),
             c(CTRL_HIGH_BIT_DEPTH, "16-bit output", 0.0, 1.0, 1.0, self.high_bit as u8 as f64, None, false),
-            c(CTRL_SCENE, "Sim scene (0 sun, 1 flat)", 0.0, 1.0, 1.0, self.scene as f64, None, false),
+            c(CTRL_SCENE, "Sim scene (0 sun, 1 flat, 2 Moon, 3 planet)", 0.0, 3.0, 1.0, self.scene as f64, None, false),
             c(CTRL_ZOOM, "Sim disc size (×300 px)", 0.5, 4.0, 0.1, self.zoom, None, false),
             c(CTRL_DEFOCUS, "Sim defocus (px)", 0.0, 30.0, 0.5, self.defocus, None, false),
+            c(CTRL_PHASE, "Sim Moon phase (0 new, 0.5 full)", 0.0, 1.0, 0.05, self.phase, None, false),
+            c(CTRL_SEEING, "Sim seeing jitter (px)", 0.0, 10.0, 0.5, self.seeing, None, false),
         ])
     }
 
@@ -134,7 +144,13 @@ impl Camera for SimCamera {
             CTRL_GAIN => self.gain = value.clamp(0.0, 400.0),
             CTRL_OFFSET => self.offset = value.clamp(0.0, 100.0),
             CTRL_HIGH_BIT_DEPTH => self.high_bit = value >= 0.5,
-            CTRL_SCENE => self.scene = if value >= 0.5 { 1 } else { 0 },
+            CTRL_SCENE => {
+                let scene = value.round().clamp(0.0, 3.0) as u8;
+                if scene >= 2 && scene != self.scene { self.sky.recentre(); } // the Moon and the planet start in the middle of the frame
+                self.scene = scene;
+            }
+            CTRL_PHASE => self.phase = value.clamp(0.0, 1.0),
+            CTRL_SEEING => self.seeing = value.clamp(0.0, 10.0),
             CTRL_ZOOM => self.zoom = value.clamp(0.5, 4.0),
             CTRL_DEFOCUS => self.defocus = value.clamp(0.0, 30.0),
             _ => return Err(Error::Invalid(format!("unknown control {id}"))),
@@ -145,9 +161,14 @@ impl Camera for SimCamera {
     fn capture(&mut self, _timeout: Duration) -> Result<Frame> {
         let start = Instant::now();
         let off = self.sky.offset();
-        let (cx, cy) = (W as f64 / 2.0 + off.x, H as f64 / 2.0 + off.y);
+        let (mut cx, mut cy) = (W as f64 / 2.0 + off.x, H as f64 / 2.0 + off.y);
+        if self.scene == 3 && self.seeing > 0.0 {
+            // the seeing moves the whole picture a little, differently every frame
+            cx += self.noise() * self.seeing;
+            cy += self.noise() * self.seeing;
+        }
         let level = self.level();
-        let radius = DISC_RADIUS * self.zoom;
+        let radius = if self.scene == 3 { PLANET_RADIUS * self.zoom } else { DISC_RADIUS * self.zoom };
         let full = if self.high_bit { 65535.0 } else { 255.0 };
         let black = self.offset / 100.0 * 0.02;
         let bpp = if self.high_bit { 2 } else { 1 };
@@ -155,7 +176,10 @@ impl Camera for SimCamera {
 
         for y in 0..H {
             for x in 0..W {
-                let signal = if self.scene == 0 {
+                let signal = if self.scene >= 2 {
+                    let (dx, dy) = (x as f64 - cx, y as f64 - cy);
+                    if self.scene == 2 { moon_signal(dx, dy, radius, self.phase, level) } else { planet_signal(dx, dy, radius, level) }
+                } else if self.scene == 0 {
                     let (dx, dy) = (x as f64 - cx, y as f64 - cy);
                     let r2 = (dx * dx + dy * dy) / (radius * radius);
                     let blur = self.defocus;
@@ -186,7 +210,8 @@ impl Camera for SimCamera {
                     (1.0 - 0.15 * (dx * dx + dy * dy)) * level
                 };
                 // colour sensor: each photosite sees one channel of a warm Sun (R 1.0, G 0.8, B 0.55)
-                let signal = if self.colour { signal * [1.0, 0.8, 0.8, 0.55][((y & 1) * 2 + (x & 1)) as usize] } else { signal };
+                let tint = match self.scene { 2 => [1.0, 0.95, 0.95, 0.9], 3 => [1.0, 0.7, 0.7, 0.4], _ => [1.0, 0.8, 0.8, 0.55] };
+                let signal = if self.colour { signal * tint[((y & 1) * 2 + (x & 1)) as usize] } else { signal };
                 let v = (signal + black + self.noise() * 0.004).clamp(0.0, 1.0);
                 let q = (v * full).round() as u32;
                 if self.high_bit { data.extend_from_slice(&(q as u16).to_le_bytes()); } else { data.push(q as u8); }
@@ -254,6 +279,46 @@ impl Camera for SimCamera {
     fn pixel_size_um(&self) -> Option<f64> { Some(PIXEL_SIZE_UM) }
 }
 
+/// Scene 2: the Moon. A grey sphere lit from a direction set by the phase (0 new, 0.5 full): the terminator is a soft, curved edge, the
+/// maria are dark blobs and a few craters are small bright rings, all fixed on the disc. Earthshine lights the dark part faintly.
+fn moon_signal(dx: f64, dy: f64, radius: f64, phase: f64, level: f64) -> f64 {
+    let (u, v) = (dx / radius, dy / radius);
+    let r2 = u * u + v * v;
+    if r2 >= 1.0 {
+        return 0.002 * level;
+    }
+    let w = (1.0 - r2).sqrt();
+    let ph = phase * std::f64::consts::TAU;
+    // light direction: facing us at the full Moon (phase 0.5), from the side at the quarters
+    let lit = (u * ph.sin() + w * -ph.cos()).clamp(-1.0, 1.0);
+    let sunlit = ((lit + 0.02) / 0.06).clamp(0.0, 1.0); // soft terminator, a few pixels wide
+    let blob = |cx: f64, cy: f64, s: f64| (-(((u - cx) / s).powi(2) + ((v - cy) / s).powi(2))).exp();
+    let maria = 0.35 * blob(-0.35, -0.25, 0.28) + 0.3 * blob(0.15, -0.35, 0.22) + 0.25 * blob(-0.1, 0.3, 0.3) + 0.2 * blob(0.45, 0.1, 0.15);
+    let crater = |cx: f64, cy: f64, rr: f64| { let d = ((u - cx).powi(2) + (v - cy).powi(2)).sqrt(); 0.25 * (-((d - rr) / 0.012).powi(2)).exp() };
+    let craters = crater(0.3, 0.45, 0.05) + crater(-0.55, 0.2, 0.035) + crater(0.1, -0.7, 0.06) + crater(-0.2, 0.6, 0.025);
+    let texture = 0.04 * ((dx / 7.0).sin() * (dy / 5.0).cos());
+    let albedo = (0.75 - maria + craters + texture).clamp(0.05, 1.0);
+    (albedo * sunlit * (0.85 + 0.15 * w) + 0.01 * albedo) * level + 0.002 * level
+}
+
+/// Scene 3: a planet a few tens of pixels across: a slightly oblate disc, limb darkened, with two dark bands, a dark spot, and two
+/// small moons (3 px) nearby.
+fn planet_signal(dx: f64, dy: f64, radius: f64, level: f64) -> f64 {
+    let moon = |mx: f64, my: f64| { let d = ((dx - mx * radius).powi(2) + (dy - my * radius).powi(2)).sqrt(); 0.25 * (-(d / (0.12 * radius)).powi(2)).exp() };
+    let moons = moon(3.6, -1.2) + moon(-4.8, 1.8);
+    let (u, v) = (dx / radius, dy / (0.94 * radius)); // oblate
+    let r2 = u * u + v * v;
+    if r2 >= 1.0 {
+        // a soft edge one pixel wide, so the disc is not aliased
+        let d = (r2.sqrt() - 1.0) * radius;
+        return (0.002 + moons + 0.4 * (1.0 - d).max(0.0)) * level;
+    }
+    let mu = (1.0 - r2).sqrt();
+    let bands = 0.75 + 0.25 * (v * 5.0).sin() - 0.2 * (-((v + 0.35) / 0.12).powi(2)).exp();
+    let spot = 0.3 * (-(((u - 0.35) / 0.18).powi(2) + ((v - 0.3) / 0.1).powi(2))).exp();
+    ((1.0 - 0.45 * (1.0 - mu)) * (bands - spot) * 0.9 + 0.002 + moons) * level
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,5 +347,58 @@ mod tests {
         cam.set_control(CTRL_EXPOSURE_US, 4000.0).unwrap();
         let bright = cam.capture(Duration::from_secs(1)).unwrap().mean_fraction();
         assert!(bright > dark * 2.0, "{dark} vs {bright}");
+    }
+
+    fn scene(id: u8, controls: &[(&str, f64)]) -> Frame {
+        let sky = SimSky::new();
+        sky.set_tracking(true); // the free-running sky drifts 15 px/s: the tests look at where things are
+        let d = SimulatorDriver::new(sky);
+        let mut cam = d.open("sim0").unwrap();
+        cam.set_control(CTRL_SCENE, id as f64).unwrap();
+        cam.set_control(CTRL_EXPOSURE_US, 2000.0).unwrap();
+        for (k, v) in controls { cam.set_control(k, *v).unwrap(); }
+        cam.capture(Duration::from_secs(1)).unwrap()
+    }
+
+    /// Fraction of the frame above half of the brightest pixel, and the centroid of those pixels.
+    fn bright_part(f: &Frame) -> (f64, (f64, f64)) {
+        let peak = (0..f.height).flat_map(|y| (0..f.width).map(move |x| (x, y))).map(|(x, y)| f.pixel(x, y)).max().unwrap() as f64;
+        let (mut n, mut sx, mut sy) = (0.0, 0.0, 0.0);
+        for y in 0..f.height { for x in 0..f.width { if f.pixel(x, y) as f64 > peak * 0.5 { n += 1.0; sx += x as f64; sy += y as f64; } } }
+        (n / (f.width as f64 * f.height as f64), (sx / n, sy / n))
+    }
+
+    #[test]
+    fn the_moon_scene_has_a_phase() {
+        let full = bright_part(&scene(2, &[(CTRL_PHASE, 0.5)]));
+        let quarter = bright_part(&scene(2, &[(CTRL_PHASE, 0.25)]));
+        let new = scene(2, &[(CTRL_PHASE, 0.0)]);
+        // a full Moon is a disc of radius 300 (23 % of the frame); at the quarter about half of it is lit, on one side of the centre
+        assert!((0.15..0.28).contains(&full.0), "full {:?}", full);
+        assert!(quarter.0 < full.0 * 0.7 && quarter.0 > full.0 * 0.25, "quarter {:?} vs full {:?}", quarter, full);
+        assert!((full.1.0 - 640.0).abs() < 8.0, "the full Moon is centred: {:?}", full);
+        assert!((quarter.1.0 - 640.0).abs() > 40.0, "the lit half is off the centre: {:?}", quarter);
+        // the new Moon is nearly dark (earthshine only)
+        let peak = (0..new.height).flat_map(|y| (0..new.width).map(move |x| (x, y))).map(|(x, y)| new.pixel(x, y)).max().unwrap() as f64 / 65535.0;
+        assert!(peak < 0.12, "new Moon peak {peak}");
+    }
+
+    #[test]
+    fn the_planet_scene_is_a_small_disc_with_seeing() {
+        let f = scene(3, &[]);
+        let (frac, (cx, cy)) = bright_part(&f);
+        assert!(frac < 0.005 && frac > 0.0005, "a ~25 px planet is a small part of the frame: {frac}");
+        assert!((cx - 640.0).abs() < 5.0 && (cy - 480.0).abs() < 5.0, "{cx},{cy}");
+        // with seeing the picture moves from frame to frame
+        let sky = SimSky::new();
+        sky.set_tracking(true);
+        let d = SimulatorDriver::new(sky);
+        let mut cam = d.open("sim0").unwrap();
+        cam.set_control(CTRL_SCENE, 3.0).unwrap();
+        cam.set_control(CTRL_SEEING, 3.0).unwrap();
+        let mut xs = vec![];
+        for _ in 0..6 { xs.push(bright_part(&cam.capture(Duration::from_secs(1)).unwrap()).1.0); }
+        let spread = xs.iter().cloned().fold(f64::MIN, f64::max) - xs.iter().cloned().fold(f64::MAX, f64::min);
+        assert!(spread > 1.0 && spread < 12.0, "seeing spread {spread} {xs:?}");
     }
 }

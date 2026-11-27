@@ -502,6 +502,8 @@ pub struct Engine {
     preview_tx: SyncSender<Frame>,
     flat: rustflare_capture::SharedFlat,
     corona: preview::SharedCorona,
+    /// Auto-stretch to the brightest part of the frame instead of the 99.8th percentile (the planet profile: a planet covers well under 0.2 % of the frame).
+    peak_stretch: Arc<std::sync::atomic::AtomicBool>,
     colour: preview::SharedColour,
     demand: Arc<preview::Demand>,
     slog: crate::sessionlog::SessionLog,
@@ -521,6 +523,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
     let mut first_status = Status::default();
     first_status.guide_params = GuideParamsStatus { window_s: guide_params.window.as_secs_f64(), deadband_px: guide_params.deadband_px, gain: guide_params.gain, speed: guide_params.speed, fast_speed: guide_params.fast_speed, fast_above_px: guide_params.fast_above_px };
     first_status.profile = crate::config::read(storage.config_file()).get("profile").and_then(|v| v.as_str()).and_then(|v| crate::status::PROFILES.iter().find(|p| **p == v).copied()).unwrap_or("sun_ha");
+    let peak_stretch = Arc::new(std::sync::atomic::AtomicBool::new(first_status.profile == "planet"));
     let (status_tx, status_rx) = watch::channel(first_status.clone());
     let (jpeg_tx, jpeg_rx) = watch::channel(None);
     let sky = SimSky::new();
@@ -560,7 +563,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         flip: None,
         auto_flip: crate::config::read(storage.config_file()).get("auto_flip").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         cal_generation: 0,
-        sun_model: Default::default(),
+        sun_model: { let mut m = crate::sunmodel::SunModel::default(); m.set_gate_floor(model_gate_floor(first_status.profile)); m },
         drift_model: DriftModel::default(),
         dead: None,
         last_good: None,
@@ -643,7 +646,8 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         storage,
         status: first_status,
         status_tx,
-        preview_tx: preview::spawn(jpeg_tx, stretch, flat.clone(), corona.clone(), colour.clone()),
+        preview_tx: preview::spawn(jpeg_tx, stretch, peak_stretch.clone(), flat.clone(), corona.clone(), colour.clone()),
+        peak_stretch,
         flat,
         corona,
         colour,
@@ -1613,6 +1617,12 @@ impl Engine {
                     // another target: the radius learned for the last one does not apply
                     self.radius_samples.clear();
                     self.measured_radius = None;
+                    if self.tracker.is_none() {
+                        // and so does the model's estimate: it would refuse a target of another size (the gates are fractions of the radius)
+                        self.sun_model.reset();
+                        self.status.sun = None;
+                        self.corona.lock().unwrap().sun = None;
+                    }
                 }
                 if p == "other" && self.tracker.is_none() {
                     // nothing is assumed about the target: the Sun's outline, mask and chips go away with the detector
@@ -1621,6 +1631,8 @@ impl Engine {
                     self.corona.lock().unwrap().sun = None;
                 }
                 self.status.profile = p;
+                self.sun_model.set_gate_floor(model_gate_floor(p));
+                self.peak_stretch.store(p == "planet", std::sync::atomic::Ordering::Relaxed);
                 crate::config::set(self.storage.config_file(), "profile", json!(p))?;
                 self.event("profile", json!({ "profile": p }));
                 Ok(json!({}))
@@ -1790,6 +1802,7 @@ impl Engine {
                 let t = match mode.as_str() {
                     "sun_disc" => Tracker::sun_disc(f),
                     "limb" => Tracker::limb(f, radius.or(self.radius_hint())),
+                    "planet" => Tracker::planet(f),
                     "anchor" => Tracker::anchor(f, Vec2::new(x.ok_or("anchor needs x,y")?, y.ok_or("anchor needs x,y")?)),
                     other => return Err(format!("unknown tracking mode {other}")),
                 }
@@ -2673,6 +2686,7 @@ impl Engine {
                 c.bits = (frame.format.bytes_per_pixel() * 8) as u32;
                 c.mean = mean;
                 c.saturated = fs.channels.as_ref().map_or(fs.saturated, |ch| ch.saturated.iter().cloned().fold(fs.saturated, f64::max));
+                c.peak = fs.peak;
                 c.histogram = fs.histogram;
                 c.histogram_rgb = fs.channels.as_ref().map(|ch| ch.histogram.clone());
                 c.saturated_rgb = fs.channels.as_ref().map(|ch| ch.saturated);
@@ -2705,7 +2719,7 @@ impl Engine {
             let need_detect = analyse && self.status.profile != "other" && (!tracker_on || self.analysis_n % 20 == 0);
             let hint = self.radius_hint();
             let t_loc = Instant::now();
-            let sun = if need_detect { locate_sun(&frame, hint) } else { None };
+            let sun = if need_detect { detect_target(self.status.profile, &frame, hint, if self.sun_held || self.analysis_n % 10 == 0 { None } else { self.status.sun.as_ref() }) } else { None };
             if need_detect {
                 self.status.perf.locate_ms = ema(self.status.perf.locate_ms, t_loc.elapsed().as_secs_f64() * 1000.0);
             }
@@ -2816,7 +2830,8 @@ impl Engine {
     }
 
     fn step_tracking(&mut self, frame: &Frame, now: Instant, detector: Option<SunLocation>, hint: Option<f64>, dark: bool) {
-        let detect = self.status.profile != "other"; // the Sun detector does not run for an unknown target
+        let profile = self.status.profile;
+        let prev = if self.sun_held || self.analysis_n % 10 == 0 { None } else { self.status.sun }; // now and then look in the whole frame
         let Some(t) = self.tracker.as_mut() else { return };
         // frames still in flight after an exposure change (or a lane switch) are over- or under-exposed: not a real loss
         let settling = self.last_exposure_change.elapsed() < Duration::from_secs(3);
@@ -2826,7 +2841,7 @@ impl Engine {
         let dims = (frame.width, frame.height);
         match res {
             Err(_) if settling && !self.lost => {
-                if !anchor && !dark { let d = detector.or_else(|| if detect { locate_sun(frame, hint) } else { None }); self.feed_sun_model(d, now, dims); }
+                if !anchor && !dark { let d = detector.or_else(|| detect_target(profile, frame, hint, prev.as_ref())); self.feed_sun_model(d, now, dims); }
             }
             Ok(p) => {
                 self.fail_since = None;
@@ -2872,7 +2887,7 @@ impl Engine {
             }
             Err(e) => {
                 if !anchor && !dark {
-                    let d = detector.or_else(|| if detect { locate_sun(frame, hint) } else { None });
+                    let d = detector.or_else(|| detect_target(profile, frame, hint, prev.as_ref()));
                     if let Some(est) = self.feed_sun_model(d, now, dims) {
                         if let Some(ts) = self.status.tracking.as_mut() { ts.x = est.sun.pos.x; ts.y = est.sun.pos.y; ts.radius = Some(est.sun.radius); }
                     }
@@ -4168,4 +4183,20 @@ fn rate_of_body(b: Option<rustflare_tracking::bodies::Body>) -> TrackingRate {
 
 fn rate_word(r: TrackingRate) -> &'static str {
     match r { TrackingRate::Solar => "solar", TrackingRate::Lunar => "lunar", TrackingRate::Sidereal => "sidereal" }
+}
+
+/// The smallest believable step of the one model of where the target is, in pixels: nothing for the Sun and the Moon (their gates
+/// scale with a radius of hundreds of pixels), a floor for a planet a few tens of pixels across that the seeing moves by several.
+fn model_gate_floor(profile: &str) -> f64 {
+    if profile == "planet" { 8.0 } else { 0.0 }
+}
+
+/// Looks for the target in a frame, by profile: the disc and limb detector for the Sun and the Moon, the brightest small blob for a
+/// planet (the Sun detector on a planet frame returns a confident phantom disc: see `target_tests`), nothing for an unknown target.
+fn detect_target(profile: &str, frame: &Frame, hint: Option<f64>, prev: Option<&SunLocation>) -> Option<SunLocation> {
+    match profile {
+        "other" => None,
+        "planet" => locate_planet(frame, prev.map(|p| (p.pos, p.radius))),
+        _ => locate_sun(frame, hint),
+    }
 }

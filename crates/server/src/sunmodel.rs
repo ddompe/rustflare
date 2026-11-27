@@ -57,6 +57,10 @@ pub struct SunModel {
     /// Long-term drift (px/s) learned while the images were good: the starting guess after a re-lock, and what keeps
     /// the prediction honest when clouds or an eclipse hide the Sun for long. Turns over with the image at a meridian flip.
     learned: Option<Vec2>,
+    /// Smallest believable step, pixels. 0 for the Sun: its gates are a fraction of its radius (300 to 1,200 px). A planet 25 px across
+    /// would get a gate of 1.5 px, which the seeing alone exceeds, so for it the gates are at least this many pixels (and the radius,
+    /// which comes from a handful of pixels, is trusted loosely).
+    gate_floor_px: f64,
 }
 
 #[derive(Copy, Clone)]
@@ -87,6 +91,11 @@ pub fn too_dark(good: Option<f64>, level: f64) -> bool {
 }
 
 impl SunModel {
+    /// The absolute floor of the gates in pixels (see `gate_floor_px`); 0 restores the Sun's gates exactly.
+    pub fn set_gate_floor(&mut self, px: f64) {
+        self.gate_floor_px = px.max(0.0);
+    }
+
     /// The image turned over (meridian flip): the drift turns with it.
     pub fn flipped(&mut self) {
         if let Some(l) = self.learned.as_mut() {
@@ -145,9 +154,11 @@ impl SunModel {
         let mut predicted = true;
         if let Some(m) = meas {
             let step = (m.pos - s.pos).len();
-            let radius_ok = (m.radius / s.radius - 1.0).abs() <= GATE_RADIUS && s.good_radius.map_or(true, |p| (m.radius / p - 1.0).abs() <= RADIUS_PRIOR_TOL);
-            let small = SMALL_STEP_RADII * s.radius;
-            let gate = GATE_RADII * s.radius;
+            let floor = self.gate_floor_px;
+            let (radius_gate, radius_prior) = if floor > 0.0 { (0.4, 0.4) } else { (GATE_RADIUS, RADIUS_PRIOR_TOL) };
+            let radius_ok = (m.radius / s.radius - 1.0).abs() <= radius_gate && s.good_radius.map_or(true, |p| (m.radius / p - 1.0).abs() <= radius_prior);
+            let small = (SMALL_STEP_RADII * s.radius).max(floor / 4.0);
+            let gate = (GATE_RADII * s.radius).max(floor);
             // weight of this measurement: full for a drift-sized step, falling off towards the gate, and low when only the
             // centre can be trusted (the radius is off: cloud thinning the limb)
             let weight = if free {
@@ -206,7 +217,8 @@ impl SunModel {
             // a Sun that really moved is the same place again and again)
             // after a long time without any agreeing measurement the model is probably wrong: accept a looser cluster
             let spread = if now.saturating_duration_since(s.last_measured) > Duration::from_secs(20) { 2.0 * RELOCK_SPREAD_RADII } else { RELOCK_SPREAD_RADII };
-            let close = |a: &SunLocation, b: &SunLocation| (a.pos - b.pos).len() <= spread * a.radius.max(b.radius);
+            let floor = self.gate_floor_px;
+            let close = |a: &SunLocation, b: &SunLocation| (a.pos - b.pos).len() <= (spread * a.radius.max(b.radius)).max(floor);
             let (mut best, mut best_n) = (0usize, 0usize);
             for (i, (_, a)) in self.pending.iter().enumerate() {
                 let n = self.pending.iter().filter(|(_, b)| close(a, b)).count();
@@ -240,7 +252,8 @@ impl SunModel {
             s.good_radius = Some(s.radius);
         }
         if let Some(p) = s.good_radius {
-            s.radius = s.radius.clamp(p * (1.0 - RADIUS_PRIOR_TOL), p * (1.0 + RADIUS_PRIOR_TOL));
+            let tol = if self.gate_floor_px > 0.0 { 0.4 } else { RADIUS_PRIOR_TOL };
+            s.radius = s.radius.clamp(p * (1.0 - tol), p * (1.0 + tol));
         }
         self.state = Some(s);
         let since = now.saturating_duration_since(s.last_measured).as_secs_f64();
@@ -297,6 +310,37 @@ mod tests {
             last = m.update(f(i), t0 + Duration::from_millis(40 * i as u64), D, false, None);
         }
         last.unwrap()
+    }
+
+    /// A 25 px planet shaken by seeing: uniform jitter of +-`amp` px in both axes, a fixed pseudo-random sequence.
+    fn seeing_run(m: &mut SunModel, amp: f64) -> (f64, Estimate) {
+        let t0 = Instant::now();
+        let mut s = 12345u32;
+        let mut rnd = move || { s = s.wrapping_mul(1664525).wrapping_add(1013904223); (s >> 8) as f64 / (1u32 << 24) as f64 * 2.0 - 1.0 };
+        let (mut accepted, mut last) = (0, None);
+        for i in 0..600 {
+            let e = m.update(Some(loc(640.0 + amp * rnd(), 480.0 + amp * rnd(), 22.0 + 0.5 * rnd())), t0 + Duration::from_millis(100 * i as u64), (1280, 960), false, None).unwrap();
+            if i >= 100 && !e.predicted { accepted += 1; }
+            last = Some(e);
+        }
+        (accepted as f64 / 500.0, last.unwrap())
+    }
+
+    #[test]
+    fn a_small_planet_shaken_by_seeing_stays_locked_only_with_the_pixel_floor() {
+        // the Sun's gates scale with the radius: 6 % of 22 px is 1.3 px, and the seeing alone moves the planet 3 px
+        let mut sun_gates = SunModel::default();
+        let (rate_sun, _) = seeing_run(&mut sun_gates, 3.0);
+        let mut planet = SunModel::default();
+        planet.set_gate_floor(8.0);
+        let (rate_planet, e) = seeing_run(&mut planet, 3.0);
+        assert!(rate_planet > 0.95, "with the floor {rate_planet}");
+        assert!(rate_sun < 0.6, "the Sun's gates reject most of the seeing: {rate_sun}");
+        assert!((e.sun.pos.x - 640.0).abs() < 3.0 && (e.sun.pos.y - 480.0).abs() < 3.0, "{:?}", e.sun.pos);
+        // a floor of 0 is exactly the Sun's model
+        let mut again = SunModel::default();
+        again.set_gate_floor(0.0);
+        assert_eq!(seeing_run(&mut again, 3.0).0, rate_sun);
     }
 
     #[test]
