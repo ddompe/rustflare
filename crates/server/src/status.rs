@@ -191,6 +191,14 @@ pub struct OpticsStatus {
     pub measured_radius_px: Option<f64>,
     pub suggested_effective_focal_mm: Option<f64>,
     pub suggested_multiplier: Option<f64>,
+    /// The named optical setup in use, and whether the optics or the profile were changed after it was saved.
+    pub setup: SetupStatus,
+}
+
+#[derive(Clone, Serialize, Default)]
+pub struct SetupStatus {
+    pub active: Option<String>,
+    pub modified: bool,
 }
 
 #[derive(Clone, Serialize, Default)]

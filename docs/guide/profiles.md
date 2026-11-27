@@ -22,6 +22,10 @@ Things that apply to every profile and are explained where they happen: the Pi's
 
 The **automatic meridian flip** and the **flip assist** follow what the profile images: the Sun on the Sun profiles, the Moon on the Moon profile (it crosses the meridian about 50 minutes later each day, and the time shown is computed at the Moon's own rate), the planet you last used **Go to** on for the Planet profile (until you have gone to one, the flip is greyed and says so). After the mount has turned over, the tracking rate is put back to the target's (solar, lunar or sidereal), not always solar. The recorded position names its target, so *Restore after a manual flip* keeps working if you change the profile in between. Re-centring needs the target in the picture (the Moon disc, or the planet found by the planet locator) and a calibration. The image still turns by about 180 degrees after a flip: recalibrate if you were guiding.
 
+## A telescope carries its profile
+
+A saved [optical setup](more.md#optical-setups-your-telescopes) (a telescope with its reducer or Barlow) carries the profile it is used for: *Lunt LS50 + Barlow* with Sun, H-alpha, *C11 + reducer* with Moon. Applying the setup switches the profile along with the focal length, so changing telescope is one step. It still never moves the mount or starts anything, and you can change the profile afterwards by hand: the setup then shows as *modified* until you revert or update it. A setup saved with *Keep the current profile* leaves the profile alone.
+
 ## Moon or planets with a colour camera
 
 Use **Colour** (Camera tab) set to **Manual** or **Off** for a planet, because Auto makes the bright part neutral. Use *Frame size* to crop to the planet for frame rate and record **SER video**: the file is the raw mosaic, which AutoStakkert, PIPP and Siril debayer and stack. The live view is a half-resolution preview.

@@ -962,3 +962,142 @@ test.describe('use profiles, stage 3: a planet and a phased Moon on the simulate
     await expect(page.getByRole('alert').filter({ hasText: /the planet\) is at/ })).toBeVisible()
   })
 })
+
+test.describe('optical setups: named trains that carry their profile', () => {
+  const setupsOf = async (page: Page) => (await (await page.request.get('/api/optics/setups')).json()) as { active: string | null; modified: boolean; setups: { name: string; profile: string | null }[] }
+  const status = async (page: Page) => (await (await page.request.get('/api/status')).json()) as { profile: string; optics: { focal_length_mm: number | null; focal_multiplier: number; setup: { active: string | null; modified: boolean } } }
+  const del = (page: Page, name: string) => page.request.delete(`/api/optics/setups/${encodeURIComponent(name)}`)
+  test.beforeEach(async ({ page }) => { for (const s of (await setupsOf(page)).setups) await del(page, s.name) })
+  test.afterEach(async ({ page }) => {
+    for (const s of (await setupsOf(page)).setups) await del(page, s.name)
+    await put(page, '/optics', { focal_length_mm: null, focal_multiplier: 1, pixel_size_um: null, binning: 1 })
+    await put(page, '/profile', { id: 'sun_ha' })
+  })
+  const openOptics = async (page: Page) => {
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^More/ }).click()
+    const d = page.locator('details', { has: page.locator('summary', { hasText: 'Optics' }) })
+    if (!(await d.evaluate((e) => (e as HTMLDetailsElement).open))) await d.locator('summary').click()
+    return page.getByRole('group', { name: 'Optical setups' })
+  }
+  const fill = async (page: Page, label: string, v: string) => page.getByLabel(label, { exact: true }).fill(v)
+
+  test('the API: nothing exists at first; save from the current optics; validate; unique names; 404 for an unknown name', async ({ page }) => {
+    expect((await setupsOf(page)).setups).toEqual([])
+    await put(page, '/optics', { focal_length_mm: 400, focal_multiplier: 2, pixel_size_um: null, binning: 1 })
+    expect((await put(page, '/optics/setups/Lunt%20%2B%20Barlow', {})).ok()).toBe(true)
+    let l = await setupsOf(page)
+    expect(l.active).toBe('Lunt + Barlow'); expect(l.modified).toBe(false)
+    expect(l.setups[0]).toMatchObject({ name: 'Lunt + Barlow', profile: 'sun_ha', focal_length_mm: 400, focal_multiplier: 2 })
+    expect((await put(page, '/optics/setups/bad', { profile: 'comet' })).status()).toBe(400)
+    expect((await put(page, '/optics/setups/bad', { focal_length_mm: 5 })).status()).toBe(400)
+    expect((await put(page, `/optics/setups/${'x'.repeat(41)}`, {})).status()).toBe(400)
+    expect((await put(page, '/optics/setups/Lunt%20%2B%20Barlow', { notes: 'again' })).ok()).toBe(true)
+    l = await setupsOf(page)
+    expect(l.setups).toHaveLength(1)
+    expect((await post(page, '/optics/setups/nope/apply')).status()).toBe(404)
+    expect((await del(page, 'nope')).status()).toBe(404)
+    expect((await status(page)).optics.setup).toEqual({ active: 'Lunt + Barlow', modified: false })
+  })
+
+  test('applying a setup sets the optics and switches to its profile; a missing flat is reported, not fatal; modified shows', async ({ page }) => {
+    await put(page, '/optics', { focal_length_mm: 400, focal_multiplier: 2, pixel_size_um: null, binning: 1 })
+    await put(page, '/profile', { id: 'sun_ha' })
+    await put(page, '/optics/setups/Lunt', { flat: 'flats/not-there.png', aperture_mm: 50 })
+    await put(page, '/optics/setups/C11', { profile: 'moon', focal_length_mm: 2800, focal_multiplier: 0.63, activate: false })
+    const r = await (await post(page, '/optics/setups/C11/apply')).json()
+    expect(r.after.profile).toBe('moon'); expect(r.before.profile).toBe('sun_ha')
+    expect(r.after.focal_length_mm).toBe(2800)
+    let s = await status(page)
+    expect(s.profile).toBe('moon'); expect(s.optics.focal_multiplier).toBe(0.63); expect(s.optics.setup).toEqual({ active: 'C11', modified: false })
+    const back = await (await post(page, '/optics/setups/Lunt/apply')).json()
+    expect(back.not_restored[0]).toMatchObject({ what: 'flat', name: 'flats/not-there.png' })
+    s = await status(page)
+    expect(s.profile).toBe('sun_ha'); expect(s.optics.setup.modified).toBe(false)
+    // a change of the profile or of the optics shows as modified
+    await put(page, '/profile', { id: 'planet' })
+    await expect.poll(async () => (await status(page)).optics.setup.modified).toBe(true)
+    await post(page, '/optics/setups/Lunt/apply')
+    await put(page, '/optics', { focal_length_mm: 500, focal_multiplier: 2, pixel_size_um: null, binning: 1 })
+    await expect.poll(async () => (await status(page)).optics.setup.modified).toBe(true)
+  })
+
+  test('save as, apply (the profile follows), modified and revert, duplicate, delete with confirm, in the UI', async ({ page }) => {
+    const g = await openOptics(page)
+    await fill(page, 'Focal length (mm)', '400'); await fill(page, 'Barlow / reducer (×)', '2')
+    await page.getByRole('button', { name: 'Save optics' }).click()
+    await expect.poll(async () => (await status(page)).optics.focal_length_mm).toBe(400)
+    // save as: profile of the train and aperture
+    await g.getByLabel('Profile of this train').selectOption('sun_ha')
+    await g.getByLabel('Aperture (mm)').fill('50')
+    await expect(g.locator('.fratio')).toHaveText('f/16.0')
+    await g.getByLabel('Name for a new setup').fill('  Lunt + Barlow  ')
+    await g.getByRole('button', { name: 'Save as…' }).click()
+    await expect(g.locator('.setup-name')).toHaveText('Lunt + Barlow')
+    // a second train for the Moon
+    await fill(page, 'Focal length (mm)', '2800'); await fill(page, 'Barlow / reducer (×)', '0.63')
+    await g.getByLabel('Profile of this train').selectOption('moon')
+    await g.getByLabel('Name for a new setup').fill('C11 + reducer')
+    await g.getByRole('button', { name: 'Save as…' }).click()
+    await expect(g.locator('.setup-name')).toHaveText('C11 + reducer')
+    await expect(g.locator('.setup-badge')).toHaveCount(0)
+    expect((await status(page)).profile).toBe('moon') // the train just saved is in use, with the profile chosen for it
+    // apply the first: the result says what changed
+    await g.getByLabel('Saved setups').selectOption('Lunt + Barlow')
+    await g.getByRole('button', { name: /^Apply/ }).click()
+    await expect(g.getByRole('status', { name: 'What applying changed' })).toContainText('Effective focal length')
+    expect((await status(page)).profile).toBe('sun_ha')
+    await expect(g.getByRole('status', { name: 'What applying changed' })).toContainText('Nothing was moved')
+    await expect(g.locator('.setup-name')).toHaveText('Lunt + Barlow') // the status has caught up
+    // then the Moon train: the profile follows
+    await g.getByLabel('Saved setups').selectOption('C11 + reducer')
+    await g.getByRole('button', { name: /^Apply/ }).click()
+    await expect.poll(async () => (await status(page)).profile).toBe('moon')
+    await expect(g.getByRole('status', { name: 'What applying changed' })).toContainText('Profile: Sun, H-alpha → Moon')
+    expect((await status(page)).optics.setup).toEqual({ active: 'C11 + reducer', modified: false })
+    // the name is next to the profile picker (Camera tab)
+    await page.getByRole('tab', { name: /^Camera/ }).click()
+    await expect(page.getByLabel('Optical setup in use').first()).toHaveText('C11 + reducer · Moon')
+    // changing the profile by hand marks the setup modified; Revert brings back the train's own profile
+    await page.getByRole('radio', { name: 'Planet' }).click()
+    await expect(page.getByLabel('Optical setup in use').first()).toContainText('(modified)')
+    await page.getByRole('tab', { name: /^More/ }).click()
+    await expect(g.locator('.setup-badge')).toHaveText('modified')
+    await g.getByRole('button', { name: 'Revert' }).click()
+    await expect.poll(async () => (await status(page)).profile).toBe('moon')
+    await expect(g.locator('.setup-badge')).toHaveCount(0)
+    // duplicate
+    await g.getByLabel('Saved setups').selectOption('C11 + reducer')
+    await g.getByRole('button', { name: 'Duplicate' }).click()
+    await expect.poll(async () => (await setupsOf(page)).setups.map((s) => s.name)).toContain('C11 + reducer copy')
+    expect((await setupsOf(page)).active).toBe('C11 + reducer')
+    // delete asks first and says what is lost
+    await g.getByLabel('Saved setups').selectOption('C11 + reducer copy')
+    await g.getByRole('button', { name: 'Delete…' }).click()
+    const ask = g.getByRole('alertdialog', { name: 'Delete the setup' })
+    await expect(ask).toContainText('Forgotten')
+    await ask.getByRole('button', { name: 'Keep it' }).click()
+    expect((await setupsOf(page)).setups).toHaveLength(3)
+    await g.getByRole('button', { name: 'Delete…' }).click()
+    await ask.getByRole('button', { name: 'Delete setup' }).click()
+    await expect.poll(async () => (await setupsOf(page)).setups.length).toBe(2)
+  })
+
+  test('no horizontal overflow and 44 px taps in the setup block', async ({ page }) => {
+    await put(page, '/optics/setups/A', {})
+    const g = await openOptics(page)
+    await expect(g).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false)
+    for (const b of await g.getByRole('button').all()) {
+      const box = await b.boundingBox()
+      if (box) expect(box.height, await b.innerText()).toBeGreaterThanOrEqual(43.5)
+    }
+  })
+
+  test('a bad name is refused on screen, not silently', async ({ page }) => {
+    const g = await openOptics(page)
+    await g.getByLabel('Name for a new setup').fill('a'.repeat(41))
+    await expect(g.getByRole('button', { name: 'Save as…' })).toBeDisabled()
+    await expect(g.getByRole('note')).toContainText('1 to 40')
+  })
+})

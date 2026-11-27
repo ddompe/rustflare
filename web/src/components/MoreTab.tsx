@@ -9,6 +9,7 @@ import { SessionLog } from './SessionLog'
 import { useSetting } from '../settings'
 import { noun, profileOf, why } from '../profile'
 import { Why } from './Profile'
+import { OpticalSetups } from './OpticalSetups'
 
 const arcmin = (s: number) => `${Math.floor(s / 60)}′ ${(s % 60).toFixed(0)}″`
 
@@ -127,6 +128,8 @@ function OpticsSettings({ status }: { status: Status | null }) {
   const mismatch = sun && o.expected_radius_px && Math.abs(sun.radius / o.expected_radius_px - 1) > 0.1
   return (
     <div>
+      <OpticalSetups status={status} form={{ focal, mult, pixel, bin, dirty }} onApplied={() => setDirty(false)} />
+      <h4 className="setup-sub">Optics in use</h4>
       <div className="grid2">
         <Field label="Focal length (mm)">{(id) => <input id={id} inputMode="decimal" value={focal} onChange={(e) => { setFocal(e.target.value); setDirty(true) }} placeholder="telescope" />}</Field>
         <Field label="Barlow / reducer (×)">
@@ -211,7 +214,7 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus, open
     <>
       <p className="hint-text">At the telescope: set the phone's Auto-Lock to Never (Settings, Display and Brightness) for the session, and use Share, Add to Home Screen for a full-screen app.</p>
       {item('display', 'Display', `${display.tint === 'none' ? 'grayscale' : display.tint === 'orange' ? 'H-alpha orange' : 'deep red'} · ${display.rings ? `${display.rings} rings` : 'no rings'}`, <DisplaySettings d={display} set={setDisplay} reset={resetDisplay} status={status} />)}
-      {item('optics', 'Optics', o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set', <OpticsSettings status={status} />)}
+      {item('optics', 'Optics', (o?.setup?.active ? `${o.setup.active}${o.setup.modified ? ' (modified)' : ''} · ` : '') + (o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set'), <OpticsSettings status={status} />)}
       {item('site', 'Site', status?.site ? `${status.site.latitude.toFixed(2)}°, ${status.site.longitude.toFixed(2)}°` : 'not set', <SiteSettings status={status} />)}
       {item('stacking', 'Stacking', stackSummary(stackInfo), <Stacking info={stackInfo} reload={reloadStack} onOpenFiles={() => openFiles('stacks')} />)}
       {item('storage', 'Storage', 'drive for captures', <StorageSettings status={status} />)}

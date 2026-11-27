@@ -197,6 +197,7 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
         <ProfilePicker status={status} />
       </Section>
       <Section error={err}>
+        {status?.optics?.setup?.active && <p className="setup-line" aria-label="Optical setup of this camera">Optical setup: {status.optics.setup.active}{status.optics.setup.modified ? ' (modified)' : ''}{status.optics.scale_arcsec_per_px ? ` · ${status.optics.scale_arcsec_per_px.toFixed(2)}″/px` : ''}</p>}
         {cam.histogram.length > 0 && <Histogram bins={cam.histogram} saturated={cam.saturated} rgb={cam.histogram_rgb} saturatedRgb={cam.saturated_rgb} planetClip={profileOf(status) === 'planet' ? clipping(cam, 'planet') : null} />}
         {primary.map((c) => {
           const marks = c.id === 'gain' && cat ? gainMarks(cat) : undefined

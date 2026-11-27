@@ -9,7 +9,9 @@ export interface Optics { focal_length_mm: number | null; focal_multiplier: numb
   /** Measured from the limb; all null/absent until a partial or whole disc has been measured. */
   /** Apparent radius of what the profile images, arcseconds (the Sun's, the Moon's, a planet's globe). */
   target_radius_arcsec?: number | null
-  measured_radius_px?: number | null; suggested_effective_focal_mm?: number | null; suggested_multiplier?: number | null }
+  measured_radius_px?: number | null; suggested_effective_focal_mm?: number | null; suggested_multiplier?: number | null
+  /** The named optical setup in use, and whether the optics or the profile were changed after it was saved. */
+  setup?: { active: string | null; modified: boolean } }
 export interface StorageInfo { path: string; label: string; mount_point: string | null; fstype: string | null; total: number | null; free: number | null; max_file_bytes: number | null; available: boolean; problem: string | null; internal?: boolean; reserve_bytes?: number; warning?: string | null }
 export interface SunLocation { pos: { x: number; y: number }; radius: number; partial: boolean; radius_from_optics?: boolean | null; fit_rms?: number | null }
 export interface Startup { enabled: boolean; camera: string | null; mount: string | null; retrying: boolean }
@@ -82,7 +84,7 @@ export function useUiError(): [string | null, () => void] {
   return [uiError, () => { uiError = null; uiErrorListeners.forEach((l) => l()) }]
 }
 
-export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
+export async function api<T = unknown>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
   const r = await fetch('/api' + path, {
     method,
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },

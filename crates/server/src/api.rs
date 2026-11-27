@@ -106,6 +106,9 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/files/archive", get(crate::browse::files_archive))
         .route("/api/files/delete", post(file_delete))
         .route("/api/optics", put(optics_put))
+        .route("/api/optics/setups", get(setups_list))
+        .route("/api/optics/setups/:name", put(setup_put).delete(setup_delete))
+        .route("/api/optics/setups/:name/apply", post(setup_apply))
         .route("/api/startup", put(startup_put))
         .route("/api/ui", get(ui_get).put(ui_put))
         .route("/api/preview", get(preview_get).put(preview_put))
@@ -677,6 +680,31 @@ fn one_f() -> f64 { 1.0 }
 async fn optics_put(s: State<AppState>, Json(b): Json<Optics>) -> Res {
     run(s, Command::SetOptics { focal_length_mm: b.focal_length_mm, focal_multiplier: b.focal_multiplier, pixel_size_um: b.pixel_size_um, binning: b.binning }).await
 }
+
+/// Like `run`, but an unknown setup name is a 404.
+async fn run_setup(st: State<AppState>, cmd: Command) -> Res {
+    match st.engine.call(cmd).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => (if e.starts_with(crate::setups::NOT_FOUND) { StatusCode::NOT_FOUND } else { StatusCode::BAD_REQUEST }, Json(json!({ "error": e }))).into_response(),
+    }
+}
+/// The saved optical setups (trains), the active one and whether it was changed after saving.
+async fn setups_list(s: State<AppState>) -> Res { run(s, Command::ListSetups).await }
+/// Saves a setup (creates or replaces). Fields missing from the body come from the optics and profile in use now, so an empty body is "save as".
+async fn setup_put(s: State<AppState>, axum::extract::Path(name): axum::extract::Path<String>, body: axum::body::Bytes) -> Res {
+    let body: Value = if body.iter().all(|b| b.is_ascii_whitespace()) {
+        json!({})
+    } else {
+        match serde_json::from_slice(&body) {
+            Ok(v) => v,
+            Err(e) => return (StatusCode::BAD_REQUEST, Json(json!({ "error": format!("not valid JSON: {e}") }))).into_response(),
+        }
+    };
+    run_setup(s, Command::SaveSetup { name, body }).await
+}
+async fn setup_delete(s: State<AppState>, axum::extract::Path(name): axum::extract::Path<String>) -> Res { run_setup(s, Command::DeleteSetup { name }).await }
+/// Makes a setup the current optics and profile and re-selects its flat and dark. Moves nothing, starts nothing.
+async fn setup_apply(s: State<AppState>, axum::extract::Path(name): axum::extract::Path<String>) -> Res { run_setup(s, Command::ApplySetup { name }).await }
 
 #[derive(Deserialize)]
 struct PreviewSettings { stretch: bool }

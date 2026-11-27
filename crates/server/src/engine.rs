@@ -204,6 +204,13 @@ pub enum Command {
     CapturePause,
     CaptureResume,
     SetOptics { focal_length_mm: Option<f64>, focal_multiplier: f64, pixel_size_um: Option<f64>, binning: u32 },
+    /// The named optical setups: `{ active, modified, setups }`.
+    ListSetups,
+    /// Saves a setup under `name` from `body` (missing fields come from what is in use now).
+    SaveSetup { name: String, body: Value },
+    DeleteSetup { name: String },
+    /// Makes a setup the current optics and profile and re-selects its flat and dark. Moves and starts nothing.
+    ApplySetup { name: String },
 }
 
 struct Request {
@@ -481,6 +488,8 @@ pub struct Engine {
     analysis_n: u32,
     storage: Arc<Storage>,
     optics: OpticsSettings,
+    /// Named optical setups (trains), and which one is in use.
+    setups: crate::setups::Setups,
     startup: Startup,
     /// Control values to re-apply when each camera is opened, keyed `driver/id`; written back lazily.
     camera_controls: serde_json::Map<String, Value>,
@@ -633,6 +642,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         last_frame_saved: Instant::now(),
         analysis_n: 0,
         optics: rustflare_config_optics(&storage),
+        setups: crate::setups::Setups::load(storage.config_file()),
         startup: crate::config::read(storage.config_file()).get("startup").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         camera_controls: crate::config::read(storage.config_file()).get("camera_controls").and_then(|v| v.as_object().cloned()).unwrap_or_default(),
         controls_dirty: None,
@@ -689,19 +699,37 @@ fn load_guide_params(storage: &Storage) -> GuideParams {
     p
 }
 
+/// Loads a master flat from the storage folder (`rel` relative to it) and installs it.
+fn load_flat(storage: &Storage, flat: &rustflare_capture::SharedFlat, rel: &str, enabled: bool) -> Result<(), String> {
+    let m = crate::files::resolve(&storage.dir(), rel).and_then(|p| read_png(&p).map_err(|e| e.to_string()))?;
+    let ff = rustflare_capture::FlatField::from_master(&m).map_err(|e| e.to_string())?;
+    let mut s = flat.lock().unwrap();
+    s.field = Some(std::sync::Arc::new(ff));
+    s.enabled = enabled;
+    s.name = Some(rel.to_string());
+    Ok(())
+}
+
+/// Loads a master dark the same way; its exposure and gain are given when known.
+fn load_dark(storage: &Storage, flat: &rustflare_capture::SharedFlat, rel: &str, enabled: bool, exposure_us: Option<f64>, gain: Option<f64>) -> Result<(), String> {
+    let m = crate::files::resolve(&storage.dir(), rel).and_then(|p| read_png(&p).map_err(|e| e.to_string()))?;
+    let df = rustflare_capture::DarkFrame::from_master(&m).map_err(|e| e.to_string())?;
+    let mut s = flat.lock().unwrap();
+    s.dark = Some(std::sync::Arc::new(df));
+    s.dark_enabled = enabled;
+    s.dark_name = Some(rel.to_string());
+    s.dark_exposure_us = exposure_us;
+    s.dark_gain = gain;
+    Ok(())
+}
+
 /// Restores the master flat chosen last time (config key `flat`: master path relative to the storage folder).
 fn load_saved_flat(storage: &Storage, flat: &rustflare_capture::SharedFlat) {
     let cfg = crate::config::read(storage.config_file());
     let Some(f) = cfg.get("flat") else { return };
     let (Some(rel), enabled) = (f.get("master").and_then(|v| v.as_str()), f.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true)) else { return };
-    match crate::files::resolve(&storage.dir(), rel).and_then(|p| read_png(&p).map_err(|e| e.to_string())).and_then(|m| rustflare_capture::FlatField::from_master(&m).map_err(|e| e.to_string())) {
-        Ok(ff) => {
-            let mut s = flat.lock().unwrap();
-            s.field = Some(std::sync::Arc::new(ff));
-            s.enabled = enabled;
-            s.name = Some(rel.to_string());
-            log::info!("flat: loaded {rel} (enabled: {enabled})");
-        }
+    match load_flat(storage, flat, rel, enabled) {
+        Ok(()) => log::info!("flat: loaded {rel} (enabled: {enabled})"),
         Err(e) => log::warn!("flat: cannot load {rel}: {e}"),
     }
 }
@@ -711,16 +739,8 @@ fn load_saved_dark(storage: &Storage, flat: &rustflare_capture::SharedFlat) {
     let cfg = crate::config::read(storage.config_file());
     let Some(d) = cfg.get("dark") else { return };
     let Some(rel) = d.get("master").and_then(|v| v.as_str()) else { return };
-    match crate::files::resolve(&storage.dir(), rel).and_then(|p| read_png(&p).map_err(|e| e.to_string())).and_then(|m| rustflare_capture::DarkFrame::from_master(&m).map_err(|e| e.to_string())) {
-        Ok(df) => {
-            let mut s = flat.lock().unwrap();
-            s.dark = Some(std::sync::Arc::new(df));
-            s.dark_enabled = d.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
-            s.dark_name = Some(rel.to_string());
-            s.dark_exposure_us = d.get("exposure_us").and_then(|v| v.as_f64());
-            s.dark_gain = d.get("gain").and_then(|v| v.as_f64());
-            log::info!("dark: loaded {rel}");
-        }
+    match load_dark(storage, flat, rel, d.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true), d.get("exposure_us").and_then(|v| v.as_f64()), d.get("gain").and_then(|v| v.as_f64())) {
+        Ok(()) => log::info!("dark: loaded {rel}"),
         Err(e) => log::warn!("dark: cannot load {rel}: {e}"),
     }
 }
@@ -885,6 +905,7 @@ impl Engine {
             target_radius_arcsec: target_arcsec,
             suggested_effective_focal_mm: self.measured_radius.zip(pixel).zip(target_arcsec).map(|((r, p), a)| 206.265 * p * bin as f64 * r / a),
             suggested_multiplier: self.measured_radius.zip(pixel).zip(target_arcsec).zip(self.optics.focal_length_mm).map(|(((r, p), a), f)| 206.265 * p * bin as f64 * r / a / f),
+            setup: crate::status::SetupStatus { active: self.setups.active.clone(), modified: self.setups.modified(&self.current_use()) },
         };
     }
 
@@ -2125,24 +2146,28 @@ impl Engine {
                 Ok(json!({}))
             }
             Command::SetOptics { focal_length_mm, focal_multiplier, pixel_size_um, binning } => {
-                if focal_length_mm.is_some_and(|f| !(10.0..=20000.0).contains(&f)) {
-                    return Err("focal length must be between 10 and 20000 mm".into());
-                }
-                if pixel_size_um.is_some_and(|p| !(0.5..=50.0).contains(&p)) {
-                    return Err("pixel size must be between 0.5 and 50 µm".into());
-                }
-                if !(0.2..=10.0).contains(&focal_multiplier) {
-                    return Err("Barlow/reducer factor must be between 0.2 and 10 (e.g. 2 for a 2x Barlow, 0.63 for a reducer)".into());
-                }
-                if !(1..=8).contains(&binning) {
-                    return Err("binning must be 1 to 8".into());
-                }
-                self.optics = OpticsSettings { focal_length_mm, focal_multiplier, pixel_size_um, binning };
-                self.radius_samples.clear();
-                self.measured_radius = None;
-                crate::config::set(self.storage.config_file(), "optics", serde_json::to_value(&self.optics).unwrap_or_default())?;
+                self.set_optics(OpticsSettings { focal_length_mm, focal_multiplier, pixel_size_um, binning })?;
                 Ok(json!({}))
             }
+            Command::ListSetups => Ok(self.setups.to_json(&self.current_use())),
+            Command::SaveSetup { name, body } => {
+                let cur = self.current_use();
+                let mut next = self.setups.clone();
+                let saved = next.save(&name, &body, &cur)?;
+                next.persist(self.storage.config_file())?;
+                self.setups = next;
+                self.event("optics_setup_saved", json!({ "name": saved.name }));
+                Ok(json!({ "saved": saved, "active": self.setups.active, "modified": self.setups.modified(&cur) }))
+            }
+            Command::DeleteSetup { name } => {
+                let mut next = self.setups.clone();
+                let gone = next.delete(&name)?;
+                next.persist(self.storage.config_file())?;
+                self.setups = next;
+                self.event("optics_setup_deleted", json!({ "name": gone.name }));
+                Ok(json!({ "deleted": gone.name, "active": self.setups.active }))
+            }
+            Command::ApplySetup { name } => self.apply_setup(&name),
             Command::CapturePause => {
                 if !matches!(self.job, Job::Capture(_)) {
                     return Err("only a running sequence or lane recording can be paused".into());
@@ -3772,6 +3797,62 @@ impl Engine {
                 Job::Idle
             }
         }
+    }
+
+    /// What is in use now, as a setup would save it.
+    fn current_use(&self) -> crate::setups::Current {
+        let f = self.flat.lock().unwrap();
+        crate::setups::Current { optics: self.optics.clone(), profile: self.status.profile.to_string(), flat: f.name.clone(), dark: f.dark_name.clone() }
+    }
+
+    /// Validates and installs the optics (the expected radius and the tracker follow), and saves them. `PUT /api/optics` and applying a setup both come here.
+    fn set_optics(&mut self, o: OpticsSettings) -> Result<(), String> {
+        crate::setups::check_optics(o.focal_length_mm, o.focal_multiplier, o.pixel_size_um, o.binning)?;
+        self.optics = o;
+        self.radius_samples.clear();
+        self.measured_radius = None;
+        crate::config::set(self.storage.config_file(), "optics", serde_json::to_value(&self.optics).unwrap_or_default())?;
+        Ok(())
+    }
+
+    /// Applies a named optical setup: the optics, the profile it comes with, and its flat and dark when they are named and still there.
+    /// What could not be restored is reported, never fatal. Nothing moves and nothing starts.
+    fn apply_setup(&mut self, name: &str) -> Reply {
+        let setup = self.setups.get(name)?.clone();
+        let summary = |s: &Status| json!({ "profile": s.profile, "focal_length_mm": s.optics.focal_length_mm, "focal_multiplier": s.optics.focal_multiplier, "effective_focal_mm": s.optics.effective_focal_mm, "binning": s.optics.binning, "scale_arcsec_per_px": s.optics.scale_arcsec_per_px, "expected_radius_px": s.optics.expected_radius_px });
+        self.refresh_optics();
+        let before = summary(&self.status);
+        self.set_optics(setup.optics())?;
+        if let Some(p) = &setup.profile {
+            if p != self.status.profile {
+                self.handle(Command::SetProfile { id: p.clone() })?;
+            }
+        }
+        let mut not_restored = vec![];
+        if let Some(rel) = &setup.flat {
+            let blocked = if matches!(self.job, Job::Flats(_)) { Err("flats are being captured".to_string()) } else { load_flat(&self.storage, &self.flat, rel, true) };
+            if let Err(e) = blocked {
+                not_restored.push(json!({ "what": "flat", "name": rel, "reason": e }));
+            }
+        }
+        if let Some(rel) = &setup.dark {
+            let keep = { let f = self.flat.lock().unwrap(); (f.dark_name.as_deref() == Some(rel.as_str())).then_some((f.dark_exposure_us, f.dark_gain)) };
+            let (exp, gain) = keep.unwrap_or((None, None));
+            let blocked = if matches!(self.job, Job::Darks(_)) { Err("darks are being captured".to_string()) } else { load_dark(&self.storage, &self.flat, rel, true, exp, gain) };
+            if let Err(e) = blocked {
+                not_restored.push(json!({ "what": "dark", "name": rel, "reason": e }));
+            }
+        }
+        if setup.flat.is_some() || setup.dark.is_some() {
+            self.save_flat_choice();
+        }
+        self.setups.active = Some(setup.name.clone());
+        if let Err(e) = self.setups.persist(self.storage.config_file()) {
+            not_restored.push(json!({ "what": "active setup", "name": setup.name, "reason": e }));
+        }
+        self.refresh_optics();
+        self.event("optics_setup_applied", json!({ "name": setup.name, "profile": self.status.profile, "not_restored": not_restored }));
+        Ok(json!({ "applied": setup.name, "before": before, "after": summary(&self.status), "not_restored": not_restored }))
     }
 
     fn save_flat_choice(&self) {

@@ -375,6 +375,20 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .confirm .btnrow .grow { flex: 1; }
 .hint-text { font-size: .85rem; }
 
+/* optical setups (More, Optics) */
+.setups { margin-bottom: 1rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line); }
+.setup-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-height: 32px; }
+.setup-name { font-weight: 700; overflow-wrap: anywhere; }
+.setup-badge { border: 1.5px solid var(--warn); color: var(--warn); border-radius: 999px; padding: .1rem .6rem; font-size: .85rem; font-weight: 700; }
+.setup-badge::before { content: '\25B2\00a0'; }
+.setup-sub { margin: 1rem 0 .25rem; font-size: .95rem; }
+.setup-line { margin: .25rem 0; font-weight: 650; overflow-wrap: anywhere; }
+.setup-result { margin-top: .75rem; border: 1.5px solid var(--ok); border-radius: var(--radius); padding: .6rem .75rem; }
+.setup-result ul { margin: .35rem 0 .35rem 1.1rem; padding: 0; }
+.btnrow.wrap { flex-wrap: wrap; }
+button.danger-outline { border-color: var(--bad); }
+.fratio { font-weight: 700; color: var(--fg); }
+
 /* Aim needs the pad on screen next to the picture (issue #49): a smaller picture on phones while aiming */
 @media (max-width: 699px) {
   .app[data-tab='camera'] .live { --vmax: 34dvh; }

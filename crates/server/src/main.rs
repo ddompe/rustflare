@@ -13,6 +13,7 @@ mod logs;
 mod preview;
 mod security;
 mod sessionlog;
+mod setups;
 mod stack_api;
 mod stackbridge;
 mod status;
