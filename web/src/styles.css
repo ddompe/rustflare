@@ -369,14 +369,48 @@ button.big { min-height: 52px; font-size: 1.05rem; }
 .hint-text { font-size: .85rem; }
 
 /* optical setups (More, Optics) */
-.setups { margin-bottom: 1rem; padding-bottom: .5rem; border-bottom: 1px solid var(--line); }
-.setup-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; min-height: 32px; }
+.setups { margin-bottom: .5rem; }
 .setup-name { font-weight: 700; overflow-wrap: anywhere; }
-.setup-badge { border: 1.5px solid var(--warn); color: var(--warn); border-radius: 999px; padding: .1rem .6rem; font-size: .85rem; font-weight: 700; }
-.setup-sub { margin: 1rem 0 .25rem; font-size: .95rem; }
-.setup-line { margin: .25rem 0; font-weight: 650; overflow-wrap: anywhere; }
-.setup-result { margin-top: .75rem; border: 1.5px solid var(--ok); border-radius: var(--radius); padding: .6rem .75rem; }
-.setup-result ul { margin: .35rem 0 .35rem 1.1rem; padding: 0; }
+button.setup-line { display: block; width: 100%; text-align: left; padding: 0; margin: .25rem 0; min-height: var(--tap); font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; color: var(--fg); }
+.setup-modified { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .4rem; color: var(--warn); font-weight: 650; }
+.setup-modified button.quiet { min-height: 44px; padding: 0 .5rem; color: var(--fg); }
+.setup-result { margin: .5rem 0; border: 1.5px solid var(--ok); border-radius: var(--radius); padding: .5rem .75rem; font-weight: 600; overflow-wrap: anywhere; }
+.setup-summary { margin: .75rem 0 .25rem; color: var(--muted); font-size: .9rem; line-height: 1.4; overflow-wrap: anywhere; }
+.setups > button.wide { margin-top: .25rem; }
+
+/* the Optical setups dialog: a full-screen sheet on a phone, a centred panel on a wide screen (same shape as Files) */
+.modal-back { position: fixed; inset: 0; z-index: 60; background: var(--bg); }
+.modal-panel { position: absolute; inset: 0; background: var(--bg); display: grid; grid-template-rows: auto minmax(0, 1fr); padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .5rem 1rem; border-bottom: 1px solid var(--line-soft); }
+.modal-head h2 { margin: 0; font-size: 1.25rem; }
+.modal-close { width: 44px; padding: 0; flex: none; }
+.modal-view { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+.modal-body { overflow-y: auto; padding: .25rem 1rem 1rem; overscroll-behavior: contain; min-height: 0; }
+.modal-foot { padding: .6rem 1rem .8rem; border-top: 1px solid var(--line-soft); background: var(--surface); }
+.modal-foot .btnrow { margin-top: .25rem; }
+.modal-foot .btnrow .grow { flex: 1 1 8rem; }
+.modal-sub { margin: .25rem 0 .5rem; font-size: 1.05rem; text-transform: none; letter-spacing: 0; outline-offset: 4px; }
+.modal-body button.back { padding: 0 .25rem; margin-left: -.25rem; }
+.setup-list { list-style: none; margin: 0; padding: 0; }
+.setup-row { padding: .75rem 0; border-top: 1px solid var(--line-soft); }
+.setup-row:first-child { border-top: 0; }
+.setup-row-head { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .6rem; }
+.setup-row .hint-text { margin: .2rem 0 .5rem; overflow-wrap: anywhere; }
+.setup-row .tag { height: auto; min-height: 28px; white-space: normal; display: inline-flex; gap: .3rem; }
+.setup-row .confirm { margin-top: .25rem; }
+.setup-note { margin: .5rem 0; font-weight: 600; }
+.field-err { color: var(--bad); font-weight: 650; font-size: .9rem; margin: .3rem 0 0; display: flex; gap: .35rem; align-items: baseline; }
+input[aria-invalid='true'] { border-color: var(--bad); }
+.setup-calc { margin: .75rem 0; font-weight: 650; overflow-wrap: anywhere; }
+.setup-stored { margin: .75rem 0 0; padding-top: .5rem; border-top: 1px solid var(--line-soft); }
+.setup-stored p { margin: .15rem 0; overflow-wrap: anywhere; }
+.setup-stored label.check { display: flex; align-items: center; gap: .6rem; min-height: 44px; margin-top: .35rem; }
+.setup-stored label.check input { width: 22px; height: 22px; flex: none; }
+@media (max-height: 520px) { .modal-head { padding: .25rem 1rem; } .modal-foot { padding: .4rem 1rem; } }
+@media (min-width: 900px) and (min-height: 600px) {
+  .modal-back { background: rgba(0, 0, 0, .6); display: grid; place-items: center; }
+  .modal-panel { position: relative; inset: auto; width: min(40rem, 92vw); height: min(44rem, 88vh); border: 1px solid var(--line); border-radius: 12px; }
+}
 .btnrow.wrap { flex-wrap: wrap; }
 button.danger-outline { border-color: var(--bad); }
 .fratio { font-weight: 700; color: var(--fg); }
@@ -841,7 +875,6 @@ summary { min-height: 44px; }
 :root[data-theme='day'] .sticky-act { background: linear-gradient(to bottom, #f6f3ef00, var(--bg) .75rem); }
 :root[data-theme='day'] .sbar-pop, :root[data-theme='day'] .notes-sheet { color: var(--fg); }
 :root[data-theme='day'] button.primary:disabled { color: var(--disabled-fg); }
-:root[data-theme='day'] .setup-badge { color: var(--warn); }
 
 /* phone landscape: the slew pad is three columns by two rows (stop and north above, west, south, east below), so it fits the panel */
 @media (max-height: 520px) and (orientation: landscape) {

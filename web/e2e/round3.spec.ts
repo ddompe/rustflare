@@ -432,7 +432,7 @@ test.describe('P3c: one name for each thing', () => {
     expect(all).toContain('Keep best (%): stacked from a video file')
     expect(all).toContain('Keep best (%): stacked from memory')
     expect(all).not.toMatch(/Best frames kept|Keep best \(%\) /)
-    expect(all.match(/Optical setup, in use: /g)!.length).toBeGreaterThanOrEqual(3)
+    expect(all.match(/Optical setup, in use: /g)!.length).toBeGreaterThanOrEqual(2)
   })
 
   test('the file manager root and the storage setting have their words', async ({ page }) => {
@@ -463,12 +463,6 @@ test.describe('P3c: one name for each thing', () => {
       const d = page.locator('details.disc', { has: page.locator('.disc-title', { hasText: new RegExp(`^${title}$`) }) })
       if (!(await d.evaluate((e) => (e as HTMLDetailsElement).open))) await d.locator('summary').click()
     }
-    await open('Optical setup')
-    await reasoned('Use these values')
-    await reasoned('Duplicate')
-    await reasoned('Delete…')
-    await reasoned(/^Apply/)
-    await reasoned('Save as new…')
     await open('RAM buffer')
     await reasoned('Set buffer')
     await open('Storage')

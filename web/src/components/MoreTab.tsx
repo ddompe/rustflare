@@ -7,12 +7,10 @@ import { StorageSettings } from './Storage'
 import { useStretch } from '../stretch'
 import { SessionLog } from './SessionLog'
 import { useSetting } from '../settings'
-import { noun, profileOf, PROFILES, why } from '../profile'
+import { noun, profileOf, why } from '../profile'
 import { Why } from './Profile'
-import { OpticalSetups } from './OpticalSetups'
+import { OpticalSetupPicker } from './OpticalSetups'
 import { canLocate, locate } from './SiteHelp'
-
-const arcmin = (s: number) => `${Math.floor(s / 60)}′ ${(s % 60).toFixed(0)}″`
 
 function SiteSettings({ status }: { status: Status | null }) {
   const [lat, setLat] = useState(status?.site ? String(status.site.latitude) : '')
@@ -105,58 +103,20 @@ function BarlowCheck({ o, onApply }: { o: Optics; onApply: (focal: number | null
   )
 }
 
-/** Telescope focal length and pixel size → image scale → expected size of the Sun in pixels. */
-function OpticsSettings({ status }: { status: Status | null }) {
+/** The optical setup: one dropdown, one Manage button, one line of what is in use (the form lives in the Manage dialog). */
+function OpticsSettings({ status, openOptics, opticsOpen }: { status: Status | null; openOptics: () => void; opticsOpen: boolean }) {
   const o = status?.optics
-  const [focal, setFocal] = useState('')
-  const [mult, setMult] = useState('1')
-  const [pixel, setPixel] = useState('')
-  const [bin, setBin] = useState(1)
   const { err, run } = useAction()
-  const [dirty, setDirty] = useState(false)
-  useEffect(() => {
-    if (!o || dirty) return
-    setFocal(o.focal_length_mm?.toString() ?? '')
-    setMult(o.focal_multiplier.toString())
-    setPixel(o.pixel_size_override_um?.toString() ?? '')
-    setBin(o.binning)
-  }, [o?.focal_length_mm, o?.focal_multiplier, o?.pixel_size_override_um, o?.binning, dirty]) // eslint-disable-line react-hooks/exhaustive-deps
   if (!o) return null
-
-  const num = (s: string) => (s.trim() === '' ? null : parseFloat(s))
   const sun = status?.sun
   const mismatch = sun && o.expected_radius_px && Math.abs(sun.radius / o.expected_radius_px - 1) > 0.1
   return (
     <div>
-      <h2 className="subhead">Values in use</h2>
-      <div className="grid2">
-        <Field label="Focal length (mm)">{(id) => <input id={id} inputMode="decimal" value={focal} onChange={(e) => { setFocal(e.target.value); setDirty(true) }} placeholder="telescope" />}</Field>
-        <Field label="Barlow / reducer (×)">
-          {(id) => (
-            <>
-              <input id={id} inputMode="decimal" list="barlow-presets" value={mult} onChange={(e) => { setMult(e.target.value); setDirty(true) }} title="Magnification factor: 2 for a 2x Barlow, 0.63 for a reducer, 1 for none" />
-              <datalist id="barlow-presets">{[0.5, 0.63, 0.8, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5].map((m) => <option key={m} value={m} />)}</datalist>
-            </>
-          )}
-        </Field>
-        <Field label="Pixel size (µm)">{(id) => <input id={id} inputMode="decimal" value={pixel} onChange={(e) => { setPixel(e.target.value); setDirty(true) }} placeholder={o.pixel_size_source === 'camera' ? `${o.pixel_size_um} (camera)` : 'µm'} />}</Field>
-        <Field label="Binning">{(id) => <select id={id} value={bin} onChange={(e) => { setBin(parseInt(e.target.value)); setDirty(true) }}>{[1, 2, 3, 4].map((b) => <option key={b}>{b}</option>)}</select>}</Field>
-      </div>
-      {o.effective_focal_mm && Math.abs(o.focal_multiplier - 1) > 1e-6 && <div className="hint-text">Effective focal length {o.effective_focal_mm.toFixed(0)} mm.</div>}
-      <p className="hint-text">Profile: <b>{PROFILES.find((x) => x.id === profileOf(status))?.label}</b> (change it on the Camera tab).</p>
-      <button type="button" className="primary wide" disabled={!dirty} aria-describedby={!dirty ? 'why-use-values' : undefined} onClick={() => run(async () => { await api('PUT', '/optics', { focal_length_mm: num(focal), focal_multiplier: num(mult) ?? 1, pixel_size_um: num(pixel), binning: bin }); setDirty(false) })}>Use these values</button>
-      <p className={`hint-text ${dirty ? '' : 'gate-why'}`} id="why-use-values">{dirty ? 'Puts the values to work now. To keep them under a name, use Save below.' : 'Use these values is off until you change one of the values above. To keep them under a name, use Save below.'}</p>
-      {o.expected_radius_px ? (
-        <p className="hint-text">
-          Image scale {o.scale_arcsec_per_px!.toFixed(2)} ″/px · {noun(profileOf(status))==='target' ? 'the target' : `the ${noun(profileOf(status))}`} is {arcmin(o.target_radius_arcsec ?? o.solar_radius_arcsec)} in radius today ⇒ <b>≈ {o.expected_radius_px.toFixed(0)} px</b>. Partial-disc tracking uses this radius.
-        </p>
-      ) : (
-        <p className="hint-text">Enter the telescope's focal length, plus the Barlow or reducer factor if you use one (and pixel size if the camera doesn't report it) so partial-disc tracking knows how big the Sun is. Needed for an H-alpha view that doesn't show the whole disc.</p>
-      )}
-      <BarlowCheck o={o} onApply={(focal, mult) => run(async () => { await api('PUT', '/optics', { focal_length_mm: focal, focal_multiplier: mult, pixel_size_um: o.pixel_size_override_um, binning: o.binning }); setDirty(false) })} />
+      <OpticalSetupPicker status={status} openManager={openOptics} modalOpen={opticsOpen} />
+      {!o.expected_radius_px && <p className="hint-text">Choose or create an optical setup with the telescope's focal length (and the pixel size if the camera does not report it) so partial-disc tracking knows how big the Sun is.</p>}
+      <BarlowCheck o={o} onApply={(focal, mult) => run(async () => { await api('PUT', '/optics', { focal_length_mm: focal, focal_multiplier: mult, pixel_size_um: o.pixel_size_override_um, binning: o.binning }) })} />
       {mismatch && <div className="warn">Measured radius {sun!.radius.toFixed(0)} px differs from expected {o.expected_radius_px!.toFixed(0)} px: check focal length, reducer/barlow and binning.</div>}
       <ErrorLine error={err} />
-      <OpticalSetups status={status} form={{ focal, mult, pixel, bin, dirty }} onApplied={() => setDirty(false)} />
     </div>
   )
 }
@@ -202,7 +162,7 @@ function Startup({ status }: { status: Status | null }) {
 }
 
 /** Everything that is set once and left alone, one collapsed line each. */
-export function MoreTab({ status, display, setDisplay, resetDisplay, focus, openFiles }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; resetDisplay: () => void; focus: { id: string; nonce: number } | null; openFiles: (path?: string) => void }) {
+export function MoreTab({ status, display, setDisplay, resetDisplay, focus, openFiles, openOptics, opticsOpen }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; resetDisplay: () => void; focus: { id: string; nonce: number } | null; openFiles: (path?: string) => void; openOptics: () => void; opticsOpen: boolean }) {
   const [saved, setSaved] = useSetting('ui.more_open', '')
   const [open, setOpen] = useState<string | null>(focus?.id ?? (saved || null))
   useEffect(() => { if (focus) setOpen(focus.id) }, [focus?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -223,7 +183,7 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus, open
         </div>
       )}
       {item('display', 'Display', `${display.tint === 'none' ? 'grayscale' : display.tint === 'orange' ? 'H-alpha orange' : 'deep red'} · ${display.rings ? `${display.rings} rings` : 'no rings'}`, <DisplaySettings d={display} set={setDisplay} reset={resetDisplay} status={status} />)}
-      {item('optics', 'Optical setup', (o?.setup?.active ? `${o.setup.active}${o.setup.modified ? ' (modified)' : ''} · ` : '') + (o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set'), <OpticsSettings status={status} />)}
+      {item('optics', 'Optical setup', (o?.setup?.active ? `${o.setup.active}${o.setup.modified ? ' (modified)' : ''} · ` : '') + (o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set'), <OpticsSettings status={status} openOptics={openOptics} opticsOpen={opticsOpen} />)}
       {item('site', 'Site', status?.site ? `${status.site.latitude.toFixed(2)}°, ${status.site.longitude.toFixed(2)}°` : 'not set', <SiteSettings status={status} />)}
       {item('stacking', 'Stacking', stackSummary(stackInfo), <Stacking info={stackInfo} reload={reloadStack} onOpenFiles={() => openFiles('stacks')} />)}
       {item('storage', 'Storage', 'where captures are saved', <StorageSettings status={status} />)}

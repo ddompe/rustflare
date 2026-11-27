@@ -10,6 +10,7 @@ import { TrackTab } from './components/TrackTab'
 import { RecordTab } from './components/RecordTab'
 import { MoreTab } from './components/MoreTab'
 import { FileManagerScreen } from './components/FileManager'
+import { OpticalSetupsModal } from './components/OpticalSetups'
 import { ToneIcon, Tone } from './components/ui'
 import { SetupStrip, SetupStepId } from './components/SetupStrip'
 import { holdLevel } from './vocab'
@@ -29,6 +30,7 @@ export function App() {
   const { status, connected } = useStatus()
   const [anchorPick, setAnchorPick] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
+  const [opticsOpen, setOpticsOpen] = useState(false)
   // Files opens in the folder it was last in, or in `path` when a screen sends you to one (the stacks)
   const openFiles = (path?: string) => { if (path !== undefined) sessionStorage.setItem('rf-fm-cwd', path); setFilesOpen(true) }
   const [display, setDisplay, resetDisplay] = useDisplay()
@@ -151,11 +153,11 @@ export function App() {
       </nav>
 
       <main ref={panelRef} className="panel" id="panel" role="tabpanel" aria-label={TABS.find((x) => x.id === tab)?.label} tabIndex={-1}>
-        {tab === 'camera' && <CameraTab status={status} next={() => goto('aim')} setup={<SetupStrip status={status} onStep={onSetupStep} variant="bar" />} />}
+        {tab === 'camera' && <CameraTab status={status} next={() => goto('aim')} openOptics={() => setOpticsOpen(true)} setup={<SetupStrip status={status} onStep={onSetupStep} variant="bar" />} />}
         {tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} focus={aimFocus} />}
         {tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} toCamera={() => setTab('camera')} />}
         {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={openFiles} saved={saved} dismissSaved={dismissSaved} toCamera={() => setTab('camera')} />}
-        {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} openFiles={openFiles} />}
+        {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} openFiles={openFiles} openOptics={() => setOpticsOpen(true)} opticsOpen={opticsOpen} />}
       </main>
       <StatusBar status={status} connected={connected} />
       {full && status && status.capture.state !== 'idle' && (
@@ -163,6 +165,7 @@ export function App() {
       )}
       {full && <button type="button" className="fullbtn" aria-pressed onClick={() => setFull(false)}>Show controls</button>}
       {filesOpen && <FileManagerScreen status={status} onClose={() => setFilesOpen(false)} />}
+      {opticsOpen && <OpticalSetupsModal status={status} onClose={() => setOpticsOpen(false)} />}
     </div>
   )
 }

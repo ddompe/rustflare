@@ -153,7 +153,7 @@ function Slider({ c, marks }: { c: Control; marks?: { v: number; label: string; 
 const PRIMARY = ['exposure_us', 'gain']
 
 /** Step 1: open the camera, then get a good exposure (histogram, no clipping). */
-export function CameraTab({ status, next, setup }: { status: Status | null; next: () => void; /** the first-session strip: below the exposure, so the first screen stays the picture, Start, profile and exposure */ setup?: ReactNode }) {
+export function CameraTab({ status, next, setup, openOptics }: { status: Status | null; next: () => void; /** opens the Optical setups dialog */ openOptics: () => void; /** the first-session strip: below the exposure, so the first screen stays the picture, Start, profile and exposure */ setup?: ReactNode }) {
   const [list, setList] = useState<CameraInfo[]>([])
   const [sel, setSel] = useSetting('camera.selected', '')
   const { err, busy, run } = useAction()
@@ -218,7 +218,7 @@ export function CameraTab({ status, next, setup }: { status: Status | null; next
       <h2 className="sr-only">What are you imaging?</h2>
       <ProfilePicker status={status} />
       <Section error={err}>
-        {status?.optics?.setup?.active && <p className="setup-line" aria-label={`Optical setup, in use: ${status.optics.setup.active}`}>In use: {status.optics.setup.active}{status.optics.setup.modified ? ' (modified)' : ''}{status.optics.scale_arcsec_per_px ? ` · ${status.optics.scale_arcsec_per_px.toFixed(2)}″/px` : ''}</p>}
+        {status?.optics?.setup?.active && <button type="button" className="setup-line quiet" aria-label={`Optical setup, in use: ${status.optics.setup.active}. Opens the optical setups.`} onClick={openOptics}>In use: {status.optics.setup.active}{status.optics.setup.modified ? ' (modified)' : ''}{status.optics.scale_arcsec_per_px ? ` · ${status.optics.scale_arcsec_per_px.toFixed(2)}″/px` : ''}</button>}
         {cam.histogram.length > 0 && <Histogram bins={cam.histogram} saturated={cam.saturated} rgb={cam.histogram_rgb} saturatedRgb={cam.saturated_rgb} planetClip={profileOf(status) === 'planet' ? clipping(cam, 'planet') : null} />}
         {primary.map((c) => {
           const marks = c.id === 'gain' && cat ? gainMarks(cat) : undefined
