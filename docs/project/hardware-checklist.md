@@ -1,6 +1,6 @@
 # Hardware verification checklist
 
-Everything below was built and tested on the simulators; each item needs the real device. The build on the Pi at the time of writing is `0.5.0` (see `dpkg -s rustflare`). Tick off an item, then close its GitHub issue.
+Everything below was built and tested on the simulators; each item needs the real device. The version on the Pi is shown at the right of the status bar (or `dpkg -s rustflare`); the software at the time of writing is `0.8.2`. Tick off an item, then close its GitHub issue.
 
 ## Verified on real hardware
 
@@ -10,6 +10,8 @@ Everything below was built and tested on the simulators; each item needs the rea
 - [x] Pi clock NTP-synchronised, hardware RTC present
 - [x] 2026-11-22 (owner): BLE connection to the AM3, Go to Sun, darks applied, flat applied in the overlay
 - [x] 2026-11-22: safe eject of the FAT32 stick, tracking on real H-alpha with a Lunt LS50, the pointing readout (`:GAST#`) within 0.3 degrees of the Sun, the mount command log, guiding through a cloud pass (dead reckoning), focus assist (feedback in #78), the 60-second pointing check, and a 10-minute hotspot cycle joined from the phone
+- [x] 2026-11-26/27: iOptron HAE69C over USB: `:MountInfo#` answers `0066`, state, tracking on and off, stop (replies take 300 to 600 ms: reply timeout 2 s), the mount's site and clock read (its clock had never been set: 2017-01-01).
+- [x] ZWO ASI174MM Mini on a Pi 5, libasi 1.27: open, controls and frames, on a USB 2 port (8.7 fps at 16-bit; the USB 3 rate is still to measure, #30)
 - [x] 2026-11-22: real prominence-lane recordings with the coronagraph (they exposed the Sun-detection and mask problems fixed the same day; a clean run after the fixes is still to be checked)
 
 ## Found on the Sun on 2026-11-22 and fixed (to re-verify)
@@ -122,11 +124,11 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 |---|---|
 | #30 | ASI174MM Mini on a USB 3 cable and blue port: open, set exposure/gain, fps at full frame and ROI |
 
-## iOptron mount driver (new, 0.7, mock only)
+## iOptron mount driver (0.7; a real HAE69C connected on 2026-11-26 and 27, the rest mock only)
 
 | Check | How |
 |---|---|
-| Connect | Aim > Mount `ioptron`, the mount's USB serial port: the card names the model (`:MountInfo#`). CEM70 expected `0070`; **write down what the HAE69 answers** |
+| Connect | Aim > Mount `ioptron`, the mount's USB serial port: the card names the model (`:MountInfo#`). CEM70 expected `0070`; a real HAE69C answered `0066` (done, 2026-11-26) |
 | State | `GET /api/debug/mount-query?what=GLS` while tracking, slewing and parked: the status digit matches what the mount does |
 | Site and time | Go to Sun sends them; the mount's hand controller shows the right place and UTC time |
 | Mount time and place (#104) | Aim > *Mount time and place* shows the mount's site and clock (the HAE69C's clock was seen unset, 2017-01-01) and the chip says it differs. **With someone at the mount**, press *Send site and time to the mount* (set commands, no motion): the block reads "matches", the hand controller shows the Pi's place and UTC time, and the clock keeps ticking (look again after a minute). On an AM3: the clock is read from `:GAST#` (the mount's local time), the place shows "not reported" |
