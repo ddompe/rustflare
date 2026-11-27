@@ -12,18 +12,29 @@ Type your latitude and longitude in degrees, east positive (a site west of Green
 
 ## Optics
 
-Enter the telescope's native focal length and, if you use one, the Barlow or reducer factor. RustFlare shows the effective focal length, the image scale and how large the Sun should be in pixels, and tells you when the measured Sun disagrees.
+Choose the optical setup (below), or make one with the telescope's native focal length and, if you use one, the Barlow or reducer factor. RustFlare shows the effective focal length, the image scale and how large the Sun should be in pixels, and tells you when the measured Sun disagrees.
 
 ### Optical setup (your telescopes)
 
 If you use more than one telescope, or one telescope with several reducers and Barlows, save each as a **named optical setup** (for example *Lunt LS50 + Barlow* for the Sun in H-alpha, *C11 + reducer* for the Moon and planets). A setup holds the focal length, the Barlow or reducer factor, the pixel size, the binning, an optional aperture (it shows the f-ratio) and notes, **the profile it is used for**, and the master flat and dark that were in use when it was saved. Nothing is created for you: an install that never saves a setup behaves as before.
 
-- **Save as new...**: type a name (1 to 40 characters) and press it. What is typed in the optical setup fields is put in use first, the setup is saved with the *Profile to switch to when applied* chosen above it (the current profile to begin with, or *Keep the current profile*), and it becomes the setup in use.
-- **Apply**: pick a setup and press Apply. The optics and the profile change together (so the expected size and the tracker follow), and its flat and dark are selected again. The result lists what changed: profile, effective focal length, image scale in arcseconds per pixel and the expected size in pixels. A flat or dark that is gone is reported and everything else is still applied. Applying never moves the mount and never starts a recording or tracking.
-- **Modified**: if you change the optics or the profile after applying a setup, it is marked *modified*. Nothing is overwritten: press **Revert** to go back to the saved setup, **Update “name”** to save the changes into it (a line says what it replaces, for example *replaces 400 mm × 2 with 400 mm × 1.5*, and it asks before it overwrites), or **Save as new...** under another name. **Use these values** puts typed values to work without saving them under a name.
-- **Duplicate** copies the picked setup under a new name. **Delete...** asks first (Cancel, then Delete) and says what is forgotten; the values in use stay as they are.
+The page has three things and nothing else:
 
-The block order is: *Values in use* (focal length, Barlow or reducer, pixel size, binning, profile), *Saved optical setups* (pick, apply, duplicate, delete), then *Save*. The setup in use is shown as *In use: name* in the Optical setup summary, on the Camera tab and under the profile picker. A greyed button always has its reason written under it.
+- **Optical setup**, a dropdown of your saved setups. Choosing one **applies it at once**: the optics and the profile change together (so the expected size and the tracker follow), and its flat and dark are selected again. One line says what you now have, for example *“Lunt + Barlow” applied: 800 mm · 0.97″/px · Sun, H-alpha*. A flat or dark that is gone is reported there and everything else is still applied. Applying never moves the mount and never starts a recording or tracking. While a recording runs the dropdown is greyed with the reason under it, because the optics and the profile are written into the files being recorded.
+- **Manage...**, which opens the *Optical setups* dialog (below).
+- A read-only line of what is in use: *800 mm (400 × 2) · f/16 · 0.97″/px · expected Sun radius 540 px · Sun, H-alpha*.
+
+When the optics in use match no saved setup the dropdown shows **Custom (not saved)** first. If you change the optics or the profile after applying a setup, the dropdown shows *name (modified)* with a small **Revert** link that goes back to the saved values. Nothing is overwritten by itself.
+
+**The Optical setups dialog** (a full-screen sheet on a phone, a centred panel on a computer; Escape or the close button leaves it and puts you back on Manage...) lists the saved setups with their values and profile and marks the one in use. Each row has:
+
+- **Edit**, which opens the one form below.
+- **Duplicate**, which adds a copy named *name copy*; Edit renames it.
+- **Delete**, which asks in the row (*Delete “name”? Its values, profile, flat and dark names are forgotten.* Cancel, then Delete). The values in use stay as they are.
+
+**New setup...** opens the same form, filled from the optics in use, so *Custom (not saved)* can be kept under a name in one step. The form has the name (1 to 40 characters, unique, no slash), focal length, Barlow or reducer factor, pixel size override (blank: the camera's), binning, aperture (the f-ratio shows as you type), the profile for this setup (*Keep the current profile* leaves the profile alone), notes, and shows the image scale and expected radius it gives. It also shows the flat and dark that are stored with it; *Include the current flat and dark* is on by default. Problems are written under the field. **Save** keeps it (renaming it in place when you changed the name; if it is the setup in use, the new values are applied too), **Save and use** (new setups) keeps it and applies it. If you just want values in use without keeping them, make a setup called *Custom*.
+
+Nothing is created for you: an install that never saves a setup behaves as before. The setup in use is shown as *In use: name* on the Camera tab (tap it to open the dialog) and under the profile picker. A greyed control always has its reason written under it.
 
 ## Storage
 

@@ -24,7 +24,7 @@ The **automatic meridian flip** and the **flip assist** follow what the profile 
 
 ## A telescope carries its profile
 
-A saved [optical setup](more.md#optical-setups-your-telescopes) (a telescope with its reducer or Barlow) carries the profile it is used for: *Lunt LS50 + Barlow* with Sun, H-alpha, *C11 + reducer* with Moon. Applying the setup switches the profile along with the focal length, so changing telescope is one step. It still never moves the mount or starts anything, and you can change the profile afterwards by hand: the setup then shows as *modified* until you revert or update it. A setup saved with *Keep the current profile* leaves the profile alone.
+A saved [optical setup](more.md#optical-setups-your-telescopes) (a telescope with its reducer or Barlow) carries the profile it is used for: *Lunt LS50 + Barlow* with Sun, H-alpha, *C11 + reducer* with Moon. Applying the setup switches the profile along with the focal length, so changing telescope is one step. It still never moves the mount or starts anything, and you can change the profile afterwards by hand: the setup then shows as *modified* until you revert it (or save the new values over it with Edit in Manage...). A setup saved with *Keep the current profile* leaves the profile alone.
 
 ## Moon or planets with a colour camera
 
