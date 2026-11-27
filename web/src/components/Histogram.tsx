@@ -1,7 +1,9 @@
+/** The three curves differ in line style as well as hue (solid, dashed, dotted), and each channel has its letter in the legend and on its clip marker.
+ *  The colours are theme variables (--hist-r/g/b) so every stroke keeps at least 3:1 against the plot in the night and the day theme. */
 const CH = [
-  { k: 'R', name: 'red', fill: '#ff5a4d' },
-  { k: 'G', name: 'green', fill: '#3ddc6e' },
-  { k: 'B', name: 'blue', fill: '#4d8dff' },
+  { k: 'R', name: 'red', fill: 'var(--hist-r)', dash: undefined },
+  { k: 'G', name: 'green', fill: 'var(--hist-g)', dash: '7 4' },
+  { k: 'B', name: 'blue', fill: 'var(--hist-b)', dash: '1.5 4' },
 ] as const
 
 /** A step-area path over the 100 x 30 box for one channel (sqrt scale, so small populations stay visible). */
@@ -16,14 +18,13 @@ function area(bins: number[], max: number): string {
  * The bars of a histogram: a single blue-grey series for a mono camera; for a colour camera three overlaid curves (red, green, blue)
  * with a stroke so they read in sunlight, and a marker at the right edge for every channel that clips.
  */
-export function HistPlot({ bins, rgb, saturatedRgb, clipped, className, hidden }: { bins: number[]; rgb?: number[][] | null; saturatedRgb?: number[] | null; clipped: boolean; className?: string; hidden?: boolean }) {
+export function HistPlot({ bins, rgb, clipped, className, hidden }: { bins: number[]; rgb?: number[][] | null; saturatedRgb?: number[] | null; clipped: boolean; className?: string; hidden?: boolean }) {
   const a11y = hidden ? { 'aria-hidden': true as const } : { role: 'img' as const, 'aria-label': rgb ? 'Histogram of pixel brightness per colour channel' : 'Histogram of pixel brightness' }
   if (rgb && rgb.length === 3 && rgb[0].length) {
     const max = Math.max(...rgb.flat().map(Math.sqrt), 1e-6)
     return (
       <svg className={`${className ?? ''} hist-rgb`.trim()} viewBox="0 0 100 30" preserveAspectRatio="none" data-testid="hist-rgb" {...a11y}>
-        {CH.map((c, i) => <path key={c.k} d={area(rgb[i], max)} fill={c.fill} fillOpacity={0.4} stroke={c.fill} strokeWidth={1.6} vectorEffect="non-scaling-stroke" data-channel={c.k} />)}
-        {CH.map((c, i) => (saturatedRgb?.[i] ?? 0) > 0.001 && <rect key={c.k} x={100 - 2.4 - i * 2.4} y={0} width={2.2} height={30} fill={c.fill} stroke="#fff" strokeWidth={0.8} vectorEffect="non-scaling-stroke" data-clip={c.k} />)}
+        {CH.map((c, i) => <path key={c.k} d={area(rgb[i], max)} fillOpacity={0.3} style={{ fill: c.fill, stroke: c.fill }} strokeWidth={2} strokeDasharray={c.dash} strokeLinecap="round" vectorEffect="non-scaling-stroke" data-channel={c.k} />)}
       </svg>
     )
   }
@@ -34,7 +35,7 @@ export function HistPlot({ bins, rgb, saturatedRgb, clipped, className, hidden }
       {bins.map((b, i) => {
         const h = (Math.sqrt(b) / max) * 30
         const last = i === bins.length - 1
-        return <rect key={i} x={i * w} y={30 - h} width={w * 0.9} height={h} fill={last && clipped ? '#ff7466' : '#7dd3fc'} />
+        return <rect key={i} x={i * w} y={30 - h} width={w * 0.9} height={h} style={{ fill: last && clipped ? 'var(--bad)' : 'var(--hist-m)' }} />
       })}
     </svg>
   )
@@ -55,17 +56,29 @@ export function Histogram({ bins, saturated, rgb, saturatedRgb, planetClip }: { 
   return (
     <div className="hist">
       <HistPlot bins={bins} rgb={rgb} saturatedRgb={saturatedRgb} clipped={clipped} />
-      {rgb && (
-        <div className="hist-legend" aria-hidden="true">
-          {CH.map((c) => <span key={c.k}><i style={{ background: c.fill }} />{c.k}</span>)}
+      {rgb && saturatedRgb && (
+        <div className="hist-clip" aria-hidden="true">
+          {CH.map((c, i) => (saturatedRgb[i] ?? 0) > 0.001 && <b key={c.k} data-clip={c.k} style={{ background: c.fill }}>{c.k}</b>)}
         </div>
       )}
-      <div className={`hist-msg ${clipped ? 'bad' : 'ok'}`} role={clipped ? 'alert' : undefined}>
-        {planetClip
-          ? (clipped ? `Clipping: the brightest part of the picture (the planet) is at ${planetClip.value} of full scale. Reduce exposure or gain.` : 'No clipping')
-          : clipped
-          ? (which ? `Clipping: ${which} of the ${which.includes(',') ? 'channels' : 'channel'}'s pixels at full scale. Reduce exposure or gain.` : `Clipping: ${(saturated * 100).toFixed(1)}% of pixels at full scale. Reduce exposure or gain.`)
-          : 'No clipping'}
+      <div className="hist-foot">
+        <div className={`hist-msg ${clipped ? 'bad' : 'ok'}`} role={clipped ? 'alert' : undefined}>
+          {planetClip
+            ? (clipped ? `Clipping: the brightest part of the picture (the planet) is at ${planetClip.value} of full scale. Reduce exposure or gain.` : 'No clipping')
+            : clipped
+            ? (which ? `Clipping: ${which} of the ${which.includes(',') ? 'channels' : 'channel'}'s pixels at full scale. Reduce exposure or gain.` : `Clipping: ${(saturated * 100).toFixed(1)}% of pixels at full scale. Reduce exposure or gain.`)
+            : 'No clipping'}
+        </div>
+        {rgb && (
+          <div className="hist-legend" aria-hidden="true">
+            {CH.map((c) => (
+              <span key={c.k}>
+                <svg viewBox="0 0 26 10"><line x1="2" y1="5" x2="24" y2="5" style={{ stroke: c.fill }} strokeWidth="2.4" strokeDasharray={c.dash} strokeLinecap="round" /></svg>
+                {c.k}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

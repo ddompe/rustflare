@@ -7,7 +7,7 @@ import { StorageSettings } from './Storage'
 import { useStretch } from '../stretch'
 import { SessionLog } from './SessionLog'
 import { useSetting } from '../settings'
-import { noun, profileOf, why } from '../profile'
+import { noun, profileOf, PROFILES, why } from '../profile'
 import { Why } from './Profile'
 import { OpticalSetups } from './OpticalSetups'
 
@@ -45,10 +45,10 @@ function DisplaySettings({ d, set, reset, status }: { d: Display; set: (p: Parti
   const Nn = noun(prof)[0].toUpperCase() + noun(prof).slice(1)
   return (
     <div>
-      <h3>Image</h3>
+      <h2 className="subhead">Image</h2>
       <Switch label="Auto-stretch" checked={stretch} onChange={setStretch} hint="Brightens dim 16-bit frames (everyone's preview)." />
-      <Switch label="Prominence view (software coronagraph)" checked={!!status?.coronagraph?.enabled} disabled={!status?.sun || !!noCorona} onChange={(on) => api('PUT', '/coronagraph', { enabled: on, scale: status?.coronagraph?.scale ?? 1.03 }).catch((e) => reportError(e, 'Prominence view'))} hint={status?.sun ? 'Blacks out the Sun disc in the live view so the faint prominences and limb show. Viewing only: recordings are untouched.' : 'Needs the Sun in view.'} />
-      <Why id="why-corona" text={noCorona} />
+      <Switch label="Prominence view (software coronagraph)" checked={!!status?.coronagraph?.enabled} disabled={!status?.sun || !!noCorona} describedBy="why-corona" onChange={(on) => api('PUT', '/coronagraph', { enabled: on, scale: status?.coronagraph?.scale ?? 1.03 }).catch((e) => reportError(e, 'Prominence view'))} hint={status?.sun ? 'Blacks out the Sun disc in the live view so the faint prominences and limb show. Viewing only: recordings are untouched.' : 'Needs the Sun in view.'} />
+      <Why id="why-corona" text={noCorona} subject="Prominence view" />
       {status?.coronagraph?.enabled && <RangeField label="Mask size" value={status.coronagraph.scale} min={0.9} max={1.2} step={0.005} show={`${Math.round(status.coronagraph.scale * 100)}% of the disc`} onChange={(v) => api('PUT', '/coronagraph', { enabled: true, scale: v }).catch((e) => reportError(e, 'Prominence view'))} />}
       <RangeField label="Brightness" value={d.brightness} min={0.3} max={4} step={0.05} show={d.brightness.toFixed(2)} onChange={(v) => set({ brightness: v })} />
       <RangeField label="Contrast" value={d.contrast} min={0.3} max={4} step={0.05} show={d.contrast.toFixed(2)} onChange={(v) => set({ contrast: v })} />
@@ -61,16 +61,16 @@ function DisplaySettings({ d, set, reset, status }: { d: Display; set: (p: Parti
         )}
       </Field>
       <Switch label="Invert" checked={d.invert} onChange={(on) => set({ invert: on })} />
-      <h3>Overlays</h3>
+      <h2 className="subhead">Overlays</h2>
       <Switch label="Crosshair" checked={d.crosshair} onChange={(on) => set({ crosshair: on })} />
       <Switch label="Rule-of-thirds grid" checked={d.grid} onChange={(on) => set({ grid: on })} />
       <Switch label="Show overlays" checked={d.overlays} onChange={(on) => set({ overlays: on })} hint="Off shows the bare image (also the eye button on the live view)." />
-      <Switch label={`${Nn} edge circle`} checked={d.sunOutline} disabled={!!noCircle} onChange={(on) => set({ sunOutline: on })} />
-      <Why id="why-circle" text={noCircle} />
+      <Switch label={`${Nn} edge circle`} checked={d.sunOutline} disabled={!!noCircle} describedBy="why-circle" onChange={(on) => set({ sunOutline: on })} />
+      <Why id="why-circle" text={noCircle} subject={`${Nn} edge circle`} />
       <Switch label={`${Nn} centre dot and arrow`} checked={d.sunCentre} onChange={(on) => set({ sunCentre: on })} />
       <RangeField label="Bullseye rings" value={d.rings} min={0} max={8} step={1} show={d.rings ? String(d.rings) : 'off'} onChange={(v) => set({ rings: Math.round(v) })} />
       <RangeField label="Ring size" value={d.ringSize} min={3} max={50} step={1} show={`${d.ringSize}%`} onChange={(v) => set({ ringSize: Math.round(v) })} />
-      <h3>Stream</h3>
+      <h2 className="subhead">Stream</h2>
       <Field label="Preview fps" hint="Lower saves Wi-Fi.">
         {(id) => <select id={id} value={d.fps} onChange={(e) => set({ fps: parseInt(e.target.value) })}>{[2, 5, 10, 15, 30].map((f) => <option key={f} value={f}>{f}</option>)}</select>}
       </Field>
@@ -128,8 +128,7 @@ function OpticsSettings({ status }: { status: Status | null }) {
   const mismatch = sun && o.expected_radius_px && Math.abs(sun.radius / o.expected_radius_px - 1) > 0.1
   return (
     <div>
-      <OpticalSetups status={status} form={{ focal, mult, pixel, bin, dirty }} onApplied={() => setDirty(false)} />
-      <h4 className="setup-sub">Optics in use</h4>
+      <h2 className="subhead">Optical setup in use</h2>
       <div className="grid2">
         <Field label="Focal length (mm)">{(id) => <input id={id} inputMode="decimal" value={focal} onChange={(e) => { setFocal(e.target.value); setDirty(true) }} placeholder="telescope" />}</Field>
         <Field label="Barlow / reducer (×)">
@@ -144,7 +143,9 @@ function OpticsSettings({ status }: { status: Status | null }) {
         <Field label="Binning">{(id) => <select id={id} value={bin} onChange={(e) => { setBin(parseInt(e.target.value)); setDirty(true) }}>{[1, 2, 3, 4].map((b) => <option key={b}>{b}</option>)}</select>}</Field>
       </div>
       {o.effective_focal_mm && Math.abs(o.focal_multiplier - 1) > 1e-6 && <div className="hint-text">Effective focal length {o.effective_focal_mm.toFixed(0)} mm.</div>}
-      <button type="button" className="primary wide" disabled={!dirty} onClick={() => run(async () => { await api('PUT', '/optics', { focal_length_mm: num(focal), focal_multiplier: num(mult) ?? 1, pixel_size_um: num(pixel), binning: bin }); setDirty(false) })}>Save optics</button>
+      <p className="hint-text">Profile: <b>{PROFILES.find((x) => x.id === profileOf(status))?.label}</b> (change it on the Camera tab).</p>
+      <button type="button" className="primary wide" disabled={!dirty} onClick={() => run(async () => { await api('PUT', '/optics', { focal_length_mm: num(focal), focal_multiplier: num(mult) ?? 1, pixel_size_um: num(pixel), binning: bin }); setDirty(false) })}>Use these values</button>
+      <p className="hint-text">Puts the values to work now. To keep them under a name, use Save below.</p>
       {o.expected_radius_px ? (
         <p className="hint-text">
           Image scale {o.scale_arcsec_per_px!.toFixed(2)} ″/px · {noun(profileOf(status))==='target' ? 'the target' : `the ${noun(profileOf(status))}`} is {arcmin(o.target_radius_arcsec ?? o.solar_radius_arcsec)} in radius today ⇒ <b>≈ {o.expected_radius_px.toFixed(0)} px</b>. Partial-disc tracking uses this radius.
@@ -155,6 +156,7 @@ function OpticsSettings({ status }: { status: Status | null }) {
       <BarlowCheck o={o} onApply={(focal, mult) => run(async () => { await api('PUT', '/optics', { focal_length_mm: focal, focal_multiplier: mult, pixel_size_um: o.pixel_size_override_um, binning: o.binning }); setDirty(false) })} />
       {mismatch && <div className="warn">Measured radius {sun!.radius.toFixed(0)} px differs from expected {o.expected_radius_px!.toFixed(0)} px: check focal length, reducer/barlow and binning.</div>}
       <ErrorLine error={err} />
+      <OpticalSetups status={status} form={{ focal, mult, pixel, bin, dirty }} onApplied={() => setDirty(false)} />
     </div>
   )
 }
@@ -214,7 +216,7 @@ export function MoreTab({ status, display, setDisplay, resetDisplay, focus, open
     <>
       <p className="hint-text">At the telescope: set the phone's Auto-Lock to Never (Settings, Display and Brightness) for the session, and use Share, Add to Home Screen for a full-screen app.</p>
       {item('display', 'Display', `${display.tint === 'none' ? 'grayscale' : display.tint === 'orange' ? 'H-alpha orange' : 'deep red'} · ${display.rings ? `${display.rings} rings` : 'no rings'}`, <DisplaySettings d={display} set={setDisplay} reset={resetDisplay} status={status} />)}
-      {item('optics', 'Optics', (o?.setup?.active ? `${o.setup.active}${o.setup.modified ? ' (modified)' : ''} · ` : '') + (o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set'), <OpticsSettings status={status} />)}
+      {item('optics', 'Optical setup', (o?.setup?.active ? `${o.setup.active}${o.setup.modified ? ' (modified)' : ''} · ` : '') + (o && differs(o) ? `Barlow measured ${o.suggested_multiplier!.toFixed(2)}×` : mismatch ? 'check radius' : o?.focal_length_mm ? `${o.focal_length_mm}${o.focal_multiplier !== 1 ? ` × ${o.focal_multiplier}` : ''} mm${o.scale_arcsec_per_px ? ` · ${o.scale_arcsec_per_px.toFixed(2)}″/px` : ''}` : 'not set'), <OpticsSettings status={status} />)}
       {item('site', 'Site', status?.site ? `${status.site.latitude.toFixed(2)}°, ${status.site.longitude.toFixed(2)}°` : 'not set', <SiteSettings status={status} />)}
       {item('stacking', 'Stacking', stackSummary(stackInfo), <Stacking info={stackInfo} reload={reloadStack} onOpenFiles={() => openFiles('stacks')} />)}
       {item('storage', 'Storage', 'drive for captures', <StorageSettings status={status} />)}

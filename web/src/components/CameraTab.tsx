@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ProfilePicker } from './Profile'
-import { clipping, noun, profileOf } from '../profile'
+import { clipping, profileOf } from '../profile'
 import { api, CameraInfo, Control, Status } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
@@ -171,8 +171,6 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
   if (!cam) {
     return (
       <Section title="Open the camera" error={err}>
-        <ProfilePicker status={status} />
-        <p className="lead">Pick your camera to see the {noun(profileOf(status))}.</p>
         <div className="field">
           <label htmlFor="cam-pick">Camera</label>
           <select id="cam-pick" value={sel} onChange={(e) => setSel(e.target.value)}>
@@ -185,6 +183,8 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
           <button type="button" className="primary grow" disabled={!sel || busy} onClick={() => { const [driver, id] = sel.split('|'); run(() => api('POST', '/camera/open', { driver, id })) }}>Open camera</button>
         </div>
         {status?.startup.retrying && <p className="hint-text">Reconnecting {status.startup.camera ?? ''} {status.startup.mount ?? ''}… (mount tracking is never switched on automatically)</p>}
+        <h2 className="sr-only">What are you imaging?</h2>
+        <ProfilePicker status={status} />
       </Section>
     )
   }
@@ -193,9 +193,8 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
   const rest = cam.controls.filter((c) => !PRIMARY.includes(c.id))
   return (
     <>
-      <Section title="What are you imaging?">
-        <ProfilePicker status={status} />
-      </Section>
+      <h2 className="sr-only">What are you imaging?</h2>
+      <ProfilePicker status={status} />
       <Section error={err}>
         {status?.optics?.setup?.active && <p className="setup-line" aria-label="Optical setup of this camera">Optical setup: {status.optics.setup.active}{status.optics.setup.modified ? ' (modified)' : ''}{status.optics.scale_arcsec_per_px ? ` · ${status.optics.scale_arcsec_per_px.toFixed(2)}″/px` : ''}</p>}
         {cam.histogram.length > 0 && <Histogram bins={cam.histogram} saturated={cam.saturated} rgb={cam.histogram_rgb} saturatedRgb={cam.saturated_rgb} planetClip={profileOf(status) === 'planet' ? clipping(cam, 'planet') : null} />}
@@ -206,7 +205,7 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
       </Section>
       {cam.cooler?.available && <CoolerPanel cooler={cam.cooler} />}
       {rest.length > 0 && (
-        <Disclosure title="More camera controls" summary={rest.map((c) => c.label.split(' (')[0]).join(', ')}>
+        <Disclosure title="Extra controls" summary={rest.map((c) => c.label.split(' (')[0]).join(', ')}>
           {rest.map((c) => <Slider key={c.id} c={c} />)}
         </Disclosure>
       )}

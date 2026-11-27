@@ -21,17 +21,17 @@ export function MeridianFlip({ status }: { status: Status }) {
   return (
     <div>
       {sky ? <p className="hint-text"><b>{sky.minutes_to_meridian >= 0 ? `The ${body} crosses the meridian in ${mins(sky.minutes_to_meridian)}.` : `The ${body} crossed the meridian ${mins(sky.minutes_to_meridian)} ago.`}</b> The mount's own limits decide how far it keeps tracking past it.</p> : <p className="hint-text">Set your site (More, Site) to see how long until the {body} crosses the meridian.</p>}
-      <Why id="why-flip" text={offFlip} />
+      <Why id="why-flip" text={offFlip} subject="Meridian flip" />
       <AutoFlip status={status} off={!!offFlip} />
       <p className="hint-text">Before the flip press <b>Record position</b>: it saves where the mount points, where the {body} is in the picture and the time. <b>Flip and re-centre</b> records, sends the mount to that position (it turns over if the mount decides to), measures how long that took, restores the {status.flip_target?.rate ?? 'solar'} tracking rate, then brings the {body} back to the same place in the picture, allowing for the image turning upside down. If you flip by hand (app or mount buttons), use <b>Restore after a manual flip</b> afterwards. A guiding calibration is needed to re-centre.</p>
       {f && <div className="hint-text" role="status">Flip in progress: {f.phase} ({Math.round(f.elapsed_s)} s). STOP cancels.</div>}
       <div className="btnrow tight">
-        <button type="button" disabled={busy || !!f || !!offFlip} onClick={() => run(() => api('POST', '/mount/flip', { record_only: true }))}>Record position</button>
+        <button type="button" disabled={busy || !!f || !!offFlip} aria-describedby={offFlip ? 'why-flip' : undefined} onClick={() => run(() => api('POST', '/mount/flip', { record_only: true }))}>Record position</button>
       </div>
       {ask === null ? (
         <div className="btnrow">
-          <button type="button" className="grow" disabled={busy || !!f || !!offFlip} onClick={() => setAsk('flip')}>Flip and re-centre…</button>
-          <button type="button" className="grow" disabled={busy || !!f || !last?.pre || !!offFlip} onClick={() => setAsk('restore')}>Restore after a manual flip…</button>
+          <button type="button" className="grow" disabled={busy || !!f || !!offFlip} aria-describedby={offFlip ? 'why-flip' : undefined} onClick={() => setAsk('flip')}>Flip and re-centre…</button>
+          <button type="button" className="grow" disabled={busy || !!f || !last?.pre || !!offFlip} aria-describedby={offFlip ? 'why-flip' : undefined} onClick={() => setAsk('restore')}>Restore after a manual flip…</button>
         </div>
       ) : (
         <div className="confirm" role="alertdialog" aria-label="Meridian flip">
@@ -70,7 +70,7 @@ function AutoFlip({ status, off }: { status: Status; off: boolean }) {
   const put = (enabled: boolean, r = a?.record_min ?? record, f = a?.flip_min ?? after) => run(() => api('PUT', '/mount/autoflip', { enabled, record_min: r, flip_min: f }))
   return (
     <div className="autoflip">
-      <Switch label="Flip automatically" checked={!!a?.enabled} disabled={!status.site || !status.mount || (off && !a?.enabled)} onChange={(on) => put(on)} hint={!status.site ? 'Set your site first (More, Site).' : !status.mount ? 'Connect the mount first.' : a?.enabled ? STAGE[a.stage] ?? '' : 'Unattended: records the position a few minutes before the meridian and flips just after it, or as soon as the mount stops tracking by itself. It stops a running capture, recalibrates if it was guiding, and does not resume the capture.'} />
+      <Switch label="Flip automatically" checked={!!a?.enabled} disabled={!status.site || !status.mount || (off && !a?.enabled)} describedBy="why-flip" onChange={(on) => put(on)} hint={!status.site ? 'Set your site first (More, Site).' : !status.mount ? 'Connect the mount first.' : a?.enabled ? STAGE[a.stage] ?? '' : 'Unattended: records the position a few minutes before the meridian and flips just after it, or as soon as the mount stops tracking by itself. It stops a running capture, recalibrates if it was guiding, and does not resume the capture.'} />
       {a?.enabled && (
         <>
           <RangeField label="Record before the meridian" value={a.record_min} min={1} max={30} step={1} show={`${a.record_min} min`} onChange={(v) => { setRecord(v); put(true, v, a.flip_min) }} />

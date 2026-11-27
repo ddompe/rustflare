@@ -34,7 +34,7 @@ function InternalNote({ cur }: { cur: StorageInfo }) {
   if (!cur.internal) return null
   return (
     <details className="hint-text" role="note">
-      <summary>Recording to the Pi's SD card: slower than a USB drive. Why?</summary>
+      <summary>Recording to the SD card: slower than a USB drive. Why?</summary>
       It writes at roughly 30 to 90 MB/s, so a full-rate recording fills the RAM buffer in seconds and then drops frames (or slows the camera, if you chose to wait for the disk). It suits a short, fast event up to the buffer size, and the stack-only and best-frames modes. {gb(cur.reserve_bytes ?? 0)} always stay free for the system: a recording stops before it would use them.
     </details>
   )

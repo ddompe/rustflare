@@ -1,16 +1,17 @@
 import { ReactNode } from 'react'
 import { api, Status } from '../api'
-import { Disclosure, Empty, Section, Segmented, useAction } from './ui'
+import { Disclosure, Empty, Section, Segmented, ToneIcon, useAction } from './ui'
+import { HOLD_WORD, holdLevel as holdLevelOf } from '../vocab'
 import { noun, profileOf, why } from '../profile'
 import { useSetting } from '../settings'
 import { GuideSettings } from './GuideSettings'
 
 type Mode = 'limb' | 'anchor' | 'sun_disc' | 'planet'
 const MODES: { id: Mode; label: string; help: string }[] = [
-  { id: 'limb', label: 'Disc edge', help: 'Fits the visible solar edge (limb), so it works when only part of the disc is in frame, typical for H-alpha. Needs some limb in view.' },
+  { id: 'limb', label: 'Disc edge', help: 'Fits the visible edge (limb): works when only part of the disc is in frame, typical for H-alpha. Needs some limb in view.' },
   { id: 'anchor', label: 'Feature', help: 'Follow a sunspot, filament or plage. Use this when the field is entirely on the disc, with no limb in view.' },
   { id: 'sun_disc', label: 'Full disc', help: 'Centroid of the whole disc. Only when the whole disc is in frame.' },
-  { id: 'planet', label: 'Planet centroid', help: 'Follows the brightest small disc: the centre of a planet on a dark sky. No edge is fitted, so it works for a disc only a few pixels across. Put the planet in the frame with the slew pad, then start.' },
+  { id: 'planet', label: 'Planet centroid', help: 'Follows the brightest small disc on a dark sky. Put the planet in the frame with the slew pad, then start.' },
 ]
 
 /** The mode help in the words of the profile: the texts are written for the Sun. */
@@ -67,8 +68,7 @@ export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: 
   const calibrated = !!g?.calibration
   const guiding = g?.state === 'guiding'
   // the error as a word first, with a mark, so the colour is never the only signal: a few pixels is locked, a few tens still settling
-  const holdLevel: 'locked' | 'settling' | 'off' = g?.error_px == null ? 'settling' : g.error_px <= 10 ? 'locked' : g.error_px <= 60 ? 'settling' : 'off'
-  const holdWord = { locked: '✓ locked', settling: '… settling', off: '! off target' }
+  const holdLevel = holdLevelOf(g?.error_px)
   const calibrating = g?.state === 'calibrating'
   const ready = !!t && !t.lost && calibrated && mountTracking && g?.state === 'off'
 
@@ -79,14 +79,14 @@ export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: 
           <Segmented label="Tracking target" value={mode} options={MODES.map((m) => ({ id: m.id, label: m.label, off: m.id === 'anchor' ? null : m.id === 'planet' ? why(profileOf(status), 'planetTracker') : why(profileOf(status), 'limb') }))} onChange={(m) => { setMode(m); setAnchorPick(false) }} />
           <p className="hint-text">{modeHelp(MODES.find((m) => m.id === mode)?.help ?? '', profileOf(status))}</p>
           {mode === 'limb' && (
-            <Disclosure title="Disc radius" summary={radius ? `${radius} px` : status.optics.expected_radius_px ? `${status.optics.expected_radius_px.toFixed(0)} px from Optics` : 'automatic'}>
+            <Disclosure title="Disc radius" summary={radius ? `${radius} px` : status.optics.expected_radius_px ? `${status.optics.expected_radius_px.toFixed(0)} px from the optical setup` : 'automatic'}>
               <div className="field">
-                <label htmlFor="trk-radius">Radius (px), leave blank to use Optics</label>
-                <input id="trk-radius" inputMode="decimal" value={radius} onChange={(e) => setRadius(e.target.value)} placeholder={status.optics.expected_radius_px ? `${status.optics.expected_radius_px.toFixed(0)} (from optics)` : 'set Optics, or fit from first frame'} />
+                <label htmlFor="trk-radius">Radius (px), leave blank to use the optical setup</label>
+                <input id="trk-radius" inputMode="decimal" value={radius} onChange={(e) => setRadius(e.target.value)} placeholder={status.optics.expected_radius_px ? `${status.optics.expected_radius_px.toFixed(0)} (from the optical setup)` : 'set the optical setup, or fit from first frame'} />
               </div>
             </Disclosure>
           )}
-          {mismatch && <div className="warn">Measured radius {sun!.radius.toFixed(0)} px differs from the {o.expected_radius_px!.toFixed(0)} px expected from Optics: check focal length, Barlow/reducer and binning (More, Optics).</div>}
+          {mismatch && <div className="warn">Measured radius {sun!.radius.toFixed(0)} px differs from the {o.expected_radius_px!.toFixed(0)} px expected from the optical setup: check focal length, Barlow/reducer and binning (More, Optical setup).</div>}
           <button type="button" className={`wide ${anchorPick ? '' : 'primary'}`} onClick={start}>
             {mode === 'anchor' ? (anchorPick ? 'Cancel picking' : 'Pick a feature…') : 'Start tracking'}
           </button>
@@ -120,7 +120,7 @@ export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: 
           >
             <div className="hint-text">{calibrated ? `Calibrated. Mount directions: RA+ moves the image ${angle(g!.calibration!.primary_dir)}, Dec+ ${angle(g!.calibration!.secondary_dir)}.` : 'Teaches RustFlare which way each mount axis moves the image. Takes a few seconds per axis.'}</div>
           </Step>
-          <Step done={guiding && holdLevel === 'locked'} warn={guiding && holdLevel === 'settling'} bad={guiding && holdLevel === 'off'} title="Hold position" state={guiding ? <>{holdWord[holdLevel]} · <b className="bignum">{g?.error_px?.toFixed(1) ?? '–'}</b> px</> : 'not holding'}>
+          <Step done={guiding && holdLevel === 'locked'} warn={guiding && holdLevel === 'settling'} bad={guiding && holdLevel === 'off'} title="Hold position" state={guiding ? <><ToneIcon tone={holdLevel === 'locked' ? 'ok' : holdLevel === 'settling' ? 'warn' : 'bad'} size={12} /> {HOLD_WORD[holdLevel]} · <b className="bignum">{g?.error_px?.toFixed(1) ?? '–'}</b> px</> : 'not holding'}>
             {guiding ? (
               <button type="button" className="danger wide big" onClick={() => run(() => api('POST', '/guiding/stop'))}>Stop guiding</button>
             ) : (

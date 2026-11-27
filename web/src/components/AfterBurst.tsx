@@ -3,12 +3,13 @@ import { AfterBurst as AfterBurstState, AfterMode, api, Status } from '../api'
 import { Disclosure, ErrorLine, Field, Switch, useAction } from './ui'
 import { useStackInfo } from './Stacking'
 import { whyStack } from '../profile'
+import { AFTER_MODE_NAME } from '../vocab'
 
 const MODES: { id: AfterMode; title: string; text: string; warn?: string }[] = [
-  { id: 'video', title: 'Keep the video', text: 'Write every frame. Stack later from the file if you want to.' },
-  { id: 'video_stack', title: 'Video and stack', text: 'Write every frame and also stack each burst from memory.' },
-  { id: 'stack_only', title: 'Stack only', text: 'Stack each burst from memory and write no video. Smallest on disk.', warn: 'The raw frames are not kept' },
-  { id: 'best_frames', title: 'Best frames only', text: 'Stack from memory and keep only the best frames of each burst as a short video.' },
+  { id: 'video', title: AFTER_MODE_NAME.video, text: 'Write every frame. Stack later from the file if you want to.' },
+  { id: 'video_stack', title: AFTER_MODE_NAME.video_stack, text: 'Write every frame and also stack each burst from memory.' },
+  { id: 'stack_only', title: AFTER_MODE_NAME.stack_only, text: 'Stack each burst from memory and write no video. Smallest on disk.', warn: 'The raw frames are not kept' },
+  { id: 'best_frames', title: AFTER_MODE_NAME.best_frames, text: 'Stack from memory and keep only the best frames of each burst as a short video.' },
 ]
 
 const gb = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`)
@@ -53,8 +54,8 @@ export function AfterBurst({ status, nFrames, frameBytes, burstSecs, everySecs, 
       {noStack && <div className="gate-why hint-text" role="note">{noStack}</div>}
       {stacking && (
         <div className="grid2">
-          <Field label="Best frames kept, stacked from memory (%)">{(id) => <input id={id} inputMode="decimal" value={keep} onChange={(e) => setKeep(e.target.value)} onBlur={() => { const v = parseFloat(keep); if (v !== a.stack_keep_percent) void set({ stack_keep_percent: v }) }} />}</Field>
-          {a.mode === 'best_frames' && <Field label="Best frames kept as video (%)">{(id) => <input id={id} inputMode="decimal" value={raw} onChange={(e) => setRaw(e.target.value)} onBlur={() => { const v = parseFloat(raw); if (v !== a.raw_keep_percent) void set({ raw_keep_percent: v }) }} />}</Field>}
+          <Field label="Keep best (%): stacked from memory">{(id) => <input id={id} inputMode="decimal" value={keep} onChange={(e) => setKeep(e.target.value)} onBlur={() => { const v = parseFloat(keep); if (v !== a.stack_keep_percent) void set({ stack_keep_percent: v }) }} />}</Field>
+          {a.mode === 'best_frames' && <Field label="Keep best (%): saved as video">{(id) => <input id={id} inputMode="decimal" value={raw} onChange={(e) => setRaw(e.target.value)} onBlur={() => { const v = parseFloat(raw); if (v !== a.raw_keep_percent) void set({ raw_keep_percent: v }) }} />}</Field>}
         </div>
       )}
       {stacking && (
@@ -75,7 +76,7 @@ export function AfterBurst({ status, nFrames, frameBytes, burstSecs, everySecs, 
         <Disclosure title="Stacker settings" summary={`${sc.enabled ? 'on' : 'off'} · ${sc.multipoint ? 'multi-point' : 'global'} · ${sc.disc_mask ? `black disc ${Math.round(sc.disc_scale * 100)} %` : 'disc kept'}`}>
           <Switch label="Stack finished recordings" checked={sc.enabled} onChange={(v) => void saveStack({ enabled: v })} hint="Off also switches off stacking from memory." />
           <Switch label="Multi-point alignment" checked={sc.multipoint} onChange={(v) => void saveStack({ multipoint: v })} hint="A shift for each patch of the picture: sharper, a little slower." />
-          <Field label="Best frames kept, stacked from a video file (%)" hint="Used for recordings stacked after they finish. Bursts stacked from memory use the percentage above.">{(id) => <input id={id} inputMode="decimal" value={diskKeep} onChange={(e) => setDiskKeep(e.target.value)} onBlur={() => { const v = parseFloat(diskKeep); if (v >= 1 && v <= 100 && v !== sc.keep_percent) void saveStack({ keep_percent: v }) }} />}</Field>
+          <Field label="Keep best (%): stacked from a video file" hint="Used for recordings stacked after they finish. Bursts stacked from memory use the percentage above.">{(id) => <input id={id} inputMode="decimal" value={diskKeep} onChange={(e) => setDiskKeep(e.target.value)} onBlur={() => { const v = parseFloat(diskKeep); if (v >= 1 && v <= 100 && v !== sc.keep_percent) void saveStack({ keep_percent: v }) }} />}</Field>
           <Switch label="Black disc on prominence stacks" checked={sc.disc_mask} onChange={(v) => void saveStack({ disc_mask: v })} hint="For a prominence lane recorded with the coronagraph: the disc is found in the finished stack and covered; off keeps it as recorded." />
           {sc.disc_mask && <Field label="Black disc size (% of the Sun's radius)" hint="100 is the edge as fitted; a few per cent more hides the limb glow and the base of a prominence.">{(id) => <input id={id} inputMode="numeric" defaultValue={Math.round(sc.disc_scale * 100)} key={sc.disc_scale} onBlur={(e) => { const n = parseFloat(e.target.value); if (n >= 90 && n <= 120 && Math.abs(n / 100 - sc.disc_scale) > 1e-6) void saveStack({ disc_scale: n / 100 }) }} />}</Field>}
           {onMoreStacking && <button type="button" className="quiet small" onClick={onMoreStacking}>More: when to stack, flat and darks (More &gt; Stacking)</button>}

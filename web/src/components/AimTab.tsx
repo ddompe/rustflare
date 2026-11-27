@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, Status, MountSiteTime, ClockPlace, reportError } from '../api'
+import { api, Status, reportError } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
 import { DeviceCard } from './DeviceCard'
 import { useDatasheet } from '../datasheet'
 import { isSun, noun, profileForTarget, profileOf, PROFILES } from '../profile'
+import { clockSummary, placeText, sendReason, spanWords, timeText } from '../mountclock'
 
 // Speeds the ZWO AM3/AM5 supports, as multiples of the sidereal rate.
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 20, 60, 720, 1440]
@@ -314,7 +315,7 @@ function SendHome({ status, disabled, reason }: { status: Status; disabled: bool
   return (
     <div className="home">
       {!ask ? (
-        <button type="button" className="wide" disabled={disabled} onClick={() => setAsk(true)}>Send home</button>
+        <button type="button" className="wide" disabled={disabled} aria-describedby={disabled && reason ? 'why-home' : undefined} onClick={() => setAsk(true)}>Send home</button>
       ) : (
         <div className="confirm" role="alertdialog" aria-label="Send the mount home">
           <p>The mount will slew to its home position. Make sure the telescope and cables are clear.</p>
@@ -324,7 +325,7 @@ function SendHome({ status, disabled, reason }: { status: Status; disabled: bool
           </div>
         </div>
       )}
-      {disabled && reason && <div className="hint-text">{reason}</div>}
+      {disabled && reason && <div className="gate-why hint-text" id="why-home">{reason}</div>}
       <ErrorLine error={err} />
       {status.mount.can_search_home && <SearchHome disabled={disabled} />}
     </div>
@@ -361,53 +362,21 @@ function saveMyLocation(run: (f: () => Promise<unknown>) => unknown) {
   )
 }
 
-/** "3 min 12 s", "45 s", "2 h 5 min". */
-function spanWords(secs: number): string {
-  const s = Math.round(Math.abs(secs))
-  if (s < 60) return `${s} s`
-  if (s < 3600) return s % 60 ? `${Math.floor(s / 60)} min ${s % 60} s` : `${s / 60} min`
-  const m = Math.floor((s % 3600) / 60)
-  return m ? `${Math.floor(s / 3600)} h ${m} min` : `${s / 3600} h`
-}
-
-const placeText = (c: ClockPlace) => (c.latitude_deg == null || c.longitude_east_deg == null ? 'not reported' : `${Math.abs(c.latitude_deg).toFixed(3)}° ${c.latitude_deg >= 0 ? 'N' : 'S'}, ${Math.abs(c.longitude_east_deg).toFixed(3)}° ${c.longitude_east_deg >= 0 ? 'E' : 'W'}`)
-const timeText = (c: ClockPlace) => {
-  if (c.unix_secs == null) return 'not reported'
-  const off = c.utc_offset_minutes
-  const zone = off == null ? '' : ` (zone ${off < 0 ? '-' : '+'}${Math.floor(Math.abs(off) / 60)}${Math.abs(off) % 60 ? `:${String(Math.abs(off) % 60).padStart(2, '0')}` : ''} h)`
-  return `${new Date(c.unix_secs * 1000).toISOString().slice(0, 19).replace('T', ' ')} UTC${zone}`
-}
-
-/** "matches", or "differs: 3 min, 12 degrees". */
-function clockSummary(st: MountSiteTime | null | undefined): string {
-  if (!st) return 'not available'
-  if (st.ok) return 'matches'
-  const parts = [
-    ...(st.time_ok === false && st.time_diff_s != null ? [spanWords(st.time_diff_s)] : []),
-    ...(st.place_ok === false && st.place_diff_deg != null ? [`${st.place_diff_deg < 10 ? st.place_diff_deg.toFixed(2) : st.place_diff_deg.toFixed(0)} degrees`] : []),
-  ]
-  return `differs: ${parts.join(', ')}`
-}
-
 /** What the mount itself holds as its site and time, next to the Pi's, and a button that sends the Pi's (nothing moves). */
-function MountClock({ status, openMore }: { status: Status; openMore?: (focus: string) => void }) {
+function MountClock({ status, openMore, focus }: { status: Status; openMore?: (focus: string) => void; focus?: { id: string; nonce: number } | null }) {
   const { err, busy, run } = useAction()
+  const [open, setOpen] = useState(focus?.id === 'clock')
+  useEffect(() => { if (focus?.id === 'clock') setOpen(true) }, [focus?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
   const m = status.mount!
   const st = m.site_time
-  const prof = profileOf(status)
-  const parked = m.park === 'parked' || m.park === 'parking'
-  const slewing = !!m.slewing || !!status.goto || !!status.flip
   const ntp = status.clock?.ntp_synchronized
-  let reason: string | null = null
-  if (!st) reason = 'This mount cannot report its site and time.'
-  else if (!status.site) reason = 'Save your site first: the Pi has nothing to send.'
-  else if (parked) reason = 'The mount is parked: unpark it first.'
-  else if (slewing) reason = 'The mount is moving: wait until it stops.'
+  const reason = sendReason(status)
+  const zone = st?.pi.utc_offset_minutes ?? null
   const row = (label: string, mine: string, pi: string) => (
     <tr><th scope="row">{label}</th><td>{mine}</td><td>{pi}</td></tr>
   )
   return (
-    <Disclosure title="Mount time and place" summary={<span className="mc-sum">{st && !st.ok ? '⚠ ' : ''}{clockSummary(st)}</span>}>
+    <Disclosure title="Mount time and place" open={open} onToggle={setOpen} summary={<span className="mc-sum">{clockSummary(st)}</span>}>
       <div className="mountclock">
         {!st ? (
           <p className="hint-text">This mount cannot report its site and time, so RustFlare cannot compare them with the Pi's.</p>
@@ -416,23 +385,18 @@ function MountClock({ status, openMore }: { status: Status; openMore?: (focus: s
             <table className="clocktable">
               <thead><tr><td /><th scope="col">Mount</th><th scope="col">Pi</th></tr></thead>
               <tbody>
+                {row('Time', timeText(st.mount, zone), timeText(st.pi, zone))}
                 {row('Place', placeText(st.mount), placeText(st.pi))}
-                {row('Time', timeText(st.mount), timeText(st.pi))}
               </tbody>
             </table>
-            <p className={st.ok ? 'hint-text' : 'warn'} role="status">
-              {st.ok ? 'Matches.' : 'Differs.'} {st.why}
-              {st.time_diff_s != null && <> Time difference {st.time_diff_s >= 0 ? '+' : '-'}{spanWords(st.time_diff_s)}.</>}
-              {st.place_diff_deg != null && <> Place difference {st.place_diff_deg.toFixed(3)}°.</>}
-            </p>
+            <p className="hint-text" role="status">{st.why}</p>
           </>
         )}
-        <p className="hint-text">The Pi's clock: {ntp === true ? 'synchronised to a time server' : ntp === false ? 'NOT synchronised to a time server: fix the Pi first, or what it sends the mount is wrong too' : 'synchronisation unknown'}.</p>
-        <p className="hint-text">Why it matters: Go to {noun(prof)} is computed from the site and time the mount holds, so a wrong clock or place sends it to the wrong spot.</p>
-        <button type="button" className="wide" disabled={busy || !!reason} aria-disabled={busy || !!reason} onClick={() => run(() => api('POST', '/mount/sync-site-time'))}>{busy ? 'Sending…' : 'Send site and time to the mount'}</button>
-        {reason && <div className="hint-text">{reason}</div>}
+        <p className="hint-text">The Pi's clock: {ntp === true ? 'synchronised to a time server' : ntp === false ? 'NOT synchronised to a time server: fix the Pi first, or what it sends the mount is wrong too' : 'synchronisation unknown'}. Go to sends the Pi's site and time to the mount first, so this matters most if you also steer from the mount's own handset.</p>
+        <button type="button" className="wide" disabled={busy || !!reason} aria-describedby={reason ? 'why-sendtime' : undefined} onClick={() => run(() => api('POST', '/mount/sync-site-time'))}>{busy ? 'Sending…' : 'Send site and time to the mount'}</button>
+        {reason && <div className="gate-why hint-text" id="why-sendtime">{reason}</div>}
         <Switch label="Send them by themselves when connecting" checked={!!status.mount?.auto_sync_site_time} onChange={(on) => run(() => api('PUT', '/mount/auto-site-time', { enabled: on }))}
-          hint="Some mounts have no clock battery and start from a default time at every power-up. When this is on, the Pi sends its site and time once after connecting if the mount's differ, but only when the Pi's own clock is synchronised to a time server, a site is saved and the mount is not moving. It moves nothing." />
+          hint="For mounts without a clock battery. After connecting, the Pi sends its site and time if they differ, when its own clock is synchronised, a site is saved and the mount is not moving. It moves nothing." />
         {st && !status.site && (
           <div className="needs" role="note">
             <b>Set your site first.</b> The Pi sends its saved position and clock.
@@ -463,6 +427,8 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
   const wantProfile = profileForTarget(target)
   const offerSwitch = wantProfile ? (prof !== wantProfile ? wantProfile : null) : (isSun(prof) ? null : 'sun_ha')
   const below = alt != null && alt < -1
+  const st = status.mount?.site_time
+  const mountClockDiffers = st?.time_ok === false && st?.place_ok === false ? 'clock and place' : st?.time_ok === false ? `clock (${st.time_diff_s != null ? spanWords(st.time_diff_s) : 'off'})` : st?.place_ok === false ? 'place' : ''
   const low = alt != null && alt >= -1 && alt < 15
   // the site is a once-only setting, so the fix is here: one tap saves where this phone is
   const useHere = () => saveMyLocation(run)
@@ -479,9 +445,9 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
               {bodies.map((b) => <option key={b.id} value={b.id}>{label(b)}</option>)}
             </select>
           )}
-          <button type="button" className="wide primary" disabled={disabled || !status.site || below} aria-disabled={disabled || !status.site || below} title={below ? `${planet ? planet.name : 'The Sun'} is below the horizon` : undefined} onClick={() => setAsk(true)}>Go to {planet ? planet.name : 'Sun'}</button>
+          <button type="button" className="wide primary" disabled={disabled || !status.site || below} aria-describedby={!status.site ? 'why-goto-site' : below ? 'why-goto-below' : undefined} title={below ? `${planet ? planet.name : 'The Sun'} is below the horizon` : undefined} onClick={() => setAsk(true)}>Go to {planet ? planet.name : 'Sun'}</button>
           {!status.site && (
-            <div className="needs" role="note">
+            <div className="needs" role="note" id="why-goto-site">
               <b>Set your site first.</b> Go to works out where the Sun is from your position and the clock.
               <div className="btnrow tight">
                 <button type="button" className="primary grow" disabled={busy} onClick={useHere}>Use my location</button>
@@ -492,7 +458,8 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
         </>
       ) : (
         <div className="confirm" role="alertdialog" aria-label={`Go to ${name}`}>
-          <p>The mount will slew to the position of {name} computed from your site and the Pi's clock, then start {planet ? (planet.id === 'moon' ? 'lunar' : 'sidereal') : 'solar'} tracking. Make sure the telescope and cables are clear.{planet ? ' The position is good to a few arcminutes: centre it by hand.' : ''}</p>
+          <p>Go to sends the Pi's site and time to the mount first, slews to where {name} is now, then starts {planet ? (planet.id === 'moon' ? 'lunar' : 'sidereal') : 'solar'} tracking. Make sure the telescope and cables are clear.{planet ? ' The position is good to a few arcminutes: centre it by hand.' : ''}</p>
+          {mountClockDiffers && <p className="warn">The mount's {mountClockDiffers} differs from the Pi's; the Pi's values are sent first.</p>}
           {low && <p className="warn">{name} is only {alt!.toFixed(0)}° up: expect trees, buildings and poor seeing.</p>}
           {clockBad && <p className="warn">The Pi's clock is not synchronised, so the position may be off.</p>}
           <div className="btnrow tight">
@@ -507,8 +474,8 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
           <div className="btnrow tight"><button type="button" className="grow" onClick={() => run(() => api('PUT', '/profile', { id: offerSwitch }))}>Switch to {PROFILES.find((x) => x.id === offerSwitch)?.label}</button></div>
         </div>
       )}
-      {alt != null && !planet && sky && <div className="hint-text">Sun now: altitude {sky.altitude_deg.toFixed(1)}°, azimuth {sky.azimuth_deg.toFixed(0)}°{sky.altitude_deg < 0 ? ' (below the horizon: Go to is off until it rises)' : ''}</div>}
-      {planet && <div className="hint-text">{planet.name} now: altitude {planet.altitude_deg.toFixed(1)}°, azimuth {planet.azimuth_deg.toFixed(0)}°{below ? ' (below the horizon: Go to is off until it rises)' : ''}</div>}
+      {alt != null && !planet && sky && <div className={below ? 'gate-why hint-text' : 'hint-text'} id={below ? 'why-goto-below' : undefined}>Sun now: altitude {sky.altitude_deg.toFixed(1)}°, azimuth {sky.azimuth_deg.toFixed(0)}°{sky.altitude_deg < 0 ? ' (below the horizon: Go to is off until it rises)' : ''}</div>}
+      {planet && <div className={below ? 'gate-why hint-text' : 'hint-text'} id={below ? 'why-goto-below' : undefined}>{planet.name} now: altitude {planet.altitude_deg.toFixed(1)}°, azimuth {planet.azimuth_deg.toFixed(0)}°{below ? ' (below the horizon: Go to is off until it rises)' : ''}</div>}
       <ErrorLine error={err} />
     </div>
   )
@@ -516,32 +483,41 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
 
 import { MeridianFlip } from './MeridianFlip'
 
-const RATE_NAME = { solar: 'Solar', lunar: 'Lunar', sidereal: 'Star' } as const;
+const RATE_NAME = { solar: 'Solar', lunar: 'Lunar', sidereal: 'Star' } as const
+const RATE_FOR = { solar: 'Solar (Sun)', lunar: 'Lunar (Moon)', sidereal: 'Star (planets)' } as const
 
 /** Step 2: connect the mount, switch on solar tracking, slew the region of interest into view. */
-export function AimTab({ status, next, openMore }: { status: Status | null; next: () => void; openMore?: (focus: string) => void }) {
+export function AimTab({ status, next, openMore, focus }: { status: Status | null; next: () => void; openMore?: (focus: string) => void; focus?: { id: string; nonce: number } | null }) {
   const { err, run } = useAction()
   const m = status?.mount
   const sheet = useDatasheet('mount', status, m ? shortInfo(m.info) : null)
   if (!status || !m) return <MountConnect />
   const parked = m.park === 'parked' || m.park === 'parking'
+  const wantRate = PROFILES.find((x) => x.id === profileOf(status))?.rate ?? null
   return (
     <>
       {parked && <div className="warn" role="alert">{m.park === 'parking' ? 'The mount is parking: motion is disabled.' : 'Parked on the mount: motion is disabled.'}</div>}
       <Offset status={status} />
       <Pad status={status} locked={parked} />
       <GoToSun status={status} disabled={parked || !!status.goto} openMore={openMore} />
-      <MountClock status={status} openMore={openMore} />
+      <MountClock status={status} openMore={openMore} focus={focus} />
       <Disclosure title="Meridian flip">
         <MeridianFlip status={status} />
       </Disclosure>
       <Section error={err}>
         <Switch label={`${RATE_NAME[m.rate ?? 'solar']} tracking`} checked={m.tracking} disabled={parked} onChange={(on) => run(() => api('POST', '/mount/tracking', { enabled: on }))} hint={m.tracking ? shortInfo(m.info) : `${shortInfo(m.info)}. Off: the target will drift out of view.`} />
-        <div className="seg" role="group" aria-label="Tracking rate">
+        <div className="seg" role="group" aria-label="Tracking rate" aria-describedby="rate-note">
           {(['solar', 'lunar', 'sidereal'] as const).map((r) => (
             <button key={r} type="button" className={(m.rate ?? 'solar') === r ? 'on' : ''} aria-pressed={(m.rate ?? 'solar') === r} disabled={parked} onClick={() => run(() => api('POST', '/mount/tracking', { enabled: true, rate: r }))}>{RATE_NAME[r]}</button>
           ))}
         </div>
+        <p className="hint-text" id="rate-note">{m.tracking ? 'Choosing a rate sets how fast the mount tracks.' : 'Tracking is off. Choosing a rate switches tracking on at that rate.'}</p>
+        {wantRate && wantRate !== (m.rate ?? 'solar') && !parked && (
+          <div className="needs" role="note">
+            Tracking is {RATE_NAME[m.rate ?? 'solar']}. Switch to {RATE_FOR[wantRate]}?
+            <div className="btnrow tight"><button type="button" className="grow" onClick={() => run(() => api('POST', '/mount/tracking', { enabled: true, rate: wantRate }))}>{m.tracking ? `Switch to ${RATE_NAME[wantRate]}` : `Switch to ${RATE_NAME[wantRate]} and track`}</button></div>
+          </div>
+        )}
         <MountState m={m} />
       </Section>
       <SendHome status={status} disabled={parked || status.capture.state !== 'idle'} reason={parked ? 'The mount is parked.' : status.capture.state !== 'idle' ? 'Not while recording.' : null} />

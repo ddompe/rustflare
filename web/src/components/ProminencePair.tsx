@@ -17,7 +17,7 @@ export function ProminencePair({ status }: { status: Status | null }) {
       <p className="hint-text">Takes the disc at the current exposure, then one exposure this many times longer so the prominences show (the disc blows out), restores the exposure, and saves three PNGs: disc, long and composite. Needs the Sun in view.</p>
       <Field label="Longer exposure, times">{(id) => <input id={id} inputMode="decimal" value={factor} onChange={(e) => setFactor(e.target.value)} />}</Field>
       <button type="button" className="wide" disabled={busy || !idle || !status?.sun || !!off} aria-describedby={off ? 'why-pair' : undefined} onClick={() => run(async () => { await api('POST', '/capture/prominence', { factor: parseFloat(factor) || 8 }); setOk(true) })}>Capture prominence pair</button>
-      <Why id="why-pair" text={off} />
+      <Why id="why-pair" text={off} subject="Prominence pair" />
       {ok && idle && <div className="hint-text" role="status">Saved: see Captures.</div>}
       <ErrorLine error={err} />
     </div>

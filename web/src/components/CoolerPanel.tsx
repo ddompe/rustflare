@@ -55,7 +55,7 @@ export function CoolerPanel({ cooler }: { cooler: Cooler }) {
   const cold = cooler.temp_c != null && cooler.temp_c < 15
 
   return (
-    <Disclosure title="Cooler" summary={<>{cooler.on && <Snow />}{cooler.warming_up ? 'warming up' : cooler.on ? `on, target ${Math.round(target)} °C` : 'off'}{cooler.temp_c != null ? ` · ${cooler.temp_c.toFixed(1)} °C` : ''}{cooler.on && cooler.power_pct != null ? ` · ${Math.round(cooler.power_pct)} %` : ''}</>}>
+    <Disclosure title="Cooler" open={cooler.on || cooler.warming_up || undefined} summary={<>{cooler.on && <Snow />}{cooler.warming_up ? 'warming up' : cooler.on ? `on, target ${Math.round(target)} °C` : 'off'}{cooler.temp_c != null ? ` · ${cooler.temp_c.toFixed(1)} °C` : ''}{cooler.on && cooler.power_pct != null ? ` · ${Math.round(cooler.power_pct)} %` : ''}</>}>
       <Switch
         label="Cooler"
         checked={cooler.on}

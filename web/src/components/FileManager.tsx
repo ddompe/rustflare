@@ -48,7 +48,7 @@ export function FileManagerButton({ status, onOpen }: { status: Status | null; o
   const total = data?.entries.reduce((a, e) => a + e.size, 0) ?? 0
   return (
     <button type="button" className="wide" onClick={onOpen}>
-      Open file manager · {n ? `${plural(n, 'file')}, ${size(total)}` : 'nothing captured yet'}
+      Files · {n ? `${plural(n, 'file')}, ${size(total)}` : 'nothing captured yet'}
     </button>
   )
 }
@@ -66,9 +66,9 @@ function TreeNode({ path, name, cwd, go, depth, refreshKey }: { path: string; na
   // `stacks` first, `logs` last, days newest first
   dirs.sort((a, b) => rank(a) - rank(b) || (a.type === 'day' ? b.name.localeCompare(a.name) : a.name.localeCompare(b.name)))
   return (
-    <div role="group">
+    <div role="group" aria-label={name}>
       <div className={`fm-tnode ${cwd === path ? 'cur' : ''}`} style={{ paddingLeft: `${depth * 0.9}rem` }}>
-        <button type="button" className="fm-tog" aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>{expanded ? '▾' : '▸'}</button>
+        <button type="button" className="fm-tog" aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} aria-expanded={expanded} onClick={() => setOpen(!expanded)}><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" style={{ transform: expanded ? 'rotate(90deg)' : undefined }}><path d="M4 2l4.5 4L4 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
         <button type="button" className="fm-tname" aria-current={cwd === path ? 'page' : undefined} onClick={() => go(path)}>{name}</button>
       </div>
       {expanded && dirs.map((d) => <TreeNode key={d.path} path={d.path} name={d.name} cwd={cwd} go={go} depth={depth + 1} refreshKey={refreshKey} />)}
@@ -104,13 +104,36 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
 
   const go = (p: string) => { setLimit(120); setPeek(null); setCwd(p); setSel(new Set()); setAsk(false); setErr(null); setQ(''); sessionStorage.setItem('rf-fm-cwd', p); listRef.current?.scrollTo(0, 0) }
 
+  // A modal: focus moves in, Tab stays inside (and the page behind is inert), Escape closes, and focus goes back to whatever opened it.
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     closeRef.current?.focus()
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement) && !document.querySelector('.fm-peek')) onClose() }
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return
+      const scope = document.querySelector('.fm-peek') ?? document.querySelector('.fm-screen')
+      if (!scope) return
+      const items = Array.from(scope.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary')).filter((el) => el.getClientRects().length > 0)
+      if (!items.length) return
+      const first = items[0], last = items[items.length - 1]
+      const at = document.activeElement
+      if (!scope.contains(at)) { e.preventDefault(); first.focus() }
+      else if (e.shiftKey && at === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus() }
+    }
     document.addEventListener('keydown', esc)
+    document.addEventListener('keydown', trap)
+    const behind = Array.from(document.querySelectorAll<HTMLElement>('.app > :not(.fm-screen)'))
+    behind.forEach((el) => el.setAttribute('inert', ''))
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    return () => { document.removeEventListener('keydown', esc); document.body.style.overflow = prev }
+    return () => {
+      document.removeEventListener('keydown', esc)
+      document.removeEventListener('keydown', trap)
+      behind.forEach((el) => el.removeAttribute('inert'))
+      document.body.style.overflow = prev
+      opener?.focus()
+    }
   }, [onClose])
 
   // a remembered folder that no longer exists (deleted, other drive): say so, and go back to the top
@@ -172,7 +195,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
           <div className="fm-head">
             {f.type === 'stack' && <img className="fm-thumb" loading="lazy" alt="" src={`/api/stack/thumb/${f.path.replace(/^stacks\//, '')}`} />}
             {f.dir
-              ? <button type="button" className="fm-open" onClick={() => go(f.path)}><span className="fm-ico" aria-hidden="true">▸</span>{f.type === 'stacks' ? 'Stacked images' : f.name}</button>
+              ? <button type="button" className="fm-open" onClick={() => go(f.path)}><svg className="fm-ico" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M4 2l4.5 4L4 10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>{f.type === 'stacks' ? 'Stacked images' : f.name}</button>
               : <span className="fm-name">{f.name}</span>}
             {!['stack', 'recording', 'notes', 'file', 'image', 'fits', 'folder', 'day'].includes(f.type) && <span className="tag">{TYPE_LABEL[f.type] ?? f.type}</span>}
             {f.stack && <button type="button" className="tag ok linkish" onClick={() => go(parentOf(f.stack!.output))}>Stacked ✓ show</button>}
@@ -199,7 +222,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
   }
 
   return (
-    <div className="fm-screen" role="dialog" aria-modal="true" aria-label="File manager">
+    <div className="fm-screen" role="dialog" aria-modal="true" aria-label="Files">
       <header className="fm-top">
         <h2>Files</h2>
         <div className="fm-summary muted">
@@ -207,11 +230,11 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
           {dark.length > 0 && <> · <b className="warn-text">{dark.length} mostly dark</b></>}
           {cut.length > 0 && <> · <b className="warn-text">{cut.length} incomplete</b></>}
         </div>
-        <button ref={closeRef} type="button" className="fm-close" onClick={onClose} aria-label="Close file manager">✕</button>
+        <button ref={closeRef} type="button" className="fm-close" onClick={onClose} aria-label="Close Files"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button>
       </header>
 
       <nav className="fm-crumbs" aria-label="Folder path" ref={crumbsRef}>
-        {cwd && <button type="button" className="fm-up" onClick={() => go(parentOf(cwd))} aria-label="Up one folder">↑</button>}
+        {cwd && <button type="button" className="fm-up" onClick={() => go(parentOf(cwd))} aria-label="Up one folder"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
         <button type="button" className="fm-crumb" aria-current={cwd === '' ? 'page' : undefined} onClick={() => go('')}>Drive</button>
         {crumbs.map((c, i) => {
           const p = crumbs.slice(0, i + 1).join('/')

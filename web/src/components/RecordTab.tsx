@@ -173,8 +173,8 @@ export function RecordTab({ status, goto, openFiles }: { status: Status | null; 
       <Disclosure title="Darks" summary={status?.darks?.applied ? 'applied' : 'not applied'}>
         <Darks status={status} />
       </Disclosure>
-      <Disclosure title="Stills" summary="single frame, prominence pair">
-        <button type="button" className="wide" onClick={() => run(() => api('POST', '/capture/single', { name: nm }))}>Save a single frame (PNG)</button>
+      <Disclosure title="Snap" summary="single frame, prominence pair">
+        <button type="button" className="wide" onClick={() => run(() => api('POST', '/capture/single', { name: nm }))}>Snap a single frame (PNG)</button>
         <p className="hint-text">Prominence pair: the disc and a much longer exposure as PNGs plus a composite (processed, for a quick look; use the + Prominence recording for raw data).</p>
         <ProminencePair status={status} />
       </Disclosure>

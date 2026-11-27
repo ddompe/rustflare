@@ -51,10 +51,10 @@ export function Field({ label, children, hint }: { label: string; children: (id:
 }
 
 /** On/off switch (native checkbox underneath, so keyboard and screen readers just work). */
-export function Switch({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: ReactNode; disabled?: boolean }) {
+export function Switch({ checked, onChange, label, hint, disabled, describedBy }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: ReactNode; disabled?: boolean; /** id of the line that says why this is greyed */ describedBy?: string }) {
   return (
     <label className={`switch ${disabled ? 'is-disabled' : ''}`}>
-      <input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" role="switch" checked={checked} disabled={disabled} aria-describedby={disabled ? describedBy : undefined} onChange={(e) => onChange(e.target.checked)} />
       <span className="sw-text">
         <span className="sw-label">{label}</span>
         {hint && <span className="hint-text">{hint}</span>}
@@ -64,20 +64,45 @@ export function Switch({ checked, onChange, label, hint, disabled }: { checked: 
   )
 }
 
-/** A small set of mutually exclusive choices, shown all at once. */
-export function Segmented<T extends string>({ value, options, onChange, label, disabled }: { value: T; options: { id: T; label: string; /** Why this option does not apply now: it is greyed and the reason is shown under the group. */ off?: string | null }[]; onChange: (v: T) => void; label: string; disabled?: boolean }) {
-  const off = options.filter((o) => o.off)
+/**
+ * A small set of mutually exclusive choices, shown all at once. An option that does not apply is greyed (still readable) and its reason
+ * is said once per group under it: "Disc edge and Full disc are off: ...". Every greyed option points at its line with aria-describedby.
+ */
+export function Segmented<T extends string>({ value, options, onChange, label, disabled }: { value: T; options: { id: T; label: string; /** Why this option does not apply now. Options with the same text share one line. */ off?: string | null }[]; onChange: (v: T) => void; label: string; disabled?: boolean }) {
+  const uid = useId()
+  const reasons: { text: string; labels: string[] }[] = []
+  options.forEach((o) => {
+    if (!o.off) return
+    const r = reasons.find((x) => x.text === o.off)
+    if (r) r.labels.push(o.label); else reasons.push({ text: o.off, labels: [o.label] })
+  })
+  const lineId = (text: string) => `${uid}-why-${reasons.findIndex((r) => r.text === text)}`
   return (
     <>
       <div className="seg" role="radiogroup" aria-label={label}>
         {options.map((o) => (
-          <button key={o.id} type="button" role="radio" aria-checked={value === o.id} disabled={disabled || !!o.off} className={value === o.id ? 'on' : ''} onClick={() => onChange(o.id)}>
+          <button key={o.id} type="button" role="radio" aria-checked={value === o.id} aria-describedby={o.off ? lineId(o.off) : undefined} disabled={disabled || !!o.off} className={value === o.id ? 'on' : ''} onClick={() => onChange(o.id)}>
             {o.label}
           </button>
         ))}
       </div>
-      {off.map((o) => <div key={o.id} className="gate-why hint-text" role="note"><b>{o.label}</b>: {o.off}</div>)}
+      {reasons.map((r) => <div key={r.text} id={lineId(r.text)} className="gate-why hint-text" role="note"><b>{r.labels.join(' and ')}</b> {r.labels.length > 1 ? 'are' : 'is'} off: {r.text}</div>)}
     </>
+  )
+}
+
+export type Tone = 'ok' | 'warn' | 'bad' | 'info' | 'off' | 'rec'
+/** A state mark that differs in shape as well as colour: check in a circle (ok), triangle (warn), diamond (bad), ring (info, off), dot (recording). */
+export function ToneIcon({ tone, size = 14 }: { tone: Tone; size?: number }) {
+  return (
+    <svg className={`tone-icon t-${tone}`} viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" focusable="false">
+      {tone === 'ok' && <><circle cx="8" cy="8" r="7" fill="currentColor" /><path d="M4.6 8.2l2.4 2.4 4.4-5" fill="none" stroke="var(--mark-ink, #0e0c0b)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" /></>}
+      {tone === 'warn' && <><path d="M8 1.5L15 14H1z" fill="currentColor" strokeLinejoin="round" stroke="currentColor" strokeWidth="1.2" /><path d="M8 6v4M8 11.6v.4" stroke="var(--mark-ink, #0e0c0b)" strokeWidth="1.8" strokeLinecap="round" /></>}
+      {tone === 'bad' && <><path d="M8 .8L15.2 8 8 15.2.8 8z" fill="currentColor" /><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" stroke="var(--mark-ink, #0e0c0b)" strokeWidth="1.8" strokeLinecap="round" /></>}
+      {tone === 'info' && <><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" strokeWidth="1.8" /><path d="M8 7.2v4M8 4.9v.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></>}
+      {tone === 'off' && <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" />}
+      {tone === 'rec' && <circle cx="8" cy="8" r="6" fill="currentColor" />}
+    </svg>
   )
 }
 

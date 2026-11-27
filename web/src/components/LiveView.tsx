@@ -18,6 +18,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
   const sun = status?.sun
   const d = display
   const hud = useHudLayout()
+  const [toolsOpen, setToolsOpen] = useState(false)
 
   const clampPan = (zoom: number, px: number, py: number) => {
     const r = box.current!.getBoundingClientRect()
@@ -47,7 +48,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
     try { await api('POST', '/tracking/start', { mode: 'anchor', x, y }) } catch (err) { alert((err as Error).message) }
   }
 
-  if (!cam) return <div className="placeholder"><div><b>No camera open</b><br />Open the camera in the Camera tab to see the {noun(profileOf(status))}.</div></div>
+  if (!cam) return <div className="placeholder"><div><b>No camera open</b><br />Open one on the Camera tab to see the {noun(profileOf(status))}.</div></div>
   const W = cam.width, H = cam.height
   const stroke = Math.max(1.5, W / 500) / d.zoom
   const cx = W / 2, cy = H / 2
@@ -57,7 +58,8 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
   const hint = d.zoom > 1 ? `${d.zoom.toFixed(1)}×` : ''
 
   return (
-    <div ref={box} className={`live ${anchorPick ? 'pick' : ''}`} style={{ '--ar': W / H } as React.CSSProperties}
+    <div className="live-wrap" style={{ '--ar': W / H } as React.CSSProperties} data-tools-open={toolsOpen ? '1' : undefined}>
+    <div ref={box} className={`live ${anchorPick ? 'pick' : ''}`}
       onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onDoubleClick={() => setDisplay({ zoom: 1, panX: 0, panY: 0 })}>
       <svg width="0" height="0" style={{ position: 'absolute' }}>
         <filter id="rf-gamma" colorInterpolationFilters="sRGB">
@@ -109,7 +111,14 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
         </svg>
       </div>
       <HudLayer status={status} api={hud} previewFps={d.fps} />
-      <div className="live-tools" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+      <div className="hud">{W}×{H}{hint && ` · ${hint}`}</div>
+      {anchorPick && <div className="hint" role="status">Tap a feature (sunspot, filament, plage) to track it</div>}
+    </div>
+      <div className="live-tools">
+        <button type="button" className="tools-toggle" aria-label="Picture tools" aria-expanded={toolsOpen} aria-controls="tools-row" onClick={() => setToolsOpen(!toolsOpen)}>
+          <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /></svg>
+        </button>
+        <div className="tools-row" id="tools-row">
         <button type="button" aria-label="Zoom in" onClick={() => { const zoom = Math.min(8, d.zoom * 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>+</button>
         <button type="button" aria-label="Zoom out" disabled={d.zoom <= 1} onClick={() => { const zoom = Math.max(1, d.zoom / 1.5); setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) }) }}>−</button>
         <button type="button" aria-label="Prominence view" aria-pressed={!!status?.coronagraph?.enabled} className={status?.coronagraph?.enabled ? 'tool-on' : ''} disabled={(!status?.sun && !status?.coronagraph?.enabled) || !!why(profileOf(status), 'corona')} title={why(profileOf(status), 'corona') ?? "Black out the Sun's disc to judge the exposure for prominences"} onClick={() => api('PUT', '/coronagraph', { enabled: !status?.coronagraph?.enabled, scale: status?.coronagraph?.scale ?? 1.03 }).catch((e) => reportError(e, 'Prominence view'))}>
@@ -125,9 +134,8 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
         <button type="button" aria-label="Display settings" onClick={onDisplay}>
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h8M15 15h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /><circle cx="13" cy="5" r="2" fill="currentColor" /><circle cx="7" cy="10" r="2" fill="currentColor" /><circle cx="13" cy="15" r="2" fill="currentColor" /></svg>
         </button>
+        </div>
       </div>
-      <div className="hud">{W}×{H}{hint && ` · ${hint}`}</div>
-      {anchorPick && <div className="hint" role="status">Tap a feature (sunspot, filament, plage) to track it</div>}
     </div>
   )
 }

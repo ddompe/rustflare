@@ -10,6 +10,8 @@ import { TrackTab } from './components/TrackTab'
 import { RecordTab } from './components/RecordTab'
 import { MoreTab } from './components/MoreTab'
 import { FileManagerScreen } from './components/FileManager'
+import { ToneIcon } from './components/ui'
+import { SetupStrip, SetupStepId } from './components/SetupStrip'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'camera', label: 'Camera' },
@@ -32,6 +34,8 @@ export function App() {
   const [tab, setTabState] = useState<TabId>(TABS.some((x) => x.id === savedTab) ? savedTab : 'camera')
   const setTab = (t: TabId) => { setTabState(t); setSavedTab(t) }
   const [focus, setFocus] = useState<{ id: string; nonce: number } | null>(null)
+  /** Which section a tab should open when it is entered from elsewhere (the Aim tab's Mount time and place). */
+  const [aimFocus, setAimFocus] = useState<{ id: string; nonce: number } | null>(null)
   const [full, setFull] = useState(false)
   const [theme, setTheme] = useSetting<'night' | 'day'>('ui.theme', 'night')
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
@@ -40,8 +44,9 @@ export function App() {
   useEffect(() => { panelRef.current?.scrollTo(0, 0) }, [tab])
   const cam = status?.camera
 
-  const goto = (t: TabId) => setTab(t)
+  const goto = (t: TabId, f?: string) => { if (f && t === 'aim') setAimFocus({ id: f, nonce: Date.now() }); setTab(t) }
   const openMore = (id: string) => { setFocus({ id, nonce: Date.now() }); setTab('more') }
+  const onSetupStep = (id: SetupStepId) => { if (id === 'optics') openMore('optics'); else if (id === 'site') openMore('site'); else if (id === 'clock') goto('aim', 'clock'); else goto('camera') }
   const stopCapture = () => { api('POST', '/capture/stop').catch((e) => reportError(e, 'Stop')) }
 
   // A dot on each tab says where the session stands without opening anything.
@@ -66,7 +71,7 @@ export function App() {
   }
 
   return (
-    <div className="app" data-tab={tab} data-full={full ? '1' : undefined}>
+    <div className="app" data-tab={tab} data-full={full ? '1' : undefined} data-nocam={cam ? undefined : '1'}>
       <a className="skip" href="#panel">Skip to controls</a>
       <header className="top">
         <img className="mark" src="/logo-mark.svg" alt="" width="26" height="26" />
@@ -75,7 +80,11 @@ export function App() {
         {cam && <span className="camname">{cam.name} · {cam.width}×{cam.height} · {cam.bits}-bit{cam.bayer ? ` · colour ${cam.bayer}` : ''}</span>}
         <span className="hright">
           <button type="button" className="hfiles" onClick={() => setFilesOpen(true)} aria-label="Files: recordings on the drive">Files</button>
-          <button type="button" className="themebtn" onClick={() => setTheme(theme === 'night' ? 'day' : 'night')} aria-label={theme === 'night' ? 'Switch to the daylight theme' : 'Switch to the night theme'}>{theme === 'night' ? '☀' : '☾'}</button>
+          <button type="button" className="themebtn" onClick={() => setTheme(theme === 'night' ? 'day' : 'night')} aria-label={theme === 'night' ? 'Switch to the daylight theme' : 'Switch to the night theme'}>
+            {theme === 'night'
+              ? <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="3.6" fill="currentColor" /><path d="M10 1.8v2.4M10 15.8v2.4M1.8 10h2.4M15.8 10h2.4M4.2 4.2l1.7 1.7M14.1 14.1l1.7 1.7M4.2 15.8l1.7-1.7M14.1 5.9l1.7-1.7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" fill="none" /></svg>
+              : <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M16.5 12.2A7 7 0 0 1 7.8 3.5a7 7 0 1 0 8.7 8.7z" fill="currentColor" /></svg>}
+          </button>
           <button type="button" className="hidebtn" onClick={() => setFull(true)}>Hide controls</button>
         </span>
       </header>
@@ -103,7 +112,7 @@ export function App() {
               onClick={() => setTab(x.id)}
             >
               <span>{x.label}</span>
-              {tn && <i className={`tdot ${tn}`} aria-hidden="true" />}
+              {tn && <ToneIcon tone={tn} size={13} />}
               {tn && <span className="sr-only"> ({toneText[tn]})</span>}
             </button>
           )
@@ -111,15 +120,16 @@ export function App() {
       </nav>
 
       <main ref={panelRef} className="panel" id="panel" role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={-1}>
+        {(tab === 'camera' || tab === 'aim') && <SetupStrip status={status} onStep={onSetupStep} />}
         {tab === 'camera' && <CameraTab status={status} next={() => goto('aim')} />}
-        {tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} />}
+        {tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} focus={aimFocus} />}
         {tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} />}
         {tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={() => setFilesOpen(true)} />}
         {tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} openFiles={openFiles} />}
       </main>
       <StatusBar status={status} connected={connected} />
       {full && status && status.capture.state !== 'idle' && (
-        <button type="button" className="fullrec" onClick={() => api('POST', '/capture/stop').catch((e) => reportError(e, 'Stop'))}>● {status.capture.state === 'flushing' ? 'Saving' : 'Recording'}{status.capture.total ? ` ${status.capture.done}/${status.capture.total}` : ` ${status.capture.done}`} · Stop</button>
+        <button type="button" className="fullrec" onClick={() => api('POST', '/capture/stop').catch((e) => reportError(e, 'Stop'))}><ToneIcon tone="rec" size={12} /> {status.capture.state === 'flushing' ? 'Saving' : 'Recording'}{status.capture.total ? ` ${status.capture.done}/${status.capture.total}` : ` ${status.capture.done}`} · Stop</button>
       )}
       {full && <button type="button" className="fullbtn" aria-pressed onClick={() => setFull(false)}>Show controls</button>}
       {filesOpen && <FileManagerScreen status={status} onClose={() => setFilesOpen(false)} />}

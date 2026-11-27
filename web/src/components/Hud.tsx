@@ -5,6 +5,7 @@ import { FocusBody } from './FocusAssist'
 import { clipText, HistPlot } from './Histogram'
 import { clipping, profileOf } from '../profile'
 import { useSetting } from '../settings'
+import { HOLD_WORD, holdLevel } from '../vocab'
 
 /**
  * Overlay widgets on top of the live view: recording, RAM buffer, guiding (with an error sparkline), histogram, and a
@@ -197,11 +198,11 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
     const label = lost ? 'Lost' : g.state === 'guiding' ? 'Holding' : g.state === 'calibrating' ? 'Calibrating' : t ? `Tracking ${t.mode}` : 'Idle'
     out.push(
       <Widget key="guide" id="guide" label="Guiding" w={w('guide')} api={api}
-        mini={<span className={lost ? 'bad-text' : ''}>{lost ? 'LOST' : g.state === 'guiding' ? <>Hold <b className="cv">{g.error_px?.toFixed(1) ?? '–'}</b> px</> : label}</span>}>
+        mini={<span className={lost ? 'bad-text' : ''}>{lost ? 'LOST' : g.state === 'guiding' ? <>{HOLD_WORD[holdLevel(g.error_px)]} <b className="cv">{g.error_px?.toFixed(1) ?? '–'}</b> px</> : label}</span>}>
         <div className={lost ? 'hud-lost' : ''}><b>{label}</b></div>
         {g.state === 'guiding' && (
           <>
-            <div><b className="cv">{g.error_px?.toFixed(1) ?? '–'}</b> <span className="cl">px error (averaged)</span></div>
+            <div><b>{HOLD_WORD[holdLevel(g.error_px)]}</b> <b className="cv">{g.error_px?.toFixed(1) ?? '–'}</b> <span className="cl">px error (averaged)</span></div>
             <Spark v={errHist} />
           </>
         )}

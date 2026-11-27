@@ -31,7 +31,7 @@ function Spec({ title, rows }: { title: string; rows: Row[] }) {
   if (!shown.length) return null
   return (
     <>
-      <h3>{title}</h3>
+      <h2 className="subhead">{title}</h2>
       <dl className="specs">
         {shown.map(([k, v]) => (<div key={k}><dt>{k}</dt><dd>{String(v)}</dd></div>))}
       </dl>
