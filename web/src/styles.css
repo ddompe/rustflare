@@ -693,3 +693,11 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--info, #6
 
 /* the software version, in the corner of the status bar */
 .sbar-ver { flex: none; align-self: center; padding: 0 .75rem; font-size: .72rem; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* a long device name wraps inside its box: a grid item would otherwise grow to its content and push the box past the column */
+.mount-found { grid-template-columns: minmax(0, 1fr); }
+.mount-found li { min-width: 0; }
+.mp-name { white-space: normal; overflow-wrap: anywhere; }
+.mp-sub { white-space: normal; overflow-wrap: anywhere; }
+/* the snowflake beside the sensor temperature while the cooler is on */
+.snow { display: inline-block; vertical-align: -2px; margin-right: .25rem; color: var(--info); }

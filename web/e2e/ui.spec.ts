@@ -673,6 +673,7 @@ test('the software version is in the corner of the status bar', async ({ page })
   const v = ((await (await page.request.get('/api/status')).json()) as { version: string }).version
   expect(v).toMatch(/^\d+\.\d+\.\d+/)
   await expect(page.locator('.sbar .sbar-ver')).toHaveText(`v${v}`)
+})
 
 test.describe('cooled camera', () => {
   const status = async (page: Page) => (await (await page.request.get('/api/status')).json()) as { camera?: { temperature_c: number | null; cooler: { available: boolean; on: boolean; target_c: number | null; power_pct: number | null; warming_up: boolean; fan: boolean | null; heater: boolean | null } } }
@@ -686,7 +687,7 @@ test.describe('cooled camera', () => {
   test('an uncooled camera has no cooler section and the API refuses', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('tab', { name: /^Camera/ }).click()
-    await expect(page.getByRole('heading', { name: 'Cooler' })).toHaveCount(0)
+    await expect(page.locator('details.disc', { has: page.locator('.disc-title', { hasText: /^Cooler$/ }) })).toHaveCount(0)
     expect((await status(page)).camera?.cooler.available).toBe(false)
     expect((await put(page, '/camera/cooler', { on: true })).ok()).toBe(false)
   })
@@ -695,7 +696,11 @@ test.describe('cooled camera', () => {
     await openCooled(page)
     await page.goto('/')
     await page.getByRole('tab', { name: /^Camera/ }).click()
-    await expect(page.getByRole('heading', { name: 'Cooler' })).toBeVisible()
+    // the cooler settings are a collapsible section: closed, its summary says the state; open, the controls show
+    const cooler = page.locator('details.disc', { has: page.locator('.disc-title', { hasText: /^Cooler$/ }) })
+    await expect(cooler).toBeVisible()
+    await expect(page.getByRole('switch', { name: 'Fan' })).toBeHidden()
+    await cooler.locator('summary').click()
     await expect(page.getByRole('switch', { name: 'Fan' })).toBeVisible()
     await expect(page.getByRole('switch', { name: 'Anti-dew heater' })).toBeVisible()
     const sw = page.getByRole('switch', { name: /^Cooler/ })
@@ -722,6 +727,7 @@ test.describe('cooled camera', () => {
     expect(c.warming_up).toBe(true)
     await page.goto('/')
     await page.getByRole('tab', { name: /^Camera/ }).click()
+    await page.locator('details.disc', { has: page.locator('.disc-title', { hasText: /^Cooler$/ }) }).locator('summary').click()
     await expect(page.getByText('Warming the sensor before switching off')).toBeVisible()
     await page.getByRole('button', { name: 'Switch off now' }).click()
     await expect.poll(async () => (await status(page)).camera?.cooler.on).toBe(false)

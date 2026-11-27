@@ -36,6 +36,14 @@ function bestRange(v: number): number {
   return bestD === Infinity ? EXP_RANGES.length - 1 : best
 }
 
+/** The marks under the gain slider. HCG and unity gain at the same gain (the ASI533) are one mark: two labels at one place print over each other. */
+function gainMarks(cat: CameraCatalog): { v: number; label: string; title: string }[] {
+  const hcg = cat.hcg_gain != null ? { v: cat.hcg_gain, label: 'HCG', title: cat.hcg_note ?? 'High conversion gain starts here' } : null
+  const unity = cat.unity_gain != null ? { v: cat.unity_gain, label: 'Unity', title: 'Unity gain' } : null
+  if (hcg && unity && hcg.v === unity.v) return [{ v: hcg.v, label: 'HCG · Unity', title: `${hcg.title} Unity gain is at the same setting.` }]
+  return [hcg, unity].filter((m): m is { v: number; label: string; title: string } => !!m)
+}
+
 function Slider({ c, marks }: { c: Control; marks?: { v: number; label: string; title?: string }[] }) {
   const id = useId()
   const isExp = c.id === 'exposure_us'
@@ -185,7 +193,7 @@ export function CameraTab({ status, next }: { status: Status | null; next: () =>
       <Section error={err}>
         {cam.histogram.length > 0 && <Histogram bins={cam.histogram} saturated={cam.saturated} />}
         {primary.map((c) => {
-          const marks = c.id === 'gain' && cat ? [cat.hcg_gain != null ? { v: cat.hcg_gain, label: 'HCG', title: cat.hcg_note ?? 'High conversion gain starts here' } : null, cat.unity_gain != null ? { v: cat.unity_gain, label: 'Unity', title: 'Unity gain' } : null].filter((m): m is { v: number; label: string; title: string } => !!m) : undefined
+          const marks = c.id === 'gain' && cat ? gainMarks(cat) : undefined
           return <Slider key={c.id} c={c} marks={marks} />
         })}
       </Section>

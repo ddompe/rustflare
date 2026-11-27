@@ -19,6 +19,8 @@ const FULL_CIRCLE: f64 = 129_600_000.0;
 const J2000_UNIX_MS: i64 = 946_728_000_000;
 /// The longest a guide pulse is asked for; the engine re-issues, so this is only a safety bound (the protocol allows 99,999 ms).
 const GUIDE_PULSE_MS: u32 = 2_500;
+/// How long to wait for a reply. The HAE69C takes 300 ms or more to answer tracking and stop commands (`:ST1#`, `:qR#`), so 400 ms was too short.
+const REPLY_TIMEOUT: Duration = Duration::from_millis(2_000);
 
 #[derive(Debug, Clone, Copy)]
 enum Reply {
@@ -73,7 +75,19 @@ fn model_name(code: &str) -> String {
     .into()
 }
 
-pub struct Ioptron<P: Read + Write + Send> {
+/// A serial-like port. `discard_input` throws away bytes that arrived without being asked for: a mount that answers a command after we
+/// gave up on it (the HAE69C answers `:ST1#` in about 300 ms or more) would otherwise have that late `1` read as the answer to the next command.
+pub trait Port: Read + Write + Send {
+    fn discard_input(&mut self) {}
+}
+
+impl Port for Box<dyn serialport::SerialPort> {
+    fn discard_input(&mut self) {
+        let _ = self.clear(serialport::ClearBuffer::Input);
+    }
+}
+
+pub struct Ioptron<P: Port> {
     port: P,
     model: String,
     device: String,
@@ -91,7 +105,7 @@ impl Ioptron<Box<dyn serialport::SerialPort>> {
             .flow_control(serialport::FlowControl::None)
             .parity(serialport::Parity::None)
             .stop_bits(serialport::StopBits::One)
-            .timeout(Duration::from_millis(400))
+            .timeout(REPLY_TIMEOUT)
             .open()
             .map_err(|e| Error::Mount(format!("opening {device}: {e}")))?;
         Ioptron::new(port, device)
@@ -106,7 +120,7 @@ pub fn probe(device: &str) -> Option<String> {
     (code.len() == 4 && code.bytes().all(|b| b.is_ascii_digit())).then(|| model_name(&code))
 }
 
-impl<P: Read + Write + Send> Ioptron<P> {
+impl<P: Port> Ioptron<P> {
     /// Sends `:MountInfo#` first, as the protocol document says every program must, and fails if nothing answers (wrong port or baud rate).
     pub fn new(mut port: P, device: &str) -> Result<Self> {
         let info = send(&mut port, ":MountInfo#", Reply::Fixed(4)).map_err(|e| Error::Mount(format!("{e}: is this the iOptron mount's serial port (115200 baud)?")))?;
@@ -145,13 +159,13 @@ impl<P: Read + Write + Send> Ioptron<P> {
     }
 }
 
-impl<P: Read + Write + Send> Drop for Ioptron<P> {
+impl<P: Port> Drop for Ioptron<P> {
     fn drop(&mut self) {
         let _ = self.stop();
     }
 }
 
-impl<P: Read + Write + Send> Mount for Ioptron<P> {
+impl<P: Port> Mount for Ioptron<P> {
     fn link(&self) -> Option<LinkInfo> {
         Some(LinkInfo { kind: "usb", up: true })
     }
@@ -346,7 +360,7 @@ fn parse_gep(reply: &str) -> Option<(f64, f64)> {
     Some((ra / FULL_CIRCLE * 24.0, sign * dec / CENTI_ARCSEC_PER_DEG))
 }
 
-fn send<T: Read + Write>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec<u8>> {
+fn send<T: Port>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec<u8>> {
     let started = std::time::Instant::now();
     let r = send_raw(dev, cmd, reply);
     match &r {
@@ -356,7 +370,8 @@ fn send<T: Read + Write>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec<u8>
     r
 }
 
-fn send_raw<T: Read + Write>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec<u8>> {
+fn send_raw<T: Port>(dev: &mut T, cmd: &str, reply: Reply) -> Result<Vec<u8>> {
+    dev.discard_input();
     dev.write_all(cmd.as_bytes()).map_err(|e| Error::Mount(format!("write {cmd}: {e}")))?;
     let want = match reply {
         Reply::None => return Ok(vec![]),
@@ -390,10 +405,13 @@ mod tests {
     use super::*;
     use std::collections::VecDeque;
 
-    struct Mock { written: String, replies: VecDeque<u8> }
+    struct Mock { written: String, replies: VecDeque<u8>, stale: VecDeque<u8> }
+    impl Port for Mock {
+        fn discard_input(&mut self) { self.stale.clear(); }
+    }
     impl Read for Mock {
         fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-            match self.replies.pop_front() {
+            match self.stale.pop_front().or_else(|| self.replies.pop_front()) {
                 Some(b) => { buf[0] = b; Ok(1) }
                 None => Err(std::io::ErrorKind::TimedOut.into()),
             }
@@ -411,7 +429,7 @@ mod tests {
     }
 
     fn mount(extra: &str) -> Ioptron<Mock> {
-        Ioptron::new(Mock { written: String::new(), replies: format!("0070{}{extra}", gls(0)).bytes().collect() }, "mock").unwrap()
+        Ioptron::new(Mock { stale: VecDeque::new(), written: String::new(), replies: format!("0070{}{extra}", gls(0)).bytes().collect() }, "mock").unwrap()
     }
 
     #[test]
@@ -424,9 +442,9 @@ mod tests {
 
     #[test]
     fn a_port_that_does_not_answer_is_reported_with_the_likely_cause() {
-        let e = Ioptron::new(Mock { written: String::new(), replies: VecDeque::new() }, "mock").err().expect("must fail");
+        let e = Ioptron::new(Mock { stale: VecDeque::new(), written: String::new(), replies: VecDeque::new() }, "mock").err().expect("must fail");
         assert!(e.to_string().contains("115200"), "{e}");
-        let e = Ioptron::new(Mock { written: String::new(), replies: "AM5#".bytes().collect() }, "mock").err().expect("must fail");
+        let e = Ioptron::new(Mock { stale: VecDeque::new(), written: String::new(), replies: "AM5#".bytes().collect() }, "mock").err().expect("must fail");
         assert!(e.to_string().contains("four digits"), "{e}");
     }
 
@@ -535,12 +553,24 @@ mod tests {
         m.go_home().unwrap();
         assert_eq!(m.port.written, ":MH#");
         // a series with no home sensors in the document is refused; a model the document does not list (the HAE69) is allowed
-        let mut c = Ioptron::new(Mock { written: String::new(), replies: format!("0026{}", gls(0)).bytes().collect() }, "mock").unwrap();
+        let mut c = Ioptron::new(Mock { stale: VecDeque::new(), written: String::new(), replies: format!("0026{}", gls(0)).bytes().collect() }, "mock").unwrap();
         assert!(!c.can_search_home());
         assert!(matches!(c.search_home(), Err(Error::Unsupported(_))));
-        let c = Ioptron::new(Mock { written: String::new(), replies: format!("0099{}", gls(0)).bytes().collect() }, "mock").unwrap();
+        let c = Ioptron::new(Mock { stale: VecDeque::new(), written: String::new(), replies: format!("0099{}", gls(0)).bytes().collect() }, "mock").unwrap();
         assert!(c.can_search_home());
         assert_eq!(c.slew_speeds().last(), Some(&512.0), "no guessed top speed for an unknown model");
+    }
+
+    #[test]
+    fn a_late_answer_does_not_corrupt_the_next_command() {
+        // the mount answered :ST1# after we had given up on it: its '1' is waiting when the next command goes out
+        let mut m = mount("");
+        m.port.replies.clear();
+        assert!(m.set_tracking(true).is_err(), "no answer in time is an error");
+        m.port.stale.extend(b"1");
+        m.port.replies.extend(gls(1).bytes());
+        let s = m.state().unwrap();
+        assert_eq!(s.tracking, Some(true), "the stray 1 was thrown away, the real reply was read");
     }
 
     #[test]

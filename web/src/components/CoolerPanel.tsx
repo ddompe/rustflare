@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, Cooler } from '../api'
-import { ErrorLine, RangeField, Section, Switch, useAction } from './ui'
+import { Disclosure, ErrorLine, RangeField, Snow, Switch, useAction } from './ui'
 
 type Sample = { t: number; temp: number | null; power: number | null }
 
@@ -55,7 +55,7 @@ export function CoolerPanel({ cooler }: { cooler: Cooler }) {
   const cold = cooler.temp_c != null && cooler.temp_c < 15
 
   return (
-    <Section title="Cooler">
+    <Disclosure title="Cooler" summary={<>{cooler.on && <Snow />}{cooler.warming_up ? 'warming up' : cooler.on ? `on, target ${Math.round(target)} °C` : 'off'}{cooler.temp_c != null ? ` · ${cooler.temp_c.toFixed(1)} °C` : ''}{cooler.on && cooler.power_pct != null ? ` · ${Math.round(cooler.power_pct)} %` : ''}</>}>
       <Switch
         label="Cooler"
         checked={cooler.on}
@@ -77,6 +77,6 @@ export function CoolerPanel({ cooler }: { cooler: Cooler }) {
       {cooler.warming_up && <div className="btnrow"><button type="button" onClick={() => put({ on: false, immediate: true })} title="Cut the cooler now, without the gentle warm-up">Switch off now</button></div>}
       {cold && !cooler.on && !cooler.warming_up && <p className="hint-text">The sensor is still cold: let it reach room temperature before opening the case or covering it, or the window will mist.</p>}
       <ErrorLine error={err} />
-    </Section>
+    </Disclosure>
   )
 }

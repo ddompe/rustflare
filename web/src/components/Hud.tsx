@@ -1,4 +1,5 @@
 import { KeyboardEvent, PointerEvent, ReactNode, useEffect, useRef, useState } from 'react'
+import { Snow } from './ui'
 import { api as callApi, Status, reportError } from '../api'
 import { FocusBody } from './FocusAssist'
 import { useSetting } from '../settings'
@@ -233,7 +234,7 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
           <dt>Disk</dt><dd>{recording ? <><b className="cv">{c.disk_mb_s.toFixed(0)}</b> MB/s</> : <span className="muted">idle</span>}</dd>
           {e && <><dt>Exposure</dt><dd><b>{expo(e.value)}</b></dd></>}
           {gn && <><dt>Gain</dt><dd><b>{Math.round(gn.value)}</b></dd></>}
-          {cam.temperature_c != null && <><dt>Sensor</dt><dd><b>{cam.temperature_c.toFixed(1)}</b> °C</dd></>}
+          {cam.temperature_c != null && <><dt>Sensor</dt><dd>{cam.cooler?.on && <Snow />}<b>{cam.temperature_c.toFixed(1)}</b> °C</dd></>}
           {mountText && <><dt>Mount</dt><dd><b>{mountText}</b></dd></>}
           <dt>Flat</dt><dd className={flats ? 'ok' : 'muted'}>{flats ? 'applied' : 'none'}</dd>
           <dt>Dark</dt><dd className={status.darks?.applied ? 'ok' : 'muted'}>{status.darks?.applied ? (status.darks.matches_camera ? 'applied' : 'mismatch') : 'none'}</dd>

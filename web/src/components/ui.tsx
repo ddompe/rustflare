@@ -112,3 +112,16 @@ export function endsText(seconds: number): string {
   const left = seconds < 90 ? `in ${Math.max(1, Math.round(seconds))} s` : m < 90 ? `in ${m} min` : `in ${Math.floor(m / 60)} h ${m % 60} min`
   return `about ${when} (${left})`
 }
+
+/** A drawn snowflake: the cooler is on. */
+export function Snow({ title = 'Cooler on' }: { title?: string }) {
+  return (
+    <svg className="snow" viewBox="0 0 20 20" width="14" height="14" role="img" aria-label={title}>
+      <title>{title}</title>
+      <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+        <path d="M10 2v16M3.1 6l13.8 8M3.1 14L16.9 6" />
+        <path d="M7.8 3.4L10 5.4l2.2-2M7.8 16.6L10 14.6l2.2 2M2.6 8.9l2.9.5-.6 2.9M17.4 8.9l-2.9.5.6 2.9M2.6 11.1l2.9-.5-.6-2.9M17.4 11.1l-2.9-.5.6-2.9" />
+      </g>
+    </svg>
+  )
+}
