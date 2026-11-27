@@ -439,7 +439,8 @@ test.describe('P3c: one name for each thing', () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
     await tab(page, 'More')
-    await page.locator('details.disc', { has: page.locator('.disc-title', { hasText: /^Storage$/ }) }).locator('summary').click()
+    const storage = page.locator('details.disc', { has: page.locator('.disc-title', { hasText: /^Storage$/ }) })
+    if (!(await storage.evaluate((e) => (e as HTMLDetailsElement).open))) await storage.locator('summary').click()
     await expect(page.getByLabel('Save to')).toBeVisible()
     await expect(page.getByLabel('Used')).toBeVisible()
     await page.getByRole('button', { name: 'Files: recordings and stacks' }).click()
@@ -457,7 +458,11 @@ test.describe('P3c: one name for each thing', () => {
       expect(id, `${name} has aria-describedby`).toBeTruthy()
       await expect(page.locator(`#${id}`), `${name} reason`).not.toBeEmpty()
     }
-    const open = (title: string) => page.locator('details.disc', { has: page.locator('.disc-title', { hasText: new RegExp(`^${title}$`) }) }).locator('summary').click()
+    // the open section is remembered between tests: open it only when it is closed (a click on an open one would close it)
+    const open = async (title: string) => {
+      const d = page.locator('details.disc', { has: page.locator('.disc-title', { hasText: new RegExp(`^${title}$`) }) })
+      if (!(await d.evaluate((e) => (e as HTMLDetailsElement).open))) await d.locator('summary').click()
+    }
     await open('Optical setup')
     await reasoned('Use these values')
     await reasoned('Duplicate')
