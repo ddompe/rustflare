@@ -489,6 +489,8 @@ impl Camera for AsiCam {
 
     fn sensor_size(&self) -> Option<(u32, u32)> { Some((self.prop.max_w as u32, self.prop.max_h as u32)) }
 
+    fn roi_limits(&self) -> RoiLimits { RoiLimits { step_x: 2, step_y: 2, step_w: 8, step_h: 2, min_w: 64, min_h: 64 } }
+
     fn roi(&self) -> Option<Roi> { Some(self.roi) }
 
     /// The SDK wants a width that is a multiple of 8 and a height that is a multiple of 2, a window inside the sensor, and an even corner

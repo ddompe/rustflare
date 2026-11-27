@@ -34,7 +34,19 @@ The simulator has a cooled colour camera ("Simulated cooled colour camera (RGGB)
 
 ## Frame size
 
-**Frame size** reads out only the centre 75, 50 or 25 % of the sensor. That gives a higher frame rate for the same USB bandwidth, for example about 150 fps instead of 57 on one Player One camera (see [Performance](../reference/performance.md)). It works on Player One and ZWO ASI cameras. Tracking restarts when you change it.
+**Frame size** reads out only the centre 75, 50 or 25 % of the sensor. That gives a higher frame rate for the same USB bandwidth, for example about 150 fps instead of 57 on one Player One camera (see [Performance](../reference/performance.md)). It works on Player One and ZWO ASI cameras. Tracking restarts when you change it. The presets are centred; for any other window use **Region...**.
+
+### Choosing a region
+
+**Region...** (here, and in the picture's **Tools** sheet) lets you drag the window you want on the picture:
+
+1. The camera switches to its whole sensor (the earlier region is remembered) and a box appears over the picture, starting where the earlier region was, or as the centred half.
+2. Drag the box to move it (the offset). Drag a corner or an edge handle to resize it; the handles have 44 px touch areas. The area outside is dimmed and a label gives the size and offset in sensor pixels. With a keyboard: arrows move the box by the camera's step, Shift+arrows resize it, Enter applies, Escape cancels.
+3. Under the picture (beside it on a phone held sideways) the **X, Y, Width and Height** fields show the same numbers and take typed ones. A number snaps to what the camera can do (for example a ZWO ASI takes widths in steps of 8 and an even corner) and a line says what changed. **Aspect lock** keeps a shape: *Keep current shape*, *Sensor shape*, 1:1, 4:3, 3:2, 16:9 or 2:1. A locked corner keeps its opposite corner and the shape; an edge handle keeps the opposite edge and resizes the other direction about the middle; typing a width changes the height and the other way round. The shape is exact up to one step.
+4. The line above **Apply region** says what you will get ("Will read 1504 x 1504 at 752, 752; about 4x less data per frame"). **Centre** centres the box, **Full frame** selects the whole sensor, **Cancel** (or leaving the tab) puts the earlier region back.
+5. **Apply region** sets it and leaves selection mode. A line says what was set and has a **Full frame** button. The picture's size label shows the offset when the region is not centred ("1504x1504 at 100, 752").
+
+Region... is greyed, with the reason, while recording or calibrating and on a camera that cannot read out part of its sensor. Flats and darks must be retaken for the new size.
 
 ## Flats
 

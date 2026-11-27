@@ -162,8 +162,9 @@ pub enum Command {
     SetLostFrames { enabled: bool },
     /// Automatic meridian flip on/off and its timing (minutes before the meridian to record, minutes after to flip).
     SetAutoFlip { enabled: bool, record_min: f64, flip_min: f64 },
-    /// Centred region of interest covering `fraction` of the sensor in each direction (1.0 = full frame).
-    SetRoi { fraction: f64 },
+    /// Region of interest: either centred, covering `fraction` of the sensor in each direction (1.0 = full frame), or a custom `region`
+    /// in sensor pixels. The engine rounds it to what the camera takes and answers with the effective region.
+    SetRoi { fraction: Option<f64>, region: Option<rustflare_core::Roi> },
     /// Opt-in session log (JSON lines plus small frames) for regression fixtures.
     SetSessionLog { enabled: bool, frame_every_s: Option<f64> },
     /// Disc frame plus a `factor` times longer exposure for prominences, and their composite.
@@ -1722,19 +1723,27 @@ impl Engine {
                 crate::config::set(self.storage.config_file(), "debug", json!({ "lost_frames": enabled }))?;
                 Ok(json!({}))
             }
-            Command::SetRoi { fraction } => {
+            Command::SetRoi { fraction, region } => {
                 self.require_idle()?;
                 self.require_not_flats()?;
-                if !(0.1..=1.0).contains(&fraction) {
-                    return Err("region must be 10% to 100% of the sensor".into());
-                }
                 let cam = self.camera.as_mut().ok_or("no camera open")?;
                 let sensor = cam.sensor_size().ok_or("this camera cannot report its sensor size, so a region of interest is not available")?;
-                let roi = rustflare_core::centred_roi(sensor, fraction);
+                let want = match (fraction, region) {
+                    (_, Some(r)) => r,
+                    (Some(f), None) => {
+                        if !(0.1..=1.0).contains(&f) {
+                            return Err("region must be 10% to 100% of the sensor".into());
+                        }
+                        rustflare_core::centred_roi(sensor, f)
+                    }
+                    (None, None) => return Err("give a fraction or a region (x, y, width, height)".into()),
+                };
+                let roi = rustflare_core::fit_roi(want, sensor, &cam.roi_limits())?;
                 cam.set_roi(roi).map_err(s)?;
                 // The frame geometry changed: positions, flats and darks no longer line up, so tracking starts over.
                 self.stop_guiding_quietly();
                 self.tracker = None;
+                self.sun_model.reset();
                 self.status.tracking = None;
                 self.status.sun = None;
                 self.last_frame = None;
@@ -2367,7 +2376,7 @@ impl Engine {
     fn refresh_roi(&mut self) {
         self.status.roi = self.camera.as_ref().and_then(|c| {
             let (r, (sw, sh)) = (c.roi()?, c.sensor_size()?);
-            Some(RoiStatus { x: r.x, y: r.y, width: r.width, height: r.height, sensor_width: sw, sensor_height: sh })
+            Some(RoiStatus { x: r.x, y: r.y, width: r.width, height: r.height, sensor_width: sw, sensor_height: sh, limits: c.roi_limits() })
         });
     }
 
@@ -4420,5 +4429,70 @@ fn detect_target(profile: &str, frame: &Frame, hint: Option<f64>, prev: Option<&
         "other" => None,
         "planet" => locate_planet(frame, prev.map(|p| (p.pos, p.radius))),
         _ => locate_sun(frame, hint),
+    }
+}
+
+#[cfg(test)]
+mod roi_tests {
+    use super::*;
+
+    fn engine() -> (Handle, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("rustflare-roi-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let storage = Arc::new(Storage::load(dir.join("cfg.json"), dir.join("data")));
+        let (h, _jh) = spawn(storage, Arc::new(std::sync::atomic::AtomicBool::new(false)), Arc::new(preview::Demand::default()));
+        (h, dir)
+    }
+
+    async fn wait_size(h: &Handle, w: u32, ht: u32) -> bool {
+        for _ in 0..100 {
+            if h.status.borrow().camera.as_ref().map_or(false, |c| c.width == w && c.height == ht) { return true; }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        false
+    }
+
+    /// A custom region through the real engine and the simulator: refusals with reasons, the effective (rounded) region in the answer and in
+    /// `status.roi`, the picture size following it, and tracking starting over.
+    #[tokio::test]
+    async fn a_custom_region_is_rounded_applied_and_resets_tracking() {
+        let (h, dir) = engine();
+        assert!(h.call(Command::SetRoi { fraction: None, region: Some(rustflare_core::Roi { x: 0, y: 0, width: 640, height: 480 }) }).await.unwrap_err().contains("no camera"));
+        h.call(Command::OpenCamera { driver: "simulator".into(), id: "sim0".into() }).await.unwrap();
+        assert!(wait_size(&h, 1280, 960).await);
+        let lim = h.status.borrow().roi.as_ref().expect("the simulator supports regions").limits;
+        assert_eq!((lim.step_w, lim.min_w), (4, 64));
+        let r = |x, y, width, height| Some(rustflare_core::Roi { x, y, width, height });
+        h.call(Command::StartTracking { mode: "anchor".into(), x: Some(640.0), y: Some(480.0), radius: None }).await.unwrap();
+        let mut tracked = false;
+        for _ in 0..60 {
+            if h.status.borrow().tracking.is_some() { tracked = true; break; }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(tracked, "tracking runs before the change");
+        let e = h.call(Command::SetRoi { fraction: None, region: r(101, 51, 603, 401) }).await.unwrap();
+        assert_eq!((e["x"].as_u64(), e["y"].as_u64(), e["width"].as_u64(), e["height"].as_u64()), (Some(102), Some(52), Some(600), Some(400)));
+        assert!(wait_size(&h, 600, 400).await, "the picture is the region");
+        {
+            let st = h.status.borrow();
+            let roi = st.roi.as_ref().unwrap();
+            assert_eq!((roi.x, roi.y, roi.width, roi.height), (102, 52, 600, 400));
+            assert!(st.tracking.is_none(), "tracking starts over");
+        }
+        for bad in [r(0, 0, 32, 32), r(1000, 0, 400, 400), r(0, 0, 2000, 400), r(0, 900, 400, 100)] {
+            let err = h.call(Command::SetRoi { fraction: None, region: bad }).await.unwrap_err();
+            assert!(err.contains("region"), "{err}");
+        }
+        assert!(h.call(Command::SetRoi { fraction: None, region: None }).await.is_err());
+        // the centred presets still work, and full frame comes back
+        h.call(Command::SetRoi { fraction: Some(0.5), region: None }).await.unwrap();
+        assert!(wait_size(&h, 640, 480).await);
+        h.call(Command::SetRoi { fraction: Some(1.0), region: None }).await.unwrap();
+        assert!(wait_size(&h, 1280, 960).await);
+        // not while a capture runs
+        h.call(Command::CaptureBursts { name: None, frames: Some(2000), seconds: None, interval_s: None, bursts: Some(1), format: None, on_full: None, home_when_done: false }).await.ok();
+        let err = h.call(Command::SetRoi { fraction: None, region: r(0, 0, 640, 480) }).await.unwrap_err();
+        assert!(err.contains("capture is running"), "{err}");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -583,9 +583,24 @@ async fn lost_frames(s: State<AppState>, Json(b): Json<LostFramesBody>) -> Res {
 }
 
 #[derive(Deserialize)]
-struct RoiBody { fraction: f64 }
+struct RoiBody { fraction: Option<f64>, x: Option<u32>, y: Option<u32>, width: Option<u32>, height: Option<u32> }
+/// `{fraction}` for a centred region, or `{x, y, width, height}` in sensor pixels.
+fn roi_command(b: RoiBody) -> Result<Command, String> {
+    let region = match (b.x, b.y, b.width, b.height) {
+        (None, None, None, None) => None,
+        (Some(x), Some(y), Some(width), Some(height)) => Some(rustflare_core::Roi { x, y, width, height }),
+        _ => return Err("a region needs all of x, y, width and height".into()),
+    };
+    if region.is_some() && b.fraction.is_some() {
+        return Err("give either a fraction or a region, not both".into());
+    }
+    Ok(Command::SetRoi { fraction: b.fraction, region })
+}
 async fn camera_roi(s: State<AppState>, Json(b): Json<RoiBody>) -> Res {
-    run(s, Command::SetRoi { fraction: b.fraction }).await
+    match roi_command(b) {
+        Ok(cmd) => run(s, cmd).await,
+        Err(e) => (StatusCode::BAD_REQUEST, Json(json!({ "error": e }))).into_response(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -933,5 +948,19 @@ mod catalog_tests {
         for (name, gain) in [("ZWO ASI294MC Pro", 120), ("ZWO ASI662MC", 200), ("ZWO ASI2600MC Pro", 100), ("ZWO ASI664MC", 180)] {
             assert_eq!(entry_for(name)["hcg_gain"], gain, "{name}");
         }
+    }
+}
+
+#[cfg(test)]
+mod roi_body_tests {
+    use super::*;
+    fn body(j: serde_json::Value) -> Result<Command, String> { roi_command(serde_json::from_value(j).unwrap()) }
+
+    #[test]
+    fn a_fraction_or_a_whole_region_and_nothing_in_between() {
+        assert!(matches!(body(json!({ "fraction": 0.5 })), Ok(Command::SetRoi { fraction: Some(_), region: None })));
+        assert!(matches!(body(json!({ "x": 2, "y": 4, "width": 640, "height": 480 })), Ok(Command::SetRoi { fraction: None, region: Some(_) })));
+        assert!(body(json!({ "x": 2, "width": 640 })).err().unwrap().contains("all of"));
+        assert!(body(json!({ "fraction": 0.5, "x": 2, "y": 4, "width": 640, "height": 480 })).err().unwrap().contains("either"));
     }
 }

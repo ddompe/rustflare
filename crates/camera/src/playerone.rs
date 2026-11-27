@@ -156,6 +156,8 @@ impl Camera for PoaCam {
         Some((p.max_width, p.max_height))
     }
 
+    fn roi_limits(&self) -> RoiLimits { RoiLimits { step_x: 2, step_y: 2, step_w: 4, step_h: 2, min_w: 64, min_h: 64 } }
+
     fn roi(&self) -> Option<rustflare_core::Roi> {
         let (w, h) = self.cam.image_size();
         let (x, y) = self.cam.image_start_pos().ok()?;

@@ -1,13 +1,16 @@
-import React, { useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useStretch } from '../stretch'
 import { api, Status, reportError } from '../api'
 import { Display, cssFilter } from '../display'
 import { HudLayer, HudMenu, useHudLayout } from './Hud'
 import { noun, profileOf, why } from '../profile'
 import { usePopover } from './ui'
+import { RegionSelect } from './RegionSelect'
+import { RegionApi, regionWhy } from './RegionPanel'
+import { regionLabel } from '../region'
 
 /** Live image (MJPEG) with display filters, zoom/pan and a measurement overlay in frame-pixel coordinates. */
-export function LiveView({ status, display, setDisplay, anchorPick, onPicked, onDisplay }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; anchorPick: boolean; onPicked: () => void; onDisplay: () => void }) {
+export function LiveView({ status, display, setDisplay, anchorPick, onPicked, onDisplay, region }: { status: Status | null; display: Display; setDisplay: (p: Partial<Display>) => void; anchorPick: boolean; onPicked: () => void; onDisplay: () => void; region: RegionApi }) {
   const [stretch, setStretch] = useStretch()
   const box = useRef<HTMLDivElement>(null)
   const inner = useRef<HTMLDivElement>(null)
@@ -21,6 +24,9 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
   const hud = useHudLayout()
   const tools = usePopover()
   const [widgets, setWidgets] = useState(false)
+  const selecting = region.active
+  // choosing a region needs the picture as it is: no zoom or pan to move the sensor under the selection
+  useEffect(() => { if (selecting) setDisplay({ zoom: 1, panX: 0, panY: 0 }) }, [selecting]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const clampPan = (zoom: number, px: number, py: number) => {
     const r = box.current!.getBoundingClientRect()
@@ -28,13 +34,14 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
     return { panX: Math.max(-mx, Math.min(mx, px)), panY: Math.max(-my, Math.min(my, py)) }
   }
   const onWheel = (e: React.WheelEvent) => {
+    if (selecting) return
     const zoom = Math.max(1, Math.min(8, d.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)))
     setDisplay({ zoom, ...clampPan(zoom, d.panX, d.panY) })
   }
-  const onDown = (e: React.PointerEvent) => { drag.current = { x: e.clientX, y: e.clientY, px: d.panX, py: d.panY, moved: false } }
+  const onDown = (e: React.PointerEvent) => { if (selecting) return; drag.current = { x: e.clientX, y: e.clientY, px: d.panX, py: d.panY, moved: false } }
   const onMove = (e: React.PointerEvent) => {
     const s = drag.current
-    if (!s || d.zoom <= 1) return
+    if (!s || d.zoom <= 1 || selecting) return
     const dx = e.clientX - s.x, dy = e.clientY - s.y
     if (Math.abs(dx) + Math.abs(dy) > 3) s.moved = true
     setDisplay(clampPan(d.zoom, s.px + dx, s.py + dy))
@@ -62,7 +69,7 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
   return (
     <div className="live-wrap" style={{ '--ar': W / H } as React.CSSProperties}>
     <div ref={box} className={`live ${anchorPick ? 'pick' : ''}`}
-      onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onDoubleClick={() => setDisplay({ zoom: 1, panX: 0, panY: 0 })}>
+      onWheel={onWheel} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onDoubleClick={() => { if (!selecting) setDisplay({ zoom: 1, panX: 0, panY: 0 }) }}>
       <svg width="0" height="0" style={{ position: 'absolute' }}>
         <filter id="rf-gamma" colorInterpolationFilters="sRGB">
           <feComponentTransfer>
@@ -112,11 +119,14 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
           </g>
         </svg>
       </div>
-      <HudLayer status={status} api={hud} previewFps={d.fps} />
-      <div className="hud">{W}×{H}{hint && ` · ${hint}`}</div>
+      {!selecting && <HudLayer status={status} api={hud} previewFps={d.fps} />}
+      {selecting && region.ready && region.sel && region.limits && region.sensor && (
+        <RegionSelect rect={region.sel.rect} limits={region.limits} sensor={region.sensor} ratio={region.sel.ratio} onChange={region.update} onConfirm={region.apply} onCancel={region.cancel} />
+      )}
+      <div className="hud" data-testid="size-label">{status?.roi ? regionLabel({ x: status.roi.x, y: status.roi.y, w: status.roi.width, h: status.roi.height }, { w: status.roi.sensor_width, h: status.roi.sensor_height }, status.roi.limits) : `${W}×${H}`}{hint && ` · ${hint}`}</div>
       {anchorPick && <div className="hint" role="status">Tap a feature (sunspot, filament, plage) to track it</div>}
     </div>
-      <div className="live-tools" ref={tools.box}>
+      {!selecting && <div className="live-tools" ref={tools.box}>
         <button ref={tools.button} type="button" className="tools-toggle" aria-label="Picture tools" aria-expanded={tools.open} aria-controls="tools-sheet" onClick={() => tools.setOpen(!tools.open)}>
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /></svg>
           <span aria-hidden="true">Tools</span>
@@ -144,12 +154,16 @@ export function LiveView({ status, display, setDisplay, anchorPick, onPicked, on
             <button type="button" onClick={() => { tools.setOpen(false); onDisplay() }}>
               <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h8M15 15h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" /><circle cx="13" cy="5" r="2" fill="currentColor" /><circle cx="7" cy="10" r="2" fill="currentColor" /><circle cx="13" cy="15" r="2" fill="currentColor" /></svg><span>Display</span>
             </button>
+            <button type="button" disabled={!!regionWhy(status)} aria-describedby={regionWhy(status) ? 'why-region' : undefined} onClick={() => { tools.setOpen(false); region.start() }}>
+              <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><path d="M2.5 6V2.5H6M14 2.5h3.5V6M17.5 14v3.5H14M6 17.5H2.5V14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><rect x="6.5" y="6.5" width="7" height="7" rx="1" fill="currentColor" /></svg><span>Region…</span>
+            </button>
+            {regionWhy(status) && <p className="gate-why hint-text tools-why" id="why-region">Region is off: {regionWhy(status)}</p>}
             {d.zoom <= 1 && <p className="gate-why hint-text tools-why" id="why-zoomout">Zoom out is off: the picture is not zoomed in.</p>}
             {!status?.sun && !status?.coronagraph?.enabled && <p className="gate-why hint-text tools-why" id="why-prom">Prominence is off: {why(profileOf(status), 'corona') ?? 'it needs the Sun in view.'}</p>}
           </div>
         )}
         <HudMenu api={hud} open={widgets} onClose={() => setWidgets(false)} />
-      </div>
+      </div>}
     </div>
   )
 }

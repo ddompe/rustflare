@@ -741,7 +741,7 @@ code { font-size: max(.875em, 12px); }
 @media (max-width: 699px) and (orientation: portrait) {
   .live-tools { left: .4rem; right: auto; top: auto; bottom: .4rem; align-items: flex-start; }
   .tools-sheet { position: fixed; left: .5rem; right: .5rem; width: auto; bottom: calc(98px + 2 * env(safe-area-inset-bottom) + .5rem); z-index: 40; }
-  .hud { top: .3rem; bottom: auto; }
+  .hud { top: auto; bottom: .3rem; }
   .hist svg { height: 3.2rem; }
 }
 
@@ -1030,3 +1030,43 @@ progress.buf { height: .5rem; }
   .themebtn { min-width: 44px; padding: 0; }
   .hidebtn { padding: 0 .5rem; }
 }
+
+/* ---------- choosing a region of interest: the selection on the picture, the numbers under it ---------- */
+.region-sel { position: absolute; inset: 0; z-index: 3; touch-action: none; outline: none; -webkit-user-select: none; user-select: none; }
+.region-sel:focus-visible { box-shadow: inset 0 0 0 3px #fff, inset 0 0 0 5px #000; border-radius: 0; }
+.region-sel > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.region-dim { fill: rgba(0, 0, 0, .6); }
+.region-line-dark { fill: none; stroke: #000; stroke-width: 4px; }
+.region-line { fill: none; stroke: #fff; stroke-width: 2px; }
+.region-label { position: absolute; left: .4rem; top: .4rem; max-width: calc(100% - .8rem); background: #000d; color: #fff; border: 1px solid #fff8; padding: .15rem .55rem; border-radius: 6px; font-size: .85rem; font-weight: 650; font-variant-numeric: tabular-nums; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.region-body { position: absolute; cursor: move; touch-action: none; }
+.region-handle { position: absolute; width: 44px; height: 44px; transform: translate(-50%, -50%); display: grid; place-items: center; touch-action: none; }
+.region-handle i { display: block; width: 18px; height: 18px; background: var(--accent); border: 2.5px solid #fff; box-shadow: 0 0 0 1.5px #000, 0 1px 6px #000a; border-radius: 3px; pointer-events: none; }
+.region-handle.h-n i, .region-handle.h-s i, .region-handle.h-e i, .region-handle.h-w i { border-radius: 50%; }
+.region-handle.h-nw, .region-handle.h-se { cursor: nwse-resize; } .region-handle.h-ne, .region-handle.h-sw { cursor: nesw-resize; }
+.region-handle.h-n, .region-handle.h-s { cursor: ns-resize; } .region-handle.h-e, .region-handle.h-w { cursor: ew-resize; }
+
+.panel.choosing { --pad: 1rem; padding: .75rem var(--pad) 0; display: flex; flex-direction: column; }
+.region-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.region-title { font-size: 1.05rem; margin: 0; }
+.region-help { margin: .15rem 0 .5rem; }
+.region-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; }
+.region-field label, .region-lock label { display: block; color: var(--muted); font-size: .85rem; font-weight: 600; margin-bottom: .2rem; }
+.region-field input { text-align: center; padding: 0 .25rem; font-variant-numeric: tabular-nums; }
+.region-field input[aria-invalid='true'] { border-color: var(--warn); }
+.region-notes:empty { display: none; }
+.region-notes { margin: .3rem 0 0; }
+.warn-line { margin: .15rem 0; color: var(--warn); font-size: .88rem; font-weight: 600; line-height: 1.35; }
+.region-lock { margin: .6rem 0 0; }
+.region-btns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; margin-top: .6rem; }
+.region-btns button { padding: 0 .3rem; font-size: .92rem; white-space: normal; line-height: 1.15; }
+.region-result { margin: 0 0 .35rem; font-size: .88rem; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.region-apply { position: sticky; bottom: 0; margin: auto calc(-1 * var(--pad)) 0; padding: .55rem var(--pad) .6rem; background: var(--bg); border-top: 1px solid var(--line-soft); z-index: 2; }
+.region-apply button { width: 100%; min-height: 44px; }
+@media (max-height: 700px) and (orientation: portrait) { .region-help, .region-title { display: none; } .panel.choosing { padding-top: .5rem; } }
+.region-done { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin: 0 0 .75rem; padding: .5rem .75rem; background: var(--surface); border: 1.5px solid var(--ok); border-radius: var(--radius); font-size: .92rem; line-height: 1.35; }
+.region-done > span { flex: 1 1 14rem; min-width: 0; }
+.region-done button { min-height: 44px; }
+@media (max-height: 520px) and (orientation: landscape) { .panel.choosing { --pad: .75rem; padding-top: .5rem; } .region-help, .region-title { display: none; } .region-lock { margin-top: .4rem; } .region-btns { margin-top: .4rem; } }
+@media (min-width: 900px), (min-width: 700px) and (orientation: landscape) { .panel.choosing { --pad: 1rem; } }
+@media (prefers-reduced-motion: no-preference) { .region-done { animation: region-in .2s cubic-bezier(.2, .8, .2, 1); } @keyframes region-in { from { opacity: 0; transform: translateY(-4px); } } }

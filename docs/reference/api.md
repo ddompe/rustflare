@@ -89,7 +89,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 
 | | body |
 |---|---|
-| `PUT /api/camera/roi` | `{"fraction"}`: read out the centre `fraction` (0.1 to 1) of the sensor; the UI offers 1, 0.75, 0.5, 0.25. Refused while recording; restarts tracking. `status.roi` is `{width, height, sensor_width, sensor_height ...}` or null where the camera cannot |
+| `PUT /api/camera/roi` | `{"fraction"}`: read out the centre `fraction` (0.1 to 1) of the sensor; the UI offers 1, 0.75, 0.5, 0.25. Or `{"x","y","width","height"}` in sensor pixels (all four): any window. The engine rounds it to what the camera takes (size down to the steps, corner to the nearest step, then inside the sensor) and answers with the effective `{x, y, width, height}`. Refused with 400 and a reason: outside the sensor, larger than it, below the minimum size, only some of the four numbers, both forms at once, or while a capture runs. Restarts tracking. `status.roi` is `{x, y, width, height, sensor_width, sensor_height, limits}` or null where the camera cannot; `limits` is `{step_x, step_y, step_w, step_h, min_w, min_h}` (ZWO ASI 2, 2, 8, 2, minimum 64 x 64; Player One 2, 2, 4, 2, 64 x 64) |
 | `PUT /api/colour` | `{"mode":"off"\|"auto"\|"manual","r"?,"b"?}`: white balance of a colour camera's live view and debayered PNG (gains 0.25 to 4) |
 | `PUT /api/coronagraph` | `{"enabled","scale"?}`: the prominence view (display only); `scale` 0.8 to 1.2 of the Sun's radius, default 1.03 |
 | `PUT /api/focus` | `{"enabled","reset"?}`: focus assist; `status.focus` carries the score and its history |

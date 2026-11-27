@@ -1,0 +1,36 @@
+// Screenshots of the region selection for a visual check: node e2e/region-shots.mjs <outdir> (a simulator server on E2E_URL, default 127.0.0.1:18295)
+import { chromium } from '@playwright/test'
+const base = process.env.E2E_URL ?? 'http://127.0.0.1:18295'
+const out = process.argv[2] ?? '.'
+const WIDE = '* { font-family: Verdana, "DejaVu Sans", sans-serif !important; letter-spacing: .02em !important }'
+const api = (m, p, b) => fetch(base + '/api' + p, { method: m, headers: { 'content-type': 'application/json' }, body: b ? JSON.stringify(b) : undefined })
+await api('POST', '/camera/open', { driver: 'simulator', id: 'sim0' })
+await api('PUT', '/ui', { key: 'ui.setup_dismissed', value: true })
+await api('PUT', '/ui', { key: 'ui.profile_confirmed', value: true })
+const browser = await chromium.launch()
+for (const [name, w, h, theme, wide] of [['phone', 390, 844, 'night', false], ['small', 375, 667, 'night', true], ['land', 667, 375, 'night', false], ['desk', 1280, 800, 'day', false], ['phone-day', 390, 844, 'day', true]]) {
+  await api('PUT', '/ui', { key: 'ui.theme', value: theme })
+  await api('PUT', '/camera/roi', { fraction: 1 })
+  const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, hasTouch: w < 700 })
+  const page = await ctx.newPage()
+  if (wide) await page.addInitScript((css) => document.addEventListener('DOMContentLoaded', () => { const s = document.createElement('style'); s.textContent = css; document.head.appendChild(s) }), WIDE)
+  await page.goto(base)
+  await page.getByRole('tab', { name: /^Camera/ }).click()
+  await page.getByRole('button', { name: 'Picture tools' }).click()
+  await page.screenshot({ path: `${out}/${name}-tools.png` })
+  await page.getByRole('button', { name: 'Region…' }).click()
+  await page.getByTestId('region-select').waitFor()
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: `${out}/${name}-select.png` })
+  await page.getByLabel('Aspect lock').selectOption({ label: '16:9' })
+  await page.locator('#region-x').fill('100'); await page.locator('#region-x').blur()
+  await page.waitForTimeout(200)
+  await page.screenshot({ path: `${out}/${name}-lock.png` })
+  await page.getByRole('button', { name: 'Apply region' }).click()
+  await page.getByTestId('region-done').waitFor()
+  await page.waitForTimeout(800)
+  await page.screenshot({ path: `${out}/${name}-done.png` })
+  await ctx.close()
+}
+await api('PUT', '/camera/roi', { fraction: 1 })
+await browser.close()

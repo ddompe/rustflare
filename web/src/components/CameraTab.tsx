@@ -7,10 +7,12 @@ import { useSetting } from '../settings'
 import { Histogram } from './Histogram'
 import { DeviceCard } from './DeviceCard'
 import { RoiControl } from './RoiControl'
+import { RegionApi } from './RegionPanel'
 import { ColourControl } from './ColourControl'
 import { FocusAssist } from './FocusAssist'
 import { CoolerPanel } from './CoolerPanel'
 import { CameraCatalog, useDatasheet } from '../datasheet'
+import { regionLabel } from '../region'
 
 const fmt = (c: Control, v: number) => {
   if (c.unit !== 'µs') return `${Math.round(v)}${c.unit ? ` ${c.unit}` : ''}`
@@ -153,7 +155,7 @@ function Slider({ c, marks }: { c: Control; marks?: { v: number; label: string; 
 const PRIMARY = ['exposure_us', 'gain']
 
 /** Step 1: open the camera, then get a good exposure (histogram, no clipping). */
-export function CameraTab({ status, next, setup, openOptics }: { status: Status | null; next: () => void; /** opens the Optical setups dialog */ openOptics: () => void; /** the first-session strip: below the exposure, so the first screen stays the picture, Start, profile and exposure */ setup?: ReactNode }) {
+export function CameraTab({ status, region, next, setup, openOptics }: { status: Status | null; region: RegionApi; next: () => void; /** opens the Optical setups dialog */ openOptics: () => void; /** the first-session strip: below the exposure, so the first screen stays the picture, Start, profile and exposure */ setup?: ReactNode }) {
   const [list, setList] = useState<CameraInfo[]>([])
   const [sel, setSel] = useSetting('camera.selected', '')
   const { err, busy, run } = useAction()
@@ -239,8 +241,8 @@ export function CameraTab({ status, next, setup, openOptics }: { status: Status 
       <Disclosure title="Focus assist" summary={status?.focus?.enabled ? `score ${status.focus.lucky?.toFixed(2) ?? "…"}` : 'off'}>
         <FocusAssist status={status} />
       </Disclosure>
-      <Disclosure title="Frame size" summary={status?.roi ? `${status.roi.width}×${status.roi.height}` : ''}>
-        <RoiControl status={status} />
+      <Disclosure title="Frame size" summary={status?.roi ? regionLabel({ x: status.roi.x, y: status.roi.y, w: status.roi.width, h: status.roi.height }, { w: status.roi.sensor_width, h: status.roi.sensor_height }, status.roi.limits) : ''}>
+        <RoiControl status={status} region={region} />
       </Disclosure>
       <DeviceCard kind="camera" data={sheet} />
       {askClose && (
