@@ -3,11 +3,11 @@
 ## Layout
 
 ```
-crates/     core camera mount tracking capture server
+crates/     core camera mount tracking capture ring stack server
 web/        React + Vite UI (src/, components/)
 docs/       this documentation (guide/, reference/, project/); docs/adr/ decision records
 packaging/  files of the .deb: systemd unit, udev rule, maintainer scripts, rustflare-user
-scripts/    build-deb.sh, pi-deploy.sh, smoke.sh, sim/ (scenario scripts), mock-github-release.py
+scripts/    build-deb.sh, pi-deploy.sh, smoke.sh, sim/ (scenario scripts), analysis/, pi-sampler.py, screenshots.cjs
 .github/    CI (ci.yml) and release (release.yml) workflows
 ```
 
@@ -35,8 +35,8 @@ npm run build        # type-check + production build into web/dist
 Pure logic is where the tests are: ZWO protocol (mock serial port), trackers (synthetic frames, including a partially visible disc),
 calibration and guiding (closed loop against a physical model), H-alpha-like disc detection, SER layout, the asynchronous frame writer (buffering, FAT32 rollover, PNG folders, write errors), storage selection, flat-exposure convergence, simulator behaviour.
 `scripts/smoke.sh` drives calibration, guiding, single/sequence/flats through the real HTTP API.
-The web UI has 34 Playwright browser tests (`web/e2e/ui.spec.ts`, phone and desktop projects, against the simulators). `scripts/sim/*.sh` run multi-step scenarios on the simulators (guiding in lane recordings, a Sun hidden for a minute, the automatic flip with a recording running), see [their README](https://github.com/ddompe/rustflare/blob/main/scripts/sim/README.md).
-Not covered by automated tests: real cameras and mounts. What has and has not been run on real equipment is in the [hardware checklist](hardware-checklist.md); debugging a real system is in [Debugging and logs](../reference/debugging.md).
+The web UI has about 120 Playwright test definitions in `web/e2e/` (`ui.spec.ts`, `round2.spec.ts`, `round3.spec.ts`, `contrast.spec.ts`), several looped over viewports and fonts, each run in a phone and a desktop project (about 320 runs in all, unverified count) against the simulators. Run them with the release server built: `cd web && npm ci && npx playwright install chromium && npx playwright test` (the config starts the server itself on port 18101; `E2E_URL=http://<pi>:8080 npx playwright test --grep @pi` runs the read-only checks against a real Pi). `scripts/sim/*.sh` run multi-step scenarios on the simulators (guiding in lane recordings, a Sun hidden for a minute, the automatic flip with a recording running), see [their README](https://github.com/ddompe/rustflare/blob/main/scripts/sim/README.md).
+Not covered by automated tests: real cameras and mounts (the iOptron driver and the ZWO ASI driver also have mock or fake-SDK tests of their protocols). What has and has not been run on real equipment is in the [hardware checklist](hardware-checklist.md); debugging a real system is in [Debugging and logs](../reference/debugging.md).
 
 Agents and new contributors: start with `AGENTS.md` and `CONTRIBUTING.md` at the repository root.
 
@@ -44,7 +44,9 @@ Agents and new contributors: start with `AGENTS.md` and `CONTRIBUTING.md` at the
 
 1. Bump `version` under `[workspace.package]` in `Cargo.toml`, commit.
 2. `git tag vX.Y.Z && git push origin vX.Y.Z`. `release.yml` checks the tag equals the Cargo version, builds the arm64 package and publishes the release with `SHA256SUMS`.
-3. On the Pi: download the new `.deb` and `SHA256SUMS`, then `sudo apt install ./rustflare_*_arm64.deb`, or `sudo apt upgrade` when the Pi uses the signed apt repository. During development `scripts/pi-deploy.sh` builds and installs a dev package.
+3. On the Pi: download the new `.deb` and `SHA256SUMS`, then `sudo apt install ./rustflare_*_arm64.deb`, or `sudo apt upgrade` when the Pi uses the signed apt repository.
+
+**Local builds and releases are different things.** `scripts/pi-deploy.sh user@host` builds the package from your checkout (`scripts/build-deb.sh`, version `X.Y.Z+dev<date>.<commit>`, which sorts above the release it is based on) and installs it, and refuses while the Pi is recording unless `--force`. A local build shows `X.Y.Z (local <commit>)` at the right of the status bar (`status.version`); a release built by `release.yml` shows the plain version. Only a pushed tag makes a release; nobody should release from a local build.
 
 
 ## Conventions

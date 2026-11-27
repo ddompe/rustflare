@@ -1,5 +1,8 @@
 # Plan: README and manual screenshots from a real session
 
+!!! note "Status"
+    Not done. The manual pictures in `docs/img/manual/` are still the simulator pictures of 2026-11-21 and the README has one real picture (`docs/img/real/disc-and-prominence.jpg`). The screen has changed since the plan was written (the Tools sheet, the notes chip, the *Set up N of 5* strip, optical setups, the cooler section), so the list of states to prepare needs a pass before the day, and the pictures should be taken with 0.8.2 or later.
+
 Goal: someone who lands on the GitHub page and reads nothing but the pictures should understand what RustFlare does: **a phone in front of a telescope, the Sun on the screen, one button to record, and the results on the same page.** The details stay in the manual.
 
 Do it on the next clear day with the Sun in view, after 0.6.4 (or later) is installed. One session, about 30 minutes of Sun time; most of the work is getting the states in order, the script then takes every picture in a minute.

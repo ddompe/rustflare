@@ -33,4 +33,4 @@ Press **Hold position** to keep the target where it is now; *Centre the disc ins
 
 ## Optics
 
-If the measured Sun size disagrees with what you entered in [More > Optics](more.md#optical-setup), the app shows the real focal length or Barlow factor and offers *Use measured*.
+If the measured Sun size disagrees with what you entered in [More > Optical setup](more.md#optical-setup), the app shows the real focal length or Barlow factor and offers *Use measured*.

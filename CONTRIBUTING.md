@@ -1,10 +1,10 @@
 # Contributing
 
-Patches are welcome, especially **support for more cameras and mounts**. This is a hobby project built around one maintainer's equipment (Lunt LS50, ZWO AM3, a Player One Apollo-M Mini, Raspberry Pi 5), so a lot of it is verified on that kit only and the rest on simulators. Say clearly what you tested on what.
+Patches are welcome, especially **support for more cameras and mounts**. This is a hobby project built around one maintainer's equipment (Lunt LS50, ZWO AM3, an iOptron HAE69C, a Player One Apollo-M Mini, a ZWO ASI174MM Mini, Raspberry Pi 5), so a lot of it is verified on that kit only and the rest on simulators. Say clearly what you tested on what.
 
 ## Adding equipment
 
-1. Read [Adding a camera or mount](docs/project/development.md#adding-a-camera-or-mount) and the matching ADR ([5](docs/adr/0005-hardware-abstraction.md), [6](docs/adr/0006-playerone-via-vendor-sdk.md), [7](docs/adr/0007-zwo-mount-serial-driver.md), [14](docs/adr/0014-zwo-asi-cameras.md), [15](docs/adr/0015-ble-mount-transport.md)).
+1. Read [Adding a camera or mount](docs/project/development.md#adding-a-camera-or-mount) and the matching ADR ([5](docs/adr/0005-hardware-abstraction.md), [6](docs/adr/0006-playerone-via-vendor-sdk.md), [7](docs/adr/0007-zwo-mount-serial-driver.md), [14](docs/adr/0014-zwo-asi-cameras.md), [15](docs/adr/0015-ble-mount-transport.md), [20](docs/adr/0020-ioptron-mount-driver.md)).
 2. Implement `Camera`/`CameraDriver` or `Mount` from `rustflare-core` in a new file under `crates/camera/src/` or `crates/mount/src/`. Report settings as controls with the standard ids so flats and the UI work unchanged.
 3. Put native libraries behind a Cargo feature; the default build must work without them.
 4. Add a mock-I/O or simulator test. The mount crate has a mock serial port; every protocol bug found so far was found with a transcript of the real device, so please include one in the test.
