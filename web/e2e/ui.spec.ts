@@ -982,6 +982,20 @@ test.describe('optical setups: named trains that carry their profile', () => {
   }
   const fill = async (page: Page, label: string, v: string) => page.getByLabel(label, { exact: true }).fill(v)
 
+  test('applying a setup is refused while recording, greyed with the reason, and works afterwards', async ({ page }) => {
+    expect((await put(page, '/optics/setups/Train', {})).ok()).toBe(true)
+    await expect.poll(async () => (await post(page, '/capture/sequence', { name: 'setupguard', frames: 60, format: 'ser' })).ok(), { timeout: 10_000 }).toBe(true)
+    const r = await post(page, '/optics/setups/Train/apply', {})
+    expect(r.status()).toBe(400)
+    expect(await r.text()).toContain('stop the recording first')
+    const g = await openOptics(page)
+    await expect(g.getByRole('button', { name: /^Apply/ })).toBeDisabled()
+    await expect(page.getByText(/Applying a setup is greyed while a recording runs/)).toBeVisible()
+    await post(page, '/capture/stop')
+    await expect.poll(async () => ((await (await page.request.get('/api/status')).json()) as { capture: { state: string } }).capture.state, { timeout: 20_000 }).toBe('idle')
+    expect((await post(page, '/optics/setups/Train/apply', {})).ok()).toBe(true)
+  })
+
   test('the API: nothing exists at first; save from the current optics; validate; unique names; 404 for an unknown name', async ({ page }) => {
     expect((await setupsOf(page)).setups).toEqual([])
     await put(page, '/optics', { focal_length_mm: 400, focal_multiplier: 2, pixel_size_um: null, binning: 1 })

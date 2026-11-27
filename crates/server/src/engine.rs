@@ -3802,7 +3802,7 @@ impl Engine {
     /// What is in use now, as a setup would save it.
     fn current_use(&self) -> crate::setups::Current {
         let f = self.flat.lock().unwrap();
-        crate::setups::Current { optics: self.optics.clone(), profile: self.status.profile.to_string(), flat: f.name.clone(), dark: f.dark_name.clone() }
+        crate::setups::Current { optics: self.optics.clone(), profile: self.status.profile.to_string(), flat: f.name.clone(), dark: f.dark_name.clone(), dark_exposure_us: f.dark_exposure_us, dark_gain: f.dark_gain }
     }
 
     /// Validates and installs the optics (the expected radius and the tracker follow), and saves them. `PUT /api/optics` and applying a setup both come here.
@@ -3818,6 +3818,10 @@ impl Engine {
     /// Applies a named optical setup: the optics, the profile it comes with, and its flat and dark when they are named and still there.
     /// What could not be restored is reported, never fatal. Nothing moves and nothing starts.
     fn apply_setup(&mut self, name: &str) -> Reply {
+        // the optics and the profile end up in the headers of the frames being written: not while capturing
+        if !matches!(self.job, Job::Idle) {
+            return Err("stop the recording first: applying a setup changes the optics and the profile, which are written into the files being recorded".into());
+        }
         let setup = self.setups.get(name)?.clone();
         let summary = |s: &Status| json!({ "profile": s.profile, "focal_length_mm": s.optics.focal_length_mm, "focal_multiplier": s.optics.focal_multiplier, "effective_focal_mm": s.optics.effective_focal_mm, "binning": s.optics.binning, "scale_arcsec_per_px": s.optics.scale_arcsec_per_px, "expected_radius_px": s.optics.expected_radius_px });
         self.refresh_optics();
@@ -3837,7 +3841,8 @@ impl Engine {
         }
         if let Some(rel) = &setup.dark {
             let keep = { let f = self.flat.lock().unwrap(); (f.dark_name.as_deref() == Some(rel.as_str())).then_some((f.dark_exposure_us, f.dark_gain)) };
-            let (exp, gain) = keep.unwrap_or((None, None));
+            // the exposure and gain saved with the setup, else those of the dark already loaded
+            let (exp, gain) = match (setup.dark_exposure_us, setup.dark_gain) { (None, None) => keep.unwrap_or((None, None)), saved => saved };
             let blocked = if matches!(self.job, Job::Darks(_)) { Err("darks are being captured".to_string()) } else { load_dark(&self.storage, &self.flat, rel, true, exp, gain) };
             if let Err(e) = blocked {
                 not_restored.push(json!({ "what": "dark", "name": rel, "reason": e }));

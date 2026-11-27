@@ -58,6 +58,8 @@ export function OpticalSetups({ status, form, onApplied }: { status: Status | nu
   const [trainProfile, setTrainProfile] = useState<string>(profileOf(status))
   const [aperture, setAperture] = useState('')
   const [notes, setNotes] = useState('')
+  // the optics and the profile are written into the files being recorded: applying waits for the end of the recording
+  const recording = !!status && status.capture.state !== 'idle'
   const [ask, setAsk] = useState(false)
   const [result, setResult] = useState<Applied | null>(null)
   const { err, busy, run } = useAction()
@@ -128,7 +130,7 @@ export function OpticalSetups({ status, form, onApplied }: { status: Status | nu
       {active && modified && (
         <div className="btnrow tight">
           <p className="hint-text grow">The optics or the profile were changed after “{active}” was saved. They are not saved over it unless you press Update.</p>
-          <button type="button" disabled={busy} onClick={() => apply(active)}>Revert</button>
+          <button type="button" disabled={busy || recording} onClick={() => apply(active)}>Revert</button>
         </div>
       )}
       <Field label="Saved setups" hint={hint}>
@@ -140,10 +142,11 @@ export function OpticalSetups({ status, form, onApplied }: { status: Status | nu
         )}
       </Field>
       <div className="btnrow tight wrap">
-        <button type="button" className="primary grow" disabled={busy || !picked || (picked.name === active && !modified)} onClick={() => apply(pick)}>Apply{picked ? ` “${picked.name}”` : ''}</button>
+        <button type="button" className="primary grow" disabled={busy || recording || !picked || (picked.name === active && !modified)} onClick={() => apply(pick)}>Apply{picked ? ` “${picked.name}”` : ''}</button>
         <button type="button" disabled={busy || !picked} onClick={duplicate}>Duplicate</button>
         <button type="button" className="danger-outline" disabled={busy || !picked} onClick={() => setAsk(true)}>Delete…</button>
       </div>
+      {recording && <p className="hint-text" role="note">Applying a setup is greyed while a recording runs: the optics and the profile are written into the files being recorded. Stop the recording first.</p>}
       {ask && picked && (
         <div className="confirm" role="alertdialog" aria-label="Delete the setup">
           <p>Delete the setup “{picked.name}”?</p>

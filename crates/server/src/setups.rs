@@ -35,6 +35,11 @@ pub struct OpticalSetup {
     pub flat: Option<String>,
     #[serde(default)]
     pub dark: Option<String>,
+    /// The exposure and gain the dark was taken at, so re-selecting it through the setup still matches the camera.
+    #[serde(default)]
+    pub dark_exposure_us: Option<f64>,
+    #[serde(default)]
+    pub dark_gain: Option<f64>,
 }
 fn one() -> u32 { 1 }
 fn one_f() -> f64 { 1.0 }
@@ -46,6 +51,8 @@ pub struct Current {
     pub profile: String,
     pub flat: Option<String>,
     pub dark: Option<String>,
+    pub dark_exposure_us: Option<f64>,
+    pub dark_gain: Option<f64>,
 }
 
 /// The range checks of the optics, shared with `PUT /api/optics`.
@@ -176,8 +183,10 @@ impl Setups {
         m.insert("binning".into(), json!(cur.optics.binning));
         m.insert("flat".into(), json!(cur.flat));
         m.insert("dark".into(), json!(cur.dark));
+        m.insert("dark_exposure_us".into(), json!(cur.dark_exposure_us));
+        m.insert("dark_gain".into(), json!(cur.dark_gain));
         for (k, v) in &obj {
-            if matches!(k.as_str(), "profile" | "focal_length_mm" | "focal_multiplier" | "pixel_size_um" | "binning" | "aperture_mm" | "notes" | "flat" | "dark") {
+            if matches!(k.as_str(), "profile" | "focal_length_mm" | "focal_multiplier" | "pixel_size_um" | "binning" | "aperture_mm" | "notes" | "flat" | "dark" | "dark_exposure_us" | "dark_gain") {
                 m.insert(k.clone(), v.clone());
             }
         }
@@ -220,7 +229,7 @@ mod tests {
     use super::*;
 
     fn cur() -> Current {
-        Current { optics: OpticsSettings { focal_length_mm: Some(400.0), focal_multiplier: 2.0, pixel_size_um: None, binning: 1 }, profile: "sun_ha".into(), flat: Some("flats/f.png".into()), dark: None }
+        Current { optics: OpticsSettings { focal_length_mm: Some(400.0), focal_multiplier: 2.0, pixel_size_um: None, binning: 1 }, profile: "sun_ha".into(), flat: Some("flats/f.png".into()), dark: None, dark_exposure_us: None, dark_gain: None }
     }
     fn tmp(tag: &str) -> std::path::PathBuf {
         let f = std::env::temp_dir().join(format!("rustflare-setups-{tag}-{}.json", std::process::id()));
@@ -406,5 +415,19 @@ mod tests {
         // a restart finds what is left
         assert_eq!(Setups::load(&dir.join("settings.json")).list.len(), 1);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_setup_remembers_the_exposure_and_gain_of_its_dark() {
+        let mut c = cur();
+        c.dark = Some("darks/d.png".into());
+        c.dark_exposure_us = Some(2500.0);
+        c.dark_gain = Some(120.0);
+        let mut l = Setups::default();
+        let s = l.save("Lunt + Barlow", &json!({}), &c).unwrap();
+        assert_eq!((s.dark.as_deref(), s.dark_exposure_us, s.dark_gain), (Some("darks/d.png"), Some(2500.0), Some(120.0)));
+        // an older saved setup without the fields still loads
+        let old: OpticalSetup = serde_json::from_value(json!({ "name": "old", "focal_length_mm": 500.0, "dark": "darks/x.png" })).unwrap();
+        assert_eq!((old.dark_exposure_us, old.dark_gain), (None, None));
     }
 }
