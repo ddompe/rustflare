@@ -928,9 +928,11 @@ impl Engine {
     }
 
     /// Is the Pi's clock synchronised to a time server? (`timedatectl`; None where it cannot be read.) Checked at most
-    /// once a minute unless forced.
+    /// once a minute while it is not known to be synced, and every 10 minutes once it is (each call wakes systemd-timedated
+    /// and fills the journal), unless forced.
     fn refresh_ntp(&mut self, force: bool) {
-        if !force && self.last_ntp_check.elapsed() < Duration::from_secs(60) {
+        let every = if self.ntp_sync == Some(true) { Duration::from_secs(600) } else { Duration::from_secs(60) };
+        if !force && self.last_ntp_check.elapsed() < every {
             return;
         }
         self.last_ntp_check = Instant::now();
