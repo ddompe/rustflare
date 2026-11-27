@@ -174,6 +174,23 @@ impl Setups {
     pub fn save(&mut self, name: &str, body: &Value, cur: &Current) -> Result<OpticalSetup, String> {
         let name = clean_name(name)?;
         let obj = body.as_object().cloned().unwrap_or_default();
+        // `rename_to`: the setup called `name` is saved under a new name, in the same place of the list (and stays the active one if it was)
+        let rename_to = match obj.get("rename_to") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(r)) => Some(clean_name(r)?),
+            Some(_) => return Err("rename_to must be a name".into()),
+        };
+        let from = match &rename_to {
+            Some(new) => {
+                let i = self.list.iter().position(|x| x.name == name).ok_or_else(|| format!("{NOT_FOUND} {name}"))?;
+                if *new != name && self.list.iter().any(|x| x.name == *new) {
+                    return Err(format!("there is already an optical setup named “{new}”"));
+                }
+                Some(i)
+            }
+            None => None,
+        };
+        let name = rename_to.clone().unwrap_or(name);
         let mut m = serde_json::Map::new();
         m.insert("name".into(), json!(name));
         m.insert("profile".into(), json!(cur.profile));
@@ -193,14 +210,18 @@ impl Setups {
         let activate = obj.get("activate").and_then(|v| v.as_bool());
         let s: OpticalSetup = serde_json::from_value(Value::Object(m)).map_err(|e| format!("not a valid setup: {e}"))?;
         let s = s.validate()?;
-        match self.list.iter_mut().find(|x| x.name == s.name) {
-            Some(x) => *x = s.clone(),
+        let old_name = from.map(|i| self.list[i].name.clone());
+        match from.or_else(|| self.list.iter().position(|x| x.name == s.name)) {
+            Some(i) => self.list[i] = s.clone(),
             None => {
                 if self.list.len() >= 50 {
                     return Err("at most 50 optical setups: delete one first".into());
                 }
                 self.list.push(s.clone());
             }
+        }
+        if old_name.is_some() && self.active == old_name {
+            self.active = Some(s.name.clone());
         }
         if activate.unwrap_or(true) && (self.active.as_deref() == Some(&s.name) || !s.differs_from(cur)) {
             self.active = Some(s.name.clone());
@@ -284,6 +305,33 @@ mod tests {
         // the same name with other spacing is the same name
         s.save("  B ", &json!({}), &cur()).unwrap();
         assert_eq!(s.list.len(), 2);
+    }
+
+    #[test]
+    fn renaming_keeps_the_place_and_the_active_name() {
+        let mut s = Setups::default();
+        s.save("A", &json!({}), &cur()).unwrap();
+        s.save("B", &json!({"focal_length_mm": 1000}), &cur()).unwrap();
+        s.save("C", &json!({"focal_length_mm": 900}), &cur()).unwrap();
+        assert_eq!(s.active.as_deref(), Some("A"));
+        // the active one, first in the list
+        let r = s.save("A", &json!({"rename_to": "  Lunt  ", "notes": "x"}), &cur()).unwrap();
+        assert_eq!(r.name, "Lunt");
+        assert_eq!(s.list.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), ["Lunt", "B", "C"]);
+        assert_eq!(s.active.as_deref(), Some("Lunt"));
+        // one that is not active: the active name stays
+        s.save("B", &json!({"rename_to": "Second", "activate": false}), &cur()).unwrap();
+        assert_eq!(s.list.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(), ["Lunt", "Second", "C"]);
+        assert_eq!(s.active.as_deref(), Some("Lunt"));
+        // refused: a name in use, a bad name, an unknown setup; nothing changes
+        assert!(s.save("C", &json!({"rename_to": "Lunt"}), &cur()).unwrap_err().contains("already"));
+        assert!(s.save("C", &json!({"rename_to": "a/b"}), &cur()).is_err());
+        assert!(s.save("C", &json!({"rename_to": ""}), &cur()).is_err());
+        assert!(s.save("nope", &json!({"rename_to": "Z"}), &cur()).unwrap_err().starts_with(NOT_FOUND));
+        assert_eq!(s.list.len(), 3);
+        // renaming to its own name is an ordinary save
+        s.save("C", &json!({"rename_to": "C"}), &cur()).unwrap();
+        assert_eq!(s.list.len(), 3);
     }
 
     #[test]
