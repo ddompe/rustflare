@@ -168,10 +168,11 @@ function Offset({ status }: { status: Status }) {
           <>
             Move the image <b>{arrow(dx, '→', '←')}{Math.abs(dx) >= 1 ? ` ${Math.abs(dx).toFixed(0)} px` : ''}</b>{' '}
             <b>{arrow(dy, '↓', '↑')}{Math.abs(dy) >= 1 ? ` ${Math.abs(dy).toFixed(0)} px` : ''}</b>
-            {pad ? <span className="muted"> · press {pad}</span> : <span className="muted"> · calibrate to see which button</span>}
           </>
         )}
       </div>
+      {/* the pad letter for that move: its own line, so the readout keeps three lines of fixed height whatever the numbers */}
+      <div className="offset-press muted">{sun && !centered ? (pad ? `Press ${pad}` : 'Calibrate to see which button to press') : '\u00a0'}</div>
       <div className="hint-text offset-info">
         {sun ? <>{noun(profileOf(status))[0].toUpperCase() + noun(profileOf(status)).slice(1)} centre {sun.pos.x.toFixed(0)}, {sun.pos.y.toFixed(0)} · radius {sun.radius.toFixed(0)} px{sun.partial ? ' (partial, fitted)' : ''} · {((dist / sun.radius) * 100).toFixed(0)}% of radius</> : '\u00a0'}
       </div>

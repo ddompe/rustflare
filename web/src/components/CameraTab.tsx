@@ -162,11 +162,24 @@ export function CameraTab({ status, next, setup }: { status: Status | null; next
   const cat: CameraCatalog | null | undefined = sheet.catalog
   const [askClose, setAskClose] = useState(false)
   // what closing the camera would cut short: said before it happens
-  const running = [
-    ...(status && status.capture.state !== 'idle' ? [`the recording (what is already written stays on the drive)`] : []),
-    ...(status?.guiding.state === 'calibrating' ? ['the calibration'] : []),
-    ...(status?.guiding.state === 'guiding' ? ['guiding (the mount keeps tracking, but is no longer corrected)'] : []),
+  const [running, setRunning] = useState<string[]>([])
+  const whatRuns = (s: Status | null) => [
+    ...(s && s.capture.state !== 'idle' ? ['the recording (what is already written stays on the drive)'] : []),
+    ...(s?.guiding.state === 'calibrating' ? ['the calibration'] : []),
+    ...(s?.guiding.state === 'guiding' ? ['guiding (the mount keeps tracking, but is no longer corrected)'] : []),
   ]
+  // asked of the server, not of the last picture of its state: the answer must be the truth at the moment of the tap
+  // the engine only closes an idle camera: end what runs, wait until it has, then close
+  const closeNow = async () => {
+    await api('POST', '/guiding/stop').catch(() => {})
+    await api('POST', '/capture/stop').catch(() => {})
+    for (let i = 0; i < 40; i++) { const s = await api<Status>('GET', '/status'); if (s.capture.state === 'idle') break; await new Promise((r) => setTimeout(r, 250)) }
+    await api('POST', '/camera/close')
+  }
+  const askClosing = () => run(async () => {
+    const list = whatRuns(await api<Status>('GET', '/status'))
+    if (list.length) { setRunning(list); setAskClose(true) } else await api('POST', '/camera/close')
+  })
 
   const refresh = () => run(async () => {
     const l = await api<CameraInfo[]>('GET', '/cameras')
@@ -235,12 +248,12 @@ export function CameraTab({ status, next, setup }: { status: Status | null; next
           <p>Closing the camera ends {running.join(' and ')}.</p>
           <div className="btnrow tight">
             <button type="button" className="grow" onClick={() => setAskClose(false)}>Keep the camera open</button>
-            <button type="button" className="danger grow" onClick={() => { setAskClose(false); run(() => api('POST', '/camera/close')) }}>Close the camera</button>
+            <button type="button" className="danger grow" onClick={() => { setAskClose(false); run(closeNow) }}>Close the camera</button>
           </div>
         </div>
       )}
       <div className="btnrow end">
-        <button type="button" className="quiet" onClick={() => { if (running.length) setAskClose(true); else run(() => api('POST', '/camera/close')) }}>Close camera</button>
+        <button type="button" className="quiet" onClick={askClosing}>Close camera</button>
         <button type="button" className="primary" onClick={next}>Next: Aim →</button>
       </div>
     </>

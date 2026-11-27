@@ -8,7 +8,7 @@ On an iPhone, open `http://<pi-name>.local:8080` in Safari, tap Share, then *Add
 
 ## HTTPS and trusting the certificate
 
-HTTPS unlocks the **Use this device's location** button and makes the Home Screen app work reliably.
+HTTPS unlocks the **Use this device's location** button and makes the Home Screen app work reliably. Over plain `http://` the browser refuses to share the phone's location (iOS and Chrome both do), so RustFlare does not show the button there: you type the latitude and longitude instead, and the page tells you that HTTPS is the way to get the button.
 
 A bare self-signed certificate makes iOS warn on every visit. So `rustflare-tls` creates a small private certificate authority and a server certificate signed by it. You tell the phone once to trust that authority, and after that `https://<pi-name>.local:8443` is a normal, warning-free page.
 

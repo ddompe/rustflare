@@ -88,7 +88,7 @@ test.describe('phone landscape and every size: nothing important is clipped (P3a
               if (b.scrollWidth > b.clientWidth + 1) out.push(`seg label clipped: ${b.textContent}`)
             })
           })
-          document.querySelectorAll('.live-tools button, .tools-row button').forEach((b) => {
+          document.querySelectorAll('.live-tools button').forEach((b) => {
             const r = b.getBoundingClientRect()
             if (r.width && (r.left < -1 || r.right > vw + 1 || r.top < -1 || r.bottom > innerHeight + 1)) out.push(`tool off screen: ${b.getAttribute('aria-label')}`)
           })
@@ -100,7 +100,11 @@ test.describe('phone landscape and every size: nothing important is clipped (P3a
       if (v.width > v.height) {
         await tab(page, 'Camera')
         const live = (await page.locator('.live').boundingBox())!
-        for (const b of await page.locator('.tools-row button').all()) expect(overlap((await b.boundingBox())!, live), await b.getAttribute('aria-label') ?? '').toBe(0)
+        const toggle = page.getByRole('button', { name: 'Picture tools' })
+        expect(overlap((await toggle.boundingBox())!, live), 'the tools button on the picture').toBe(0)
+        await toggle.click()
+        for (const b of await page.getByRole('group', { name: 'Picture tools' }).getByRole('button').all()) expect(overlap((await b.boundingBox())!, live), (await b.innerText()).trim()).toBe(0)
+        await toggle.click()
         const picShare = (live.width * live.height)
         expect(picShare, 'the picture is not tiny').toBeGreaterThan(150 * 110)
         // all four directions of the pad are on screen at once (without scrolling the page)
@@ -134,15 +138,21 @@ test.describe('compact profile picker and what-is-this (P1a, P2a)', () => {
     await expect(page.locator('.profile-pick')).not.toContainText('Star-rate tracking')
   })
 
-  test('the first screen of Camera shows the picture, Start, the profile and the exposure', async ({ page }) => {
+  test('the first screen of Camera shows the picture, Start, the set up line and the profile; once set up is done, the exposure too', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
+    await put(page, '/ui', { key: 'ui.setup_dismissed', value: false })
+    await put(page, '/ui', { key: 'ui.profile_confirmed', value: false })
     await page.goto('/')
     await tab(page, 'Camera')
     const vis = async (l: Locator) => { const b = (await l.boundingBox())!; return b.y + b.height <= 844 - 53 - 45 + 1 }
     expect(await vis(page.locator('.live'))).toBe(true)
     expect(await vis(page.getByRole('button', { name: /^Start/ }))).toBe(true)
     expect(await vis(page.getByRole('combobox', { name: 'What are you imaging?' }))).toBe(true)
+    expect(await vis(page.getByRole('navigation', { name: 'First session set up' }))).toBe(true)
+    // the one-time set up line takes a row of the first screen; dismissed or finished, the exposure is on it
+    await page.getByRole('button', { name: 'Hide the set up steps' }).click()
     expect(await vis(page.getByRole('slider', { name: 'Exposure' }))).toBe(true)
+    await put(page, '/ui', { key: 'ui.setup_dismissed', value: false })
   })
 
   test('without a camera the camera picker and Open are on the first screen', async ({ page }) => {
@@ -161,7 +171,7 @@ test.describe('panel room on a phone (P1a)', () => {
   test('the panel keeps at least 330 px on every tab and more on the ones that need it', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/')
-    const want: Record<string, number> = { Camera: 330, Aim: 395, Track: 380, Record: 430, More: 430 }
+    const want: Record<string, number> = { Camera: 330, Aim: 330, Track: 380, Record: 430, More: 430 }
     for (const [t, min] of Object.entries(want)) {
       await tab(page, t)
       const h = (await page.locator('.panel').boundingBox())!.height
@@ -196,6 +206,7 @@ test.describe('first-session set up strip (P2a)', () => {
   test('a mount time that differs is a step, and the step opens Aim with the section open', async ({ page }) => {
     await put(page, '/site', { latitude: 40, longitude: -105 })
     await post(page, '/debug/sim-mount-clock', { time_offset_s: 600, latitude_deg: 40, longitude_east_deg: -105 })
+    await put(page, '/mount/auto-site-time', { enabled: false })
     await page.goto('/')
     await tab(page, 'Camera')
     const strip = page.getByRole('navigation', { name: 'First session set up' })
@@ -204,11 +215,12 @@ test.describe('first-session set up strip (P2a)', () => {
     await expect(page.getByRole('tab', { name: /^Aim/ })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('button', { name: 'Send site and time to the mount' })).toBeVisible()
     await post(page, '/mount/sync-site-time')
+    await put(page, '/mount/auto-site-time', { enabled: true })
   })
 })
 
 test.describe('notes chip and mount time words (P1b, P2d)', () => {
-  test('profile and the mount clock fold into one notes chip; the sheet explains and can send', async ({ page }) => {
+  test('the mount clock is a notes chip that leads with its words; the profile is not a note; the sheet explains and can send', async ({ page }) => {
     await put(page, '/site', { latitude: 40, longitude: -105 })
     await put(page, '/mount/auto-site-time', { enabled: false })
     await put(page, '/profile', { id: 'moon' })
@@ -217,13 +229,14 @@ test.describe('notes chip and mount time words (P1b, P2d)', () => {
     await tab(page, 'Camera')
     await expect(page.locator('.chip.profile')).toHaveCount(0)
     await expect(page.locator('.chip.mountclock')).toHaveCount(0)
-    const chip = page.getByRole('button', { name: /\d notes?$/ })
+    const chip = page.locator('.chip.notes')
     await expect(chip).toBeVisible()
+    await expect(chip).toContainText(/^Clock off 3 min/)
     expect((await chip.boundingBox())!.height).toBeGreaterThanOrEqual(43.5)
     await expect(page.getByRole('region', { name: 'Notes' })).toHaveCount(0)
     await chip.click()
     const sheet = page.getByRole('region', { name: 'Notes' })
-    await expect(sheet).toContainText('Imaging: Moon')
+    await expect(sheet).not.toContainText('Imaging:')
     await expect(sheet).toContainText(/clock is 3 min/)
     await expect(sheet).toContainText('Go to sends')
     await page.keyboard.press('Escape')
@@ -231,9 +244,10 @@ test.describe('notes chip and mount time words (P1b, P2d)', () => {
     await chip.click()
     await sheet.getByRole('button', { name: 'Send now' }).click()
     await expect.poll(async () => (await status(page)).mount.site_time.ok).toBe(true)
-    await expect(sheet).not.toContainText('clock is')
+    await expect(sheet).toHaveCount(0) // nothing left to say: the sheet closes
     // Show on Aim opens the section
     await post(page, '/debug/sim-mount-clock', { time_offset_s: 192, latitude_deg: 40, longitude_east_deg: -105 })
+    await chip.click()
     await expect(sheet).toContainText('clock is')
     await sheet.getByRole('button', { name: 'Show on Aim' }).click()
     await expect(page.getByRole('tab', { name: /^Aim/ })).toHaveAttribute('aria-selected', 'true')
@@ -349,8 +363,8 @@ test.describe('optical setup: in use first, then one Save row with a diff and a 
     if (!(await optDisc.evaluate((e) => (e as HTMLDetailsElement).open))) await optDisc.locator('summary').click()
     await expect(page.locator('.panel h2.subhead').first()).toBeVisible()
     const headings = (await page.locator('.panel h2.subhead').allTextContents()).map((t) => t.trim())
-    expect(headings.indexOf('Optical setup in use')).toBeGreaterThanOrEqual(0)
-    expect(headings.indexOf('Optical setup in use')).toBeLessThan(headings.indexOf('Saved optical setups'))
+    expect(headings.indexOf('Values in use')).toBeGreaterThanOrEqual(0)
+    expect(headings.indexOf('Values in use')).toBeLessThan(headings.indexOf('Saved optical setups'))
     expect(headings.indexOf('Saved optical setups')).toBeLessThan(headings.indexOf('Save'))
     await expect(page.getByRole('button', { name: 'Save optics' })).toHaveCount(0)
     await page.getByLabel('Barlow / reducer (×)').fill('1.5')
@@ -414,14 +428,11 @@ test.describe('tap targets and legibility (accessibility)', () => {
       await small('.hud-w', 'status overlay')
       await small('.chip', 'chip')
       await small('.panel summary', 'summary')
-      if (t !== 'Camera') {
-        await page.getByRole('button', { name: 'Picture tools' }).click()
-        await small('.tools-row button', 'picture tool')
-        for (const b of await page.locator('.tools-row button').all()) expect((await b.boundingBox())!.width, 'tool width').toBeGreaterThanOrEqual(43.5)
-        await page.getByRole('button', { name: 'Picture tools' }).click()
-      } else {
-        for (const b of await page.locator('.tools-row button').all()) expect((await b.boundingBox())!.width, 'tool width').toBeGreaterThanOrEqual(43.5)
-      }
+      await small('.tools-toggle', 'picture tools button')
+      await page.getByRole('button', { name: 'Picture tools' }).click()
+      await small('.tools-sheet button', 'picture tool')
+      for (const b of await page.locator('.tools-sheet button').all()) expect((await b.boundingBox())!.width, 'tool width').toBeGreaterThanOrEqual(43.5)
+      await page.getByRole('button', { name: 'Picture tools' }).click()
     }
     const ver = await page.locator('.sbar-ver').evaluate((e) => parseFloat(getComputedStyle(e).fontSize))
     expect(ver).toBeGreaterThanOrEqual(12)

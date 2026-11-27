@@ -150,7 +150,7 @@ export function App() {
         })}
       </nav>
 
-      <main ref={panelRef} className="panel" id="panel" role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={-1}>
+      <main ref={panelRef} className="panel" id="panel" role="tabpanel" aria-label={TABS.find((x) => x.id === tab)?.label} tabIndex={-1}>
         {tab === 'camera' && <CameraTab status={status} next={() => goto('aim')} setup={<SetupStrip status={status} onStep={onSetupStep} variant="bar" />} />}
         {tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} focus={aimFocus} />}
         {tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} toCamera={() => setTab('camera')} />}

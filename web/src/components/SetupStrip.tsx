@@ -1,13 +1,14 @@
 import { Status } from '../api'
 import { useSetting } from '../settings'
 import { ToneIcon, usePopover } from './ui'
+import { profileOf, PROFILES } from '../profile'
 
 export type SetupStepId = 'camera' | 'profile' | 'optics' | 'site' | 'mount'
 
 /**
  * Which first-session steps are really done. Only confirmed things count: a camera that is open, a profile the user chose or confirmed
  * (never done by default), an optical setup applied or optics entered, a site that is saved, a mount that is connected with a matching
- * (or automatically synchronised) clock. With no mount, step 5 is not done: it says "Connect the mount".
+ * clock (one that was sent by itself counts once it matches). With no mount, step 5 is not done: it says "Connect the mount".
  */
 export function setupDone(status: Status | null, profileConfirmed: boolean): Record<SetupStepId, boolean> {
   const m = status?.mount
@@ -17,7 +18,7 @@ export function setupDone(status: Status | null, profileConfirmed: boolean): Rec
     profile: profileConfirmed,
     optics: !!status && (status.optics?.focal_length_mm != null || !!status.optics?.setup?.active),
     site: !!status?.site,
-    mount: !!m && (!st || (st.time_ok !== false && st.place_ok !== false) || !!m.auto_sync_site_time),
+    mount: !!m && (!st || (st.time_ok !== false && st.place_ok !== false)),
   }
 }
 
@@ -30,12 +31,12 @@ const stepLabel = (id: SetupStepId, status: Status | null): string => ({
 /** Where the first-session set-up stands: how many of the 5 steps are done and which are left, in order. Null when finished or dismissed. */
 export function useSetup(status: Status | null) {
   const [dismissed, setDismissed] = useSetting('ui.setup_dismissed', false)
-  const [confirmed] = useSetting('ui.profile_confirmed', false)
+  const [confirmed, setConfirmed] = useSetting('ui.profile_confirmed', false)
   if (!status || dismissed) return null
   const done = setupDone(status, confirmed)
   const todo = STEPS.filter((s) => !done[s])
   if (todo.length === 0) return null
-  return { done, todo, count: STEPS.length - todo.length, total: STEPS.length, next: todo[0], dismiss: () => setDismissed(true) }
+  return { done, todo, count: STEPS.length - todo.length, total: STEPS.length, next: todo[0], dismiss: () => setDismissed(true), confirmProfile: () => setConfirmed(true) }
 }
 
 /**
@@ -49,9 +50,16 @@ export function SetupStrip({ status, onStep, variant }: { status: Status | null;
   if (!setup || !status) return null
   const label = `Set up ${setup.count} of ${setup.total}`
   const hide = () => { pop.setOpen(false); setup.dismiss() }
-  const steps = setup.todo.map((s) => (
-    <button key={s} type="button" className={s === setup.next ? 'primary' : ''} onClick={() => { pop.setOpen(false); onStep(s) }}><span className="ss-n" aria-hidden="true">{STEPS.indexOf(s) + 1}</span>{stepLabel(s, status)}</button>
-  ))
+  const profile = PROFILES.find((x) => x.id === profileOf(status))?.label ?? ''
+  const steps = setup.todo.map((s) => {
+    // on the Camera tab the profile step is the confirmation itself (the picker is right below); elsewhere it goes there
+    const keep = s === 'profile' && variant === 'bar'
+    return (
+      <button key={s} type="button" className={s === setup.next ? 'primary' : ''} onClick={() => { pop.setOpen(false); if (keep) setup.confirmProfile(); else onStep(s) }}>
+        <span className="ss-n" aria-hidden="true">{STEPS.indexOf(s) + 1}</span>{keep ? `Keep ${profile}` : stepLabel(s, status)}
+      </button>
+    )
+  })
   if (variant === 'bar') {
     return (
       <nav className="setup-strip" aria-label="First session set up">

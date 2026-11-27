@@ -70,7 +70,7 @@ The Pi computes where the Sun is from its clock and your site. Without a network
 
 ## Location button does nothing
 
-Browsers share location only over HTTPS. Set up [HTTPS](phone-setup.md), or type the coordinates.
+Browsers share location only over HTTPS, and the Pi is normally served over plain `http://pi.local`. On such a page RustFlare does not offer the location button (Aim's *Set your site first* and More > Site say so and make **Type it in** the main action). Type the coordinates, or set up [HTTPS](phone-setup.md) once (`sudo rustflare-tls` on the Pi, then trust the certificate on the phone) and the button appears.
 
 ## The camera or the drive keeps dropping off
 

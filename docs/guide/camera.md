@@ -65,3 +65,5 @@ Camera tab > Focus assist helps you focus by hand, which is hard to judge by eye
 - The simulator has a *Sim defocus* control for trying it without a telescope.
 
 Status: tested on the simulator; the score has not yet been tuned on real solar data (see the hardware checklist).
+
+**Close camera** asks first when a recording, a calibration or guiding is running, and says what closing will end.

@@ -14,7 +14,7 @@ The live view shows the target (red rings) and where the Sun is (cyan), with the
 
 ## Calibrate
 
-**Calibrate** teaches RustFlare which way each mount axis moves the image. It needs the mount's solar tracking on. Do it once, and again after rotating the camera, after a meridian flip, or periodically in alt-az mode.
+**Calibrate** teaches RustFlare which way each mount axis moves the image. While it runs the button becomes **Stop calibration** (it ends the calibration and stops the mount at once). If it fails, the Calibrate step says why in plain words (the picture did not move along two different directions: check that the Sun is in view and the mount is tracking) and offers **Retry**. The same text is in the status bar, which shows two lines and opens in full when tapped. While holding, an *Off target by N px* line says what to do, with **Stop guiding and recalibrate**. It needs the mount's solar tracking on. Do it once, and again after rotating the camera, after a meridian flip, or periodically in alt-az mode.
 
 ## Guide
 

@@ -15,7 +15,7 @@ export function ProfilePicker({ status }: { status: Status | null }) {
   const { err, run } = useAction()
   const [what, setWhat] = useState(false)
   // the set-up count only believes a profile the user chose or confirmed: never one that merely happened to be the default
-  const [confirmed, setConfirmed] = useSetting('ui.profile_confirmed', false)
+  const [, setConfirmed] = useSetting('ui.profile_confirmed', false)
   const p = profileOf(status)
   const cur = PROFILES.find((x) => x.id === p)
   return (
@@ -26,7 +26,7 @@ export function ProfilePicker({ status }: { status: Status | null }) {
         </select>
         <button type="button" className="quiet" aria-expanded={what} aria-controls="profile-what" onClick={() => setWhat(!what)}>What is this?</button>
       </div>
-      <p className="profile-short">{cur?.short}{setupLine(status) ? <> · <span aria-label={`Optical setup, in use: ${setupLine(status)}`}>In use: {setupLine(status)}</span></> : null}{!confirmed && <> <button type="button" className="small ss-confirm" onClick={() => setConfirmed(true)}>Keep {cur?.label}</button></>}</p>
+      <p className="profile-short">{cur?.short}{setupLine(status) ? <> · <span aria-label={`Optical setup, in use: ${setupLine(status)}`}>In use: {setupLine(status)}</span></> : null}</p>
       {what && (
         <p className="hint-text" id="profile-what">{cur?.blurb} The words and the tools that apply follow this choice. Nothing is hidden: what does not apply is greyed, with the reason under it.</p>
       )}

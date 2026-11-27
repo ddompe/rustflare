@@ -306,6 +306,7 @@ export function HudMenu({ api, open, onClose }: { api: HudApi; open: boolean; on
             <input id="hud-op" type="range" min={0.2} max={1} step={0.05} value={api.opacity} onChange={(e) => api.setOpacity(parseFloat(e.target.value))} /></div>
           <p className="hint-text">Drag to move, tap to shrink to one line. Recording and guiding widgets appear when there is something to show.</p>
           <button type="button" className="wide" onClick={api.reset}>Reset layout</button>
+          <button type="button" className="wide" onClick={onClose}>Done</button>
         </div>
       )}
     </div>

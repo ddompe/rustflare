@@ -705,11 +705,6 @@ code { font-size: max(.875em, 12px); }
 .hud-w.min { min-height: 44px; }
 
 @media (max-width: 699px) and (orientation: portrait) {
-  .app { --view-h: 34dvh; grid-template-rows: auto var(--view-h) minmax(0, 1fr) auto auto; }
-  .app[data-tab='camera'] { --view-h: 42dvh; }
-  .app[data-tab='track'] { --view-h: 36dvh; }
-  .app[data-tab='record'], .app[data-tab='more'] { --view-h: 30dvh; }
-  .app[data-nocam] { --view-h: 16dvh; }
   .live-tools { left: .4rem; right: auto; top: auto; bottom: .4rem; align-items: flex-start; }
   .tools-sheet { position: fixed; left: .5rem; right: .5rem; width: auto; bottom: calc(98px + 2 * env(safe-area-inset-bottom) + .5rem); z-index: 40; }
   .hud { top: .3rem; bottom: auto; }
@@ -916,8 +911,17 @@ summary { min-height: 44px; }
 .notes-sheet p { color: var(--fg); }
 
 /* Aim keeps its picture: as big as the width allows (a 4:3 frame cannot be taller than width / 1.33), fixed for every state */
+/* the picture has a height of its own (as big as the width allows, never taller than its share of the screen); the strip under it takes what it needs and the PANEL gives way,
+   so a wider font, a second line on Start or a recording bar never changes the picture's size */
 @media (max-width: 699px) and (orientation: portrait) {
-  .app[data-tab='aim'] { --view-h: calc(min(40dvh, 75vw) + 60px); }
+  .app { grid-template-rows: auto auto minmax(0, 1fr) auto auto; --pic-h: calc(34dvh - 58px); }
+  .app[data-tab='camera'] { --pic-h: min(36dvh, 75vw); }
+  .app[data-tab='aim'] { --pic-h: min(40dvh, 75vw); }
+  .app[data-tab='track'] { --pic-h: calc(36dvh - 58px); }
+  .app[data-tab='record'], .app[data-tab='more'] { --pic-h: calc(30dvh - 58px); }
+  .app[data-nocam] { --pic-h: 16dvh; }
+  .live-slot { flex: none; height: var(--pic-h); }
+  .view { flex: none; }
 }
 
 /* a phone that is not tall: the slew pad is two rows (stop and north above; west, south, east below) and the readout is tight, so the pad is on screen without scrolling */
@@ -950,7 +954,7 @@ summary { min-height: 44px; }
 .sbar-pop { max-height: 60dvh; overflow-y: auto; line-height: 1.4; }
 
 /* the readout under the picture on Aim: two lines of room for the move and the button to press, so it never changes height while the mount moves */
-.offset-move { white-space: normal; overflow: visible; min-height: 2.6em; line-height: 1.3; font-size: .92rem; }
+.offset-move, .offset-press { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.3em; line-height: 1.3; font-size: .92rem; font-variant-numeric: tabular-nums; }
 /* the mount-clock summary wraps inside its row instead of being cut */
 .disc-sum:has(.mc-sum) { white-space: normal; max-width: 70%; text-align: right; line-height: 1.25; }
 .disc summary:has(.mc-sum) { padding-block: .4rem; }
@@ -982,3 +986,14 @@ progress.buf { height: .5rem; }
   .pad > * { min-height: 48px; }
 }
 .ss-steps { padding-right: 1.5rem; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent); }
+
+/* a narrow phone held upright with a wide font: the header (brand, Files, theme, Hide controls) is shaved until it fits and nothing is cut */
+@media (max-width: 440px) and (orientation: portrait) {
+  .top { padding-inline: .5rem; gap: .4rem; }
+  .top h1 { font-size: 1.05rem; min-width: 0; }
+  .mark { width: 22px; height: 22px; }
+  .hright { gap: .25rem; margin-left: auto; min-width: 0; }
+  .hfiles { padding: 0 .5rem; }
+  .themebtn { min-width: 44px; padding: 0; }
+  .hidebtn { padding: 0 .5rem; }
+}

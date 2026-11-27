@@ -16,9 +16,13 @@ One form covers everything you record. Pick the kind at the top:
 
 *One cycle of a prominence recording, straight from a RustFlare session in H-alpha (colour added for display): the disc lane (left) and the long-exposure lane with the coronagraph mask (right).*
 
+**Frames** and **or seconds** both stop a plain recording: it ends at whichever comes first. While it runs, one line says what it is doing (frames, burst, time left), one bar counts frames, and a second, thinner bar named *RAM buffer* shows how many frames wait to be written. When a recording or a snap ends, the Record tab (and the notes chip, on every tab) says **Saved** with the file name, its size and **Open in Files**, for five minutes.
+
+The file names and the day folders are in **UTC** (`seq_051747Z.ser` was started at 05:17:47 UTC, in the folder of that UTC date); the file manager says so under each name, and shows the modified time in your device's own time zone with the zone named. Nothing is renamed.
+
 For both lane kinds your exposure and gain are restored at the end, and the frames right after each exposure change are discarded. The file manager shows these sessions as their own kinds, with a per-lane list and a filter.
 
-**Snap** (below the form): a single frame as PNG, and the prominence pair, a disc PNG, a long-exposure PNG and a composite for a quick look. Judge the exposure first with the [Prominence view](screen.md#prominence-view). For data you will process, use the + Prominence recording instead.
+**Stills** (below the form; *Snap* is the button): a single frame as PNG, and the prominence pair, a disc PNG, a long-exposure PNG and a composite for a quick look. Judge the exposure first with the [Prominence view](screen.md#prominence-view). For data you will process, use the + Prominence recording instead.
 
 ## When will it end, and sending the mount home
 
@@ -49,7 +53,7 @@ There is a single **Start** button. It sits under the live picture on every tab,
 
 ## Files (file manager)
 
-**Files** shows the whole drive one folder at a time. The path across the top (**Drive › stacks › 2026-11-22**) takes you back up; on a wide screen a folder tree sits beside the list.
+**Files** shows the whole drive one folder at a time. The path across the top (**Captures › stacks › 2026-11-22**) takes you back up; on a wide screen a folder tree sits beside the list.
 
 - **Where things are:** each day's recordings are in a folder named for the day. Finished stacks are in **stacks**, grouped by the day of their recording, with a thumbnail, how many frames were kept and whether a dark or flat was applied. Logs and debug files are in **logs**.
 - **Recording ↔ stack:** a recording that has been stacked shows **Stacked ✓ show**, which jumps to its stack. A stack says which recording it came from.
@@ -62,7 +66,7 @@ There is a single **Start** button. It sits under the live picture on every tab,
 
 ## Recording to the Pi's own SD card
 
-More > Storage > *Store on* lists **Internal storage (SD card)** next to your USB drives. It is useful when you need a short event at high speed without a drive, or when the drive misbehaves. It is slower than a good USB drive (roughly 30 to 90 MB/s), so a full-rate recording fills the RAM buffer in seconds and then drops frames or slows the camera; stack-only and best-frames modes need almost no disk. **Keep this much free** (8 GB by default) is never used by a recording: it will not start without it and stops itself before using it. Choosing a USB drive again switches back.
+More > Storage > *Save to* lists **Internal storage (SD card)** next to your USB drives. It is useful when you need a short event at high speed without a drive, or when the drive misbehaves. It is slower than a good USB drive (roughly 30 to 90 MB/s), so a full-rate recording fills the RAM buffer in seconds and then drops frames or slows the camera; stack-only and best-frames modes need almost no disk. **Keep this much free** (8 GB by default) is never used by a recording: it will not start without it and stops itself before using it. Choosing a USB drive again switches back.
 
 ## Safe eject
 
