@@ -59,7 +59,8 @@ fn the_planet_tracker_and_the_model_hold_a_planet_in_the_seeing() {
         let e = model.update(Some(meas), t0 + Duration::from_millis(100 * i), (f.width, f.height), false, None).unwrap();
         if i >= 10 { worst_model = worst_model.max(((e.sun.pos.x - 640.0).powi(2) + (e.sun.pos.y - 480.0).powi(2)).sqrt()); if !e.predicted { accepted += 1; } }
     }
-    assert!(worst < 6.0, "the centroid follows the shaken planet within the jitter: {worst}");
+    // 3 px of seeing on each axis puts the planet up to 4.2 px from its centre, plus the centroid's own error of a pixel or two
+    assert!(worst < 8.0, "the centroid follows the shaken planet within the jitter: {worst}");
     assert!(worst_model < 4.0, "the model is steadier than the measurements: {worst_model}");
     assert!(accepted >= 28, "the model believes the measurements: {accepted} of 30");
 }
