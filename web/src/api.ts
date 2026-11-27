@@ -7,6 +7,8 @@ export interface Tracking { mode: string; x: number; y: number; radius: number |
 export interface Calibration { primary_dir: { x: number; y: number }; secondary_dir: { x: number; y: number } }
 export interface Optics { focal_length_mm: number | null; focal_multiplier: number; effective_focal_mm: number | null; pixel_size_override_um: number | null; pixel_size_um: number | null; pixel_size_source: 'camera' | 'manual' | null; binning: number; scale_arcsec_per_px: number | null; solar_radius_arcsec: number; expected_radius_px: number | null
   /** Measured from the limb; all null/absent until a partial or whole disc has been measured. */
+  /** Apparent radius of what the profile images, arcseconds (the Sun's, the Moon's, a planet's globe). */
+  target_radius_arcsec?: number | null
   measured_radius_px?: number | null; suggested_effective_focal_mm?: number | null; suggested_multiplier?: number | null }
 export interface StorageInfo { path: string; label: string; mount_point: string | null; fstype: string | null; total: number | null; free: number | null; max_file_bytes: number | null; available: boolean; problem: string | null; internal?: boolean; reserve_bytes?: number; warning?: string | null }
 export interface SunLocation { pos: { x: number; y: number }; radius: number; partial: boolean; radius_from_optics?: boolean | null; fit_rms?: number | null }
@@ -17,6 +19,10 @@ export interface Status {
   site?: { latitude: number; longitude: number } | null
   sky_targets?: { id: string; name: string; altitude_deg: number; azimuth_deg: number; ra_hours: number; dec_deg: number }[]
   sky_sun?: { altitude_deg: number; azimuth_deg: number; ra_hours: number; dec_deg: number; hour_angle_h: number; minutes_to_meridian: number } | null
+  /** What the profile images (null for Other, and for Planet until a planet was gone to). */
+  target?: { id: string; name: string } | null
+  /** The body the meridian flip follows, with its own meridian timing and the tracking rate restored after the turn. */
+  flip_target?: { id: string; name: string; ra_hours: number; dec_deg: number; hour_angle_h: number; minutes_to_meridian: number; rate: 'solar' | 'lunar' | 'sidereal' } | null
   clock?: { ntp_synchronized: boolean | null }
   goto?: { target: string; phase: string } | null
   flip?: { phase: string; elapsed_s: number; detail: string } | null

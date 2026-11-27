@@ -16,6 +16,7 @@ scripts/sim/<name>.sh
 | `lanes-guide.sh` | guiding while a lane recording runs: the Sun stays near the target (it drifted away before the lane-mode guider) |
 | `lane-follow.sh` | the Sun model follows the Sun while the mount moves during a lane recording |
 | `flip.sh` | the meridian flip assist: record, GoTo, re-centre |
+| `autoflip-moon.sh` | the automatic flip on the Moon profile: follows the Moon's meridian, records the Moon as the target, restores the lunar tracking rate |
 | `autoflip.sh`, `autoflip-resume.sh` | the automatic flip, with guiding (recalibrates) and with a running lane recording (pauses, then resumes) |
 | `disc-mask.sh` | prominence lane with the coronagraph: frames stay raw, disc positions are saved, the stacker finds the disc in the stack and draws the black disc only if asked, Re-stack remakes a stack |
 | `focus.sh` | focus assist: sharp scores higher than defocused |

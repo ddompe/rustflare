@@ -77,6 +77,8 @@ struct FlipState {
     /// Guiding was running when the flip started: calibrate again afterwards (the axes may now point the other way).
     was_guiding: bool,
     cal_gen: u32,
+    /// The tracking rate to restore after the turn: the target's (solar for the Sun, lunar for the Moon, sidereal for a planet).
+    rate: TrackingRate,
 }
 
 /// Focus assist session: scores frames, summarises one-second bursts, keeps the history for the graph.
@@ -489,6 +491,8 @@ pub struct Engine {
     camera_pixel_um: Option<f64>,
     /// Expected solar radius in pixels (from optics), used to make partial-disc fits reliable.
     expected_radius: Option<f64>,
+    /// The planet last gone to: what the planet profile's meridian flip follows.
+    planet_target: Option<rustflare_tracking::bodies::Body>,
     /// Recent radii measured from the limb when the optics' radius did not fit the data (see `fit_limb_auto`).
     radius_samples: std::collections::VecDeque<f64>,
     /// Median of those, used as the radius hint once it is stable: it fixes the radius-centre degeneracy of short arcs.
@@ -633,6 +637,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         last_auto_try: Instant::now() - Duration::from_secs(10),
         camera_pixel_um: None,
         expected_radius: None,
+        planet_target: crate::config::read(storage.config_file()).get("planet_target").and_then(|v| v.as_str()).and_then(rustflare_tracking::bodies::Body::from_id),
         radius_samples: Default::default(),
         measured_radius: None,
         storage,
@@ -779,6 +784,40 @@ impl Engine {
         let _ = r.reply.send(res);
     }
 
+    /// What the profile says is being imaged: `Some(None)` the Sun, `Some(Some(body))` the Moon or a planet, `None` when nothing is
+    /// known (the `other` profile, or the planet profile before any Go to a planet).
+    fn target_body(&self) -> Option<Option<rustflare_tracking::bodies::Body>> {
+        use rustflare_tracking::bodies::Body;
+        match self.status.profile {
+            "moon" => Some(Some(Body::Moon)),
+            "planet" => self.planet_target.map(Some),
+            "other" => None,
+            _ => Some(None),
+        }
+    }
+
+    /// The name a recording gets when none was typed: the target's for the Moon and planets, nothing for the Sun (as it always was).
+    fn default_file_name(&self) -> Option<String> {
+        match self.status.profile {
+            "moon" => Some("Moon".into()),
+            "planet" => Some(self.planet_target.map_or("Planet", |b| b.name()).into()),
+            _ => None,
+        }
+    }
+
+    /// The word the engine uses for the thing in the picture where it speaks (errors, notes, the flip's messages).
+    fn noun(&self) -> &'static str {
+        match self.status.profile { "moon" => "Moon", "planet" => "planet", "other" => "target", _ => "Sun" }
+    }
+
+    /// Right ascension (hours) and declination (degrees) of a target now: the Sun, or a body for the saved site.
+    fn target_equatorial(&self, t: Option<Option<rustflare_tracking::bodies::Body>>, unix: f64) -> Option<(f64, f64)> {
+        match t? {
+            None => Some(rustflare_tracking::solar::sun_equatorial(unix)),
+            Some(b) => self.site.map(|st| rustflare_tracking::bodies::equatorial(b, unix, st.latitude, st.longitude)),
+        }
+    }
+
     /// The radius to expect: measured from the data if the optics' value turned out wrong, else the optics'.
     fn radius_hint(&self) -> Option<f64> {
         self.measured_radius.or(self.expected_radius)
@@ -819,7 +858,14 @@ impl Engine {
         let bin = self.optics.binning.max(1);
         let effective = self.optics.focal_length_mm.map(|f| f * self.optics.focal_multiplier);
         let scale = effective.zip(pixel).map(|(f, p)| solar::plate_scale_arcsec_per_px(f, p, bin));
-        self.expected_radius = effective.zip(pixel).map(|(f, p)| solar::expected_radius_px(f, p, bin, day));
+        let now_unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        // the radius of what the profile says is imaged, in arcseconds: the Sun's of the day, the Moon's from its distance, a planet's globe
+        let target_arcsec = match self.target_body() {
+            Some(None) => Some(solar::angular_radius_arcsec(day)),
+            Some(Some(b)) => Some(rustflare_tracking::bodies::angular_radius_arcsec(b, now_unix)),
+            None => None,
+        };
+        self.expected_radius = effective.zip(pixel).zip(target_arcsec).map(|((f, p), r)| r / solar::plate_scale_arcsec_per_px(f, p, bin));
         self.status.optics = OpticsStatus {
             focal_length_mm: self.optics.focal_length_mm,
             focal_multiplier: self.optics.focal_multiplier,
@@ -832,8 +878,9 @@ impl Engine {
             solar_radius_arcsec: solar::angular_radius_arcsec(day),
             expected_radius_px: self.expected_radius,
             measured_radius_px: self.measured_radius,
-            suggested_effective_focal_mm: self.measured_radius.zip(pixel).map(|(r, p)| solar::focal_from_radius(r, p, bin, day)),
-            suggested_multiplier: self.measured_radius.zip(pixel).zip(self.optics.focal_length_mm).map(|((r, p), f)| solar::focal_from_radius(r, p, bin, day) / f),
+            target_radius_arcsec: target_arcsec,
+            suggested_effective_focal_mm: self.measured_radius.zip(pixel).zip(target_arcsec).map(|((r, p), a)| 206.265 * p * bin as f64 * r / a),
+            suggested_multiplier: self.measured_radius.zip(pixel).zip(target_arcsec).zip(self.optics.focal_length_mm).map(|(((r, p), a), f)| 206.265 * p * bin as f64 * r / a / f),
         };
     }
 
@@ -898,13 +945,18 @@ impl Engine {
     fn snapshot_pre(&mut self, now_unix: f64) -> Result<Value, String> {
         let cam = self.status.camera.as_ref().ok_or("no camera open")?;
         let (w, h) = (cam.width as f64, cam.height as f64);
-        let sun = self.status.sun.as_ref().ok_or("the Sun must be in view to record its position")?;
+        let sun = self.status.sun.as_ref().ok_or_else(|| format!("the {} must be in view to record its position", self.noun()))?;
         let (sx, sy, sr) = (sun.pos.x, sun.pos.y, sun.radius);
         let m = self.mount.as_mut().ok_or("no mount connected")?;
         let (ra, dec) = m.equatorial().map_err(s)?.ok_or("this mount does not report where it points, so the position cannot be recorded")?;
         let site = self.site.map(|st| rustflare_tracking::solar::local_sidereal_hours(now_unix, st.longitude));
-        Ok(json!({ "unix": now_unix, "ra_hours": ra, "dec_deg": dec, "sun_x": sx, "sun_y": sy, "sun_radius": sr, "frame_w": w, "frame_h": h, "lst_hours": site,
-                "sun_ra_hours": rustflare_tracking::solar::sun_equatorial(now_unix).0, "sun_dec_deg": rustflare_tracking::solar::sun_equatorial(now_unix).1 }))
+        // the target's own place in the sky (the keys keep their old names; for the Sun they are the Sun's, as they always were)
+        let target = self.target_body();
+        let (tra, tdec) = self.target_equatorial(target, now_unix).unwrap_or_else(|| rustflare_tracking::solar::sun_equatorial(now_unix));
+        let mut pre = json!({ "unix": now_unix, "ra_hours": ra, "dec_deg": dec, "sun_x": sx, "sun_y": sy, "sun_radius": sr, "frame_w": w, "frame_h": h, "lst_hours": site,
+                "sun_ra_hours": tra, "sun_dec_deg": tdec });
+        if let Some(Some(b)) = target { pre["target"] = json!(b.id()); }
+        Ok(pre)
     }
 
     /// What is left of the running capture, as a spec that can be started again (cycles or bursts already done are taken off).
@@ -997,7 +1049,7 @@ impl Engine {
             return;
         }
         self.last_auto_check = Instant::now();
-        let Some(mins) = self.status.sky_sun.as_ref().map(|k| k.minutes_to_meridian) else { return };
+        let Some(mins) = self.status.flip_target.as_ref().map(|k| k.minutes_to_meridian) else { return };
         if mins > self.auto_flip.record_min + 30.0 {
             self.auto_done = false; // a new crossing is coming
             self.auto_late = false;
@@ -1085,13 +1137,14 @@ impl Engine {
                 self.resume_at = Some(Instant::now() + Duration::from_secs(5)); // let the mount and guiding settle first
             } else {
                 self.resume_after_flip = None;
-                self.status.error = Some("the meridian flip did not finish cleanly: the recording was NOT resumed, check the Sun and restart it".into());
+                self.status.error = Some(format!("the meridian flip did not finish cleanly: the recording was NOT resumed, check the {} and restart it", self.noun()));
             }
         }
     }
 
     /// Follows a flip assist: slew, solar tracking back on, then centre the Sun at its pre-flip place.
     fn step_flip(&mut self) {
+        let noun = self.noun();
         let Some(f) = self.flip.as_mut() else { return };
         if f.last_check.elapsed() < Duration::from_secs(1) {
             return;
@@ -1112,13 +1165,14 @@ impl Engine {
                 if st.slewing == Some(false) && (f.moved || elapsed > Duration::from_secs(8)) {
                     f.slew_s = Some(elapsed.as_secs_f64());
                     f.slew_done_at = Some(Instant::now());
-                    let r = m.set_tracking_rate(TrackingRate::Solar).and_then(|_| m.set_tracking(true));
+                    let rate = f.rate;
+                    let r = m.set_tracking_rate(rate).and_then(|_| m.set_tracking(true));
                     match r {
                         Ok(()) => {
                             self.mount_tracking = true;
-                            self.mount_rate = TrackingRate::Solar;
+                            self.mount_rate = rate;
                         }
-                        Err(e) => self.status.error = Some(format!("flip: arrived, but solar tracking could not be switched on: {e}")),
+                        Err(e) => self.status.error = Some(format!("flip: arrived, but {} tracking could not be switched on: {e}", rate_word(rate))),
                     }
                     f.phase = "settling";
                 }
@@ -1132,7 +1186,7 @@ impl Engine {
                     match self.status.sun.as_ref() {
                         None => {
                             if f.slew_done_at.is_some_and(|t| t.elapsed() >= Duration::from_secs(60)) {
-                                self.finish_flip("the Sun is not in view after the flip: centre it by hand, then press Hold position".into(), None);
+                                self.finish_flip(format!("the {} is not in view after the flip: centre it by hand, then press Hold position", noun), None);
                             }
                         }
                         Some(sun) if (w - g("frame_w")).abs() > 1.0 || (h - g("frame_h")).abs() > 1.0 => {
@@ -1144,7 +1198,7 @@ impl Engine {
                             let cal = self.calibration.and_then(|c| if rotated { rustflare_tracking::flip::flipped_calibration(&c) } else { Some(c) });
                             f.centre = Some(((target.x, target.y), rotated));
                             match cal {
-                                None => self.finish_flip(format!("the mount {} but there is no guiding calibration: centre the Sun by hand and calibrate", if rotated { "turned over" } else { "did not turn over" }), None),
+                                None => self.finish_flip(format!("the mount {} but there is no guiding calibration: centre the {} by hand and calibrate", if rotated { "turned over" } else { "did not turn over" }, noun), None),
                                 Some(cal) => {
                                     self.status.guiding.target = Some((target.x, target.y));
                                     self.guide = GuideState::Guiding(Guider::new(target, cal, self.guide_params));
@@ -1173,7 +1227,7 @@ impl Engine {
                     }
                     _ => {
                         self.status.error = Some("flip: recalibration failed, guiding is off: calibrate again".into());
-                        self.finish_flip("the Sun is back at its place but the recalibration failed, so guiding is off".into(), None);
+                        self.finish_flip(format!("the {} is back at its place but the recalibration failed, so guiding is off", self.noun()), None);
                     }
                 }
             }
@@ -1196,13 +1250,13 @@ impl Engine {
                             return;
                         }
                         let tail = if f.was_guiding { ", recalibrated and guiding" } else { " and held" };
-                        self.finish_flip(format!("done: the image {}, the Sun is back at its place{tail}", if turned { "turned over (rotated 180 degrees)" } else { "did not turn over" }), err);
+                        self.finish_flip(format!("done: the image {}, the {} is back at its place{tail}", if turned { "turned over (rotated 180 degrees)" } else { "did not turn over" }, noun), err);
                     }
                 } else {
                     f.good_since = None;
                     if elapsed > Duration::from_secs(900) {
                         let e = self.status.guiding.error_px;
-                        self.finish_flip("could not bring the Sun back within the time limit: check the calibration".into(), e);
+                        self.finish_flip(format!("could not bring the {} back within the time limit: check the calibration", noun), e);
                     }
                 }
             }
@@ -1237,22 +1291,22 @@ impl Engine {
         self.status.capture.paused_reason = if self.paused.is_some() { Some("paused by you".into()) } else if self.resume_after_flip.is_some() { Some("paused for the meridian flip".into()) } else { None };
         self.status.last_flip = self.last_flip.clone();
         let flip_stage = if !self.auto_flip.enabled { "off" } else if self.flip.is_some() { "flipping" } else if self.auto_late { "late" } else if self.auto_done { "done" } else if self.auto_pre.is_some() { "recorded" } else { "waiting" };
-        let mins = self.status.sky_sun.as_ref().map(|k| k.minutes_to_meridian);
+        let mins = self.status.flip_target.as_ref().map(|k| k.minutes_to_meridian);
         let resume = self.resume_after_flip.is_some();
         let message = match (flip_stage, mins) {
             ("flipping", _) => {
                 let (phase, secs) = self.flip.as_ref().map(|f| (f.phase, f.started.elapsed().as_secs())).unwrap_or(("", 0));
                 let what = match phase {
-                    "slewing" => "the mount is turning over",
-                    "settling" => "settling, looking for the Sun",
-                    "centring" => "centring the Sun where it was",
-                    "recalibrating" => "recalibrating the guider",
-                    "re-centring" => "bringing the Sun back to its place",
-                    _ => "working",
+                    "slewing" => "the mount is turning over".to_string(),
+                    "settling" => format!("settling, looking for the {}", self.noun()),
+                    "centring" => format!("centring the {} where it was", self.noun()),
+                    "recalibrating" => "recalibrating the guider".to_string(),
+                    "re-centring" => format!("bringing the {} back to its place", self.noun()),
+                    _ => "working".to_string(),
                 };
                 format!("Meridian flip, {secs} s: {what}.{}", if resume { " The recording is paused and resumes afterwards." } else { "" })
             }
-            ("late", Some(m)) => format!("Switched on {:.0} min after the meridian with no position recorded before it, so there is no flip this time: the mount may already be flipped, and flipping it back would lose the Sun. It acts at the next crossing.", -m),
+            ("late", Some(m)) => format!("Switched on {:.0} min after the meridian with no position recorded before it, so there is no flip this time: the mount may already be flipped, and flipping it back would lose the {}. It acts at the next crossing.", -m, self.noun()),
             ("done", _) if resume && self.resume_at.is_some() => "Meridian flip done: resuming the recording in a moment.".to_string(),
             ("recorded", Some(m)) => {
                 let when = if m + self.auto_flip.flip_min > 0.5 { format!("in {:.0} min", m + self.auto_flip.flip_min) } else { "any moment".to_string() };
@@ -1273,6 +1327,21 @@ impl Engine {
             let (alt, az) = rustflare_tracking::solar::alt_az(ra, dec, now, s.latitude, s.longitude);
             let (ha, mins) = rustflare_tracking::flip::meridian_timing(ra, rustflare_tracking::solar::local_sidereal_hours(now, s.longitude));
             SkySun { altitude_deg: alt, azimuth_deg: az, ra_hours: ra, dec_deg: dec, hour_angle_h: ha, minutes_to_meridian: mins }
+        });
+        let target = self.target_body();
+        self.status.target = target.map(|t| match t { None => TargetStatus { id: "sun", name: "Sun" }, Some(b) => TargetStatus { id: b.id(), name: b.name() } });
+        self.status.flip_target = self.site.zip(target).map(|(st, t)| {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+            let (ra, dec) = self.target_equatorial(Some(t), now).unwrap_or((0.0, 0.0));
+            let lst = rustflare_tracking::solar::local_sidereal_hours(now, st.longitude);
+            match t {
+                // the Sun: exactly the numbers of status.sky_sun
+                None => { let (ha, mins) = rustflare_tracking::flip::meridian_timing(ra, lst); FlipTargetStatus { id: "sun", name: "Sun", ra_hours: ra, dec_deg: dec, hour_angle_h: ha, minutes_to_meridian: mins, rate: TrackingRate::Solar } }
+                Some(b) => {
+                    let (ha, mins) = rustflare_tracking::flip::meridian_timing_at_rate(ra, lst, rustflare_tracking::bodies::hour_angle_rate(b, now, st.latitude, st.longitude));
+                    FlipTargetStatus { id: b.id(), name: b.name(), ra_hours: ra, dec_deg: dec, hour_angle_h: ha, minutes_to_meridian: mins, rate: rate_of_body(Some(b)) }
+                }
+            }
         });
         self.status.sky_targets = self.site.map(|st| {
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -1539,6 +1608,18 @@ impl Engine {
             }
             Command::SetProfile { id } => {
                 let Some(p) = crate::status::PROFILES.iter().find(|p| **p == id).copied() else { return Err(format!("unknown profile {id} (use {})", crate::status::PROFILES.join(", "))) };
+                let sun = |q: &str| q == "sun_white" || q == "sun_ha";
+                if p != self.status.profile && !(sun(p) && sun(self.status.profile)) {
+                    // another target: the radius learned for the last one does not apply
+                    self.radius_samples.clear();
+                    self.measured_radius = None;
+                }
+                if p == "other" && self.tracker.is_none() {
+                    // nothing is assumed about the target: the Sun's outline, mask and chips go away with the detector
+                    self.sun_model.reset();
+                    self.status.sun = None;
+                    self.corona.lock().unwrap().sun = None;
+                }
                 self.status.profile = p;
                 crate::config::set(self.storage.config_file(), "profile", json!(p))?;
                 self.event("profile", json!({ "profile": p }));
@@ -1628,7 +1709,11 @@ impl Engine {
                     return Ok(json!({ "recorded": true }));
                 }
                 let f = |k: &str| pre.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let target = rustflare_tracking::flip::carried_target((f("ra_hours"), f("dec_deg")), (f("sun_ra_hours"), f("sun_dec_deg")), rustflare_tracking::solar::sun_equatorial(now_unix));
+                // the position was recorded for a target (the Sun unless it says otherwise): carry the pointing by that target's own motion
+                let pre_body = pre.get("target").and_then(|v| v.as_str()).and_then(rustflare_tracking::bodies::Body::from_id);
+                let rate = rate_of_body(pre_body);
+                let target_now = self.target_equatorial(Some(pre_body), now_unix).unwrap_or_else(|| rustflare_tracking::solar::sun_equatorial(now_unix));
+                let target = rustflare_tracking::flip::carried_target((f("ra_hours"), f("dec_deg")), (f("sun_ra_hours"), f("sun_dec_deg")), target_now);
                 let was_guiding = matches!(self.guide, GuideState::Guiding(_));
                 self.stop_guiding_quietly();
                 if let Some(st) = self.site {
@@ -1638,7 +1723,7 @@ impl Engine {
                 self.mount.as_mut().ok_or("no mount connected")?.goto_equatorial(target.0, target.1).map_err(s)?;
                 self.mount_tracking = false;
                 self.last_flip = Some(json!({ "pre": pre, "started_unix": now_unix }));
-                self.flip = Some(FlipState { started: Instant::now(), pre, moved: false, last_check: Instant::now(), slew_done_at: None, slew_s: None, phase: "slewing", centre: None, good_since: None, was_guiding, cal_gen: 0 });
+                self.flip = Some(FlipState { started: Instant::now(), pre, moved: false, last_check: Instant::now(), slew_done_at: None, slew_s: None, phase: "slewing", centre: None, good_since: None, was_guiding, cal_gen: 0, rate });
                 Ok(json!({ "target_ra_hours": target.0, "target_dec_deg": target.1 }))
             }
             Command::SetAutoFlip { enabled, record_min, flip_min } => {
@@ -1691,6 +1776,10 @@ impl Engine {
                 m.set_site_time(&st).map_err(s)?;
                 m.goto_equatorial(ra, dec).map_err(s)?;
                 self.mount_tracking = false; // the mount stops for the slew; tracking is switched on at arrival
+                if let Some(b) = body.filter(|b| *b != rustflare_tracking::bodies::Body::Moon) {
+                    self.planet_target = Some(b); // the planet profile's flip follows this one
+                    let _ = crate::config::set(self.storage.config_file(), "planet_target", json!(b.id()));
+                }
                 self.goto = Some(GotoState { started: Instant::now(), moved: false, last_check: Instant::now(), target: id, rate });
                 self.event("goto", json!({ "target": id, "ra_hours": ra, "dec_deg": dec, "altitude_deg": alt }));
                 Ok(json!({ "target": id, "ra_hours": ra, "dec_deg": dec, "altitude_deg": alt }))
@@ -1839,7 +1928,7 @@ impl Engine {
                 self.last_capture = Some(rs);
                 self.job = Job::Capture(Box::new(CaptureJob {
                     lanes: None,
-                    name: name.unwrap_or_default(),
+                    name: name.filter(|n| !n.trim().is_empty()).or_else(|| self.default_file_name()).unwrap_or_default(),
                     kind,
                     format,
                     burst_frames: frames,
@@ -1924,7 +2013,7 @@ impl Engine {
                 self.last_capture = Some(rs);
                 self.job = Job::Capture(Box::new(CaptureJob {
                     lanes: Some(Lanes { specs: lanes, dir, original, cycle_interval: cycle_interval_s.map(Duration::from_secs_f64), cycle_started: Instant::now(), current: 0, skip: 0 }),
-                    name: name.unwrap_or_default(),
+                    name: name.filter(|n| !n.trim().is_empty()).or_else(|| self.default_file_name()).unwrap_or_default(),
                     kind: kind_label,
                     format,
                     burst_frames: None,
@@ -2479,6 +2568,7 @@ impl Engine {
     /// Focus assist: score about 25 frames a second, summarise each burst of a few seconds as a lucky score with its error, and
     /// publish the history and the peak of its smoothed curve.
     fn step_focus(&mut self, frame: &Frame) {
+        let noun = self.noun();
         let Some(f) = self.focus.as_mut() else { return };
         let now = Instant::now();
         if now.duration_since(f.last_scored) < Duration::from_millis(40) {
@@ -2498,11 +2588,11 @@ impl Engine {
                 f.burst.push(sc);
                 f.live = Some(f.live.map_or(sc, |l| 0.7 * l + 0.3 * sc));
             }
-            None if sun.is_some() => note = Some("The Sun has moved out of the scoring window (a Go to, or a long drift): press Reset history.".to_string()),
-            None => note = Some("Nothing bright to judge: is the Sun in view and the cap off?".to_string()),
+            None if sun.is_some() => note = Some(format!("The {noun} has moved out of the scoring window (a Go to, or a long drift): press Reset history.")),
+            None => note = Some(format!("Nothing bright to judge: is the {noun} in view and the cap off?")),
         }
         if sun.is_none() && note.is_none() {
-            note = Some("The Sun is not detected, so the score includes its edge and moves with the Sun.".to_string());
+            note = Some(format!("The {noun} is not detected, so the score includes its edge and moves with the {noun}."));
         }
         if now.duration_since(f.burst_started) >= FOCUS_BURST {
             if let Some((l, e)) = rustflare_tracking::focus::lucky_score(&f.burst) {
@@ -2612,7 +2702,7 @@ impl Engine {
             // doubled the work of the engine thread.
             let tracker_on = self.tracker.as_ref().is_some_and(|t| t.mode() != "anchor");
             self.analysis_n = self.analysis_n.wrapping_add(1);
-            let need_detect = analyse && (!tracker_on || self.analysis_n % 20 == 0);
+            let need_detect = analyse && self.status.profile != "other" && (!tracker_on || self.analysis_n % 20 == 0);
             let hint = self.radius_hint();
             let t_loc = Instant::now();
             let sun = if need_detect { locate_sun(&frame, hint) } else { None };
@@ -2726,6 +2816,7 @@ impl Engine {
     }
 
     fn step_tracking(&mut self, frame: &Frame, now: Instant, detector: Option<SunLocation>, hint: Option<f64>, dark: bool) {
+        let detect = self.status.profile != "other"; // the Sun detector does not run for an unknown target
         let Some(t) = self.tracker.as_mut() else { return };
         // frames still in flight after an exposure change (or a lane switch) are over- or under-exposed: not a real loss
         let settling = self.last_exposure_change.elapsed() < Duration::from_secs(3);
@@ -2735,7 +2826,7 @@ impl Engine {
         let dims = (frame.width, frame.height);
         match res {
             Err(_) if settling && !self.lost => {
-                if !anchor && !dark { let d = detector.or_else(|| locate_sun(frame, hint)); self.feed_sun_model(d, now, dims); }
+                if !anchor && !dark { let d = detector.or_else(|| if detect { locate_sun(frame, hint) } else { None }); self.feed_sun_model(d, now, dims); }
             }
             Ok(p) => {
                 self.fail_since = None;
@@ -2781,7 +2872,7 @@ impl Engine {
             }
             Err(e) => {
                 if !anchor && !dark {
-                    let d = detector.or_else(|| locate_sun(frame, hint));
+                    let d = detector.or_else(|| if detect { locate_sun(frame, hint) } else { None });
                     if let Some(est) = self.feed_sun_model(d, now, dims) {
                         if let Some(ts) = self.status.tracking.as_mut() { ts.x = est.sun.pos.x; ts.y = est.sun.pos.y; ts.radius = Some(est.sun.radius); }
                     }
@@ -2836,7 +2927,7 @@ impl Engine {
             self.event("dead_reckoning_gave_up", json!({ "age_s": dr.age(now).as_secs_f64(), "moved_px": dr.moved_px(applied) }));
             self.stop_guiding_quietly();
             self.guide_hold = held;
-            self.status.error = Some("tracking lost for too long: guiding paused until the Sun is back".into());
+            self.status.error = Some(format!("tracking lost for too long: guiding paused until the {} is back", self.noun()));
             return;
         }
         let virt = dr.position(now, applied);
@@ -4068,4 +4159,13 @@ mod wrap_tests {
         // nothing left at all
         assert!(wrap_unsafe(0.0, 10.0, 0.1, 1.0, 57.0));
     }
+}
+
+/// The tracking rate that follows a target: solar for the Sun, lunar for the Moon, sidereal for a planet.
+fn rate_of_body(b: Option<rustflare_tracking::bodies::Body>) -> TrackingRate {
+    match b { None => TrackingRate::Solar, Some(rustflare_tracking::bodies::Body::Moon) => TrackingRate::Lunar, Some(_) => TrackingRate::Sidereal }
+}
+
+fn rate_word(r: TrackingRate) -> &'static str {
+    match r { TrackingRate::Solar => "solar", TrackingRate::Lunar => "lunar", TrackingRate::Sidereal => "sidereal" }
 }

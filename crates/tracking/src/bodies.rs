@@ -62,15 +62,55 @@ fn ecliptic_to_equatorial(lon_deg: f64, lat_deg: f64, eps_deg: f64) -> (f64, f64
     (ra, dec)
 }
 
-fn planet_equatorial(body: Body, unix_secs: f64) -> (f64, f64) {
+/// Geocentric ecliptic (J2000) rectangular coordinates of a planet in AU, and the time in Julian centuries since J2000.
+fn planet_vector(body: Body, unix_secs: f64) -> ([f64; 3], f64) {
     let jd = unix_secs / 86400.0 + 2440587.5;
     let t = (jd - 2451545.0) / 36525.0;
     let el = match body { Body::Mars => &MARS, Body::Jupiter => &JUPITER, _ => &SATURN };
     let (p, e) = (heliocentric(el, t), heliocentric(&EARTH, t));
-    let (x, y, z) = (p[0] - e[0], p[1] - e[1], p[2] - e[2]);
+    ([p[0] - e[0], p[1] - e[1], p[2] - e[2]], t)
+}
+
+fn planet_equatorial(body: Body, unix_secs: f64) -> (f64, f64) {
+    let ([x, y, z], t) = planet_vector(body, unix_secs);
     let lon = y.atan2(x).to_degrees() + 1.3969713 * t; // precess J2000 to the equinox of date
     let lat = z.atan2((x * x + y * y).sqrt()).to_degrees();
     ecliptic_to_equatorial(lon.rem_euclid(360.0), lat, 23.439291 - 0.0130042 * t)
+}
+
+/// Equatorial radius of the Moon over the Earth's (k in the almanac's sin(radius) = k sin(parallax)).
+const MOON_K: f64 = 0.2725076;
+/// Equatorial radii of the planets' globes (rings excluded), km, and the astronomical unit, km.
+const PLANET_RADIUS_KM: [(Body, f64); 3] = [(Body::Mars, 3396.2), (Body::Jupiter, 71492.0), (Body::Saturn, 60268.0)];
+const AU_KM: f64 = 149_597_870.7;
+
+/// Apparent angular radius of a body in arcseconds at `unix_secs`: the Moon from its distance (the series' parallax, 14.7 to 16.7
+/// arcminutes over the month), a planet's globe from its distance in AU (Jupiter 15 to 25, Mars 2 to 12, Saturn 7 to 10 arcseconds).
+pub fn angular_radius_arcsec(body: Body, unix_secs: f64) -> f64 {
+    match body {
+        Body::Moon => {
+            let t = (unix_secs / 86400.0 + 2440587.5 - 2451545.0) / 36525.0;
+            let c = |a: f64, b: f64| (a + b * t).to_radians().cos();
+            let par = (0.9508 + 0.0518 * c(135.0, 477198.87) + 0.0095 * c(259.3, -413335.36) + 0.0078 * c(235.7, 890534.22) + 0.0028 * c(269.9, 954397.74)).to_radians();
+            (MOON_K * par.sin()).asin().to_degrees() * 3600.0
+        }
+        _ => {
+            let ([x, y, z], _) = planet_vector(body, unix_secs);
+            let dist_km = (x * x + y * y + z * z).sqrt() * AU_KM;
+            let r = PLANET_RADIUS_KM.iter().find(|(b, _)| *b == body).map_or(0.0, |p| p.1);
+            (r / dist_km).atan().to_degrees() * 3600.0
+        }
+    }
+}
+
+/// How fast the hour angle of a body grows, in hours of hour angle per hour of time (the Sun: about 1.0, a star 1.0027, the Moon
+/// 0.966 because it moves east through the stars). Measured over ten minutes from the positions themselves.
+pub fn hour_angle_rate(body: Body, unix_secs: f64, latitude_deg: f64, longitude_east_deg: f64) -> f64 {
+    const DT: f64 = 600.0;
+    let ha = |t: f64| (local_sidereal_hours(t, longitude_east_deg) - equatorial(body, t, latitude_deg, longitude_east_deg).0).rem_euclid(24.0);
+    let mut d = ha(unix_secs + DT) - ha(unix_secs);
+    if d < -12.0 { d += 24.0 } else if d > 12.0 { d -= 24.0 }
+    d / (DT / 3600.0)
 }
 
 /// The Moon as seen from the observer (topocentric), at `unix_secs`.
@@ -135,6 +175,28 @@ mod tests {
 
     /// Opposition means the ecliptic longitude is 180 degrees from the Sun's (the planet's latitude makes the angular
     /// separation a little smaller, so compare longitudes).
+    #[test]
+    fn angular_sizes_are_the_known_ones() {
+        let t = unix(2026, 11, 24, 15, 0);
+        let moon = angular_radius_arcsec(Body::Moon, t);
+        assert!((880.0..1010.0).contains(&moon), "Moon radius {moon} arcsec (14.7 to 16.7 arcmin)");
+        let j = angular_radius_arcsec(Body::Jupiter, t);
+        assert!((14.0..26.0).contains(&j), "Jupiter {j}");
+        let m = angular_radius_arcsec(Body::Mars, t);
+        assert!((1.5..12.5).contains(&m), "Mars {m}");
+        let s = angular_radius_arcsec(Body::Saturn, t);
+        assert!((6.5..10.5).contains(&s), "Saturn {s}");
+    }
+
+    #[test]
+    fn the_moon_hour_angle_grows_slower_than_a_stars() {
+        let t = unix(2026, 11, 24, 15, 0);
+        let moon = hour_angle_rate(Body::Moon, t, 40.0, -90.0);
+        let jup = hour_angle_rate(Body::Jupiter, t, 40.0, -90.0);
+        assert!((0.92..0.99).contains(&moon), "Moon {moon}"); // 0.966 geocentric; the parallax of an observer near the Moon moves it by a few per cent
+        assert!((1.0020..1.0035).contains(&jup), "Jupiter {jup}");
+    }
+
     #[test]
     fn planets_are_opposite_the_sun_at_opposition() {
         for (body, when) in [(Body::Jupiter, unix(2026, 1, 10, 12, 0)), (Body::Saturn, unix(2025, 9, 21, 12, 0)), (Body::Mars, unix(2025, 1, 16, 12, 0))] {

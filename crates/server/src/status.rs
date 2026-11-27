@@ -179,6 +179,8 @@ pub struct OpticsStatus {
     pub scale_arcsec_per_px: Option<f64>,
     /// Apparent solar radius today, arcseconds.
     pub solar_radius_arcsec: f64,
+    /// Apparent radius of what the profile images (the Sun's, the Moon's from its distance, a planet's globe), arcseconds. None for `other`.
+    pub target_radius_arcsec: Option<f64>,
     /// Expected solar radius in pixels (needs focal length and pixel size).
     pub expected_radius_px: Option<f64>,
     /// Radius measured from the limb when it disagrees with the optics, and the effective focal length and
@@ -215,6 +217,25 @@ pub struct SkySun {
     /// Hour angle in hours (negative: before the meridian) and minutes until the Sun crosses it (negative: since).
     pub hour_angle_h: f64,
     pub minutes_to_meridian: f64,
+}
+
+#[derive(Clone, Serialize)]
+pub struct TargetStatus {
+    pub id: &'static str,
+    pub name: &'static str,
+}
+
+#[derive(Clone, Serialize)]
+pub struct FlipTargetStatus {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub ra_hours: f64,
+    pub dec_deg: f64,
+    /// Hour angle in hours (negative: before the meridian) and minutes until the target crosses it (negative: since), at the target's own rate.
+    pub hour_angle_h: f64,
+    pub minutes_to_meridian: f64,
+    /// The tracking rate restored after a flip.
+    pub rate: rustflare_core::TrackingRate,
 }
 
 /// The Moon and bright planets for the saved site (the targets of Go to besides the Sun).
@@ -384,6 +405,11 @@ pub struct Status {
     pub flats: FlatsStatus,
     pub site: Option<SiteStatus>,
     pub sky_sun: Option<SkySun>,
+    /// What the profile images (None for `other`, and for the planet profile until a planet was gone to).
+    pub target: Option<TargetStatus>,
+    /// The body the meridian flip follows (the Sun for the Sun profiles; the Moon, or the planet last gone to): where it is and when it
+    /// crosses the meridian. For the Sun it is the same numbers as `sky_sun`. Needs a saved site.
+    pub flip_target: Option<FlipTargetStatus>,
     pub sky_targets: Vec<SkyTarget>,
     pub clock: ClockStatus,
     pub goto: Option<GotoStatus>,
@@ -423,6 +449,8 @@ impl Default for Status {
             flats: FlatsStatus { available: false, applied: false, name: None },
             site: None,
             sky_sun: None,
+            target: None,
+            flip_target: None,
             sky_targets: Vec::new(),
             clock: ClockStatus::default(),
             goto: None,

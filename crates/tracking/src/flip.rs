@@ -38,6 +38,13 @@ pub fn meridian_timing(ra_hours: f64, lst_hours: f64) -> (f64, f64) {
     (ha, -ha * 60.0 * 1.002738)
 }
 
+/// Hour angle in hours and minutes to the meridian for a body whose hour angle grows by `rate` hours per hour of time (see
+/// `bodies::hour_angle_rate`). Negative minutes: it crossed that long ago.
+pub fn meridian_timing_at_rate(ra_hours: f64, lst_hours: f64, rate: f64) -> (f64, f64) {
+    let (ha, _) = meridian_timing(ra_hours, lst_hours);
+    (ha, -ha * 60.0 / rate.max(0.1))
+}
+
 /// A pointing, then a pointing after the flip with the aim of landing in the same place.
 /// Target of the flip GoTo: where the user pointed, carried along by the Sun's own motion in the meantime.
 pub fn carried_target(pointing: (f64, f64), sun_then: (f64, f64), sun_now: (f64, f64)) -> (f64, f64) {
@@ -83,6 +90,14 @@ mod tests {
         let (ha, mins) = meridian_timing(10.0, 10.25);
         assert!(ha > 0.0 && mins < 0.0, "past the meridian");
         assert!((meridian_timing(23.9, 0.1).0 - 0.2).abs() < 1e-9, "wraps over midnight");
+    }
+
+    #[test]
+    fn the_moon_reaches_the_meridian_later_than_the_hour_angle_alone_says() {
+        let (ha, mins) = meridian_timing_at_rate(10.0, 9.0, 0.966);
+        assert!((ha + 1.0).abs() < 1e-9);
+        assert!((mins - 60.0 / 0.966).abs() < 1e-9, "{mins}");
+        assert!(mins > 62.0, "later than the 60 minutes of a body that keeps pace with the clock");
     }
 
     #[test]

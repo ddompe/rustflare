@@ -144,7 +144,7 @@ function OpticsSettings({ status }: { status: Status | null }) {
       <button type="button" className="primary wide" disabled={!dirty} onClick={() => run(async () => { await api('PUT', '/optics', { focal_length_mm: num(focal), focal_multiplier: num(mult) ?? 1, pixel_size_um: num(pixel), binning: bin }); setDirty(false) })}>Save optics</button>
       {o.expected_radius_px ? (
         <p className="hint-text">
-          Image scale {o.scale_arcsec_per_px!.toFixed(2)} ″/px · the Sun is {arcmin(o.solar_radius_arcsec)} in radius today ⇒ <b>≈ {o.expected_radius_px.toFixed(0)} px</b>. Partial-disc tracking uses this radius.
+          Image scale {o.scale_arcsec_per_px!.toFixed(2)} ″/px · {noun(profileOf(status))==='target' ? 'the target' : `the ${noun(profileOf(status))}`} is {arcmin(o.target_radius_arcsec ?? o.solar_radius_arcsec)} in radius today ⇒ <b>≈ {o.expected_radius_px.toFixed(0)} px</b>. Partial-disc tracking uses this radius.
         </p>
       ) : (
         <p className="hint-text">Enter the telescope's focal length, plus the Barlow or reducer factor if you use one (and pixel size if the camera doesn't report it) so partial-disc tracking knows how big the Sun is. Needed for an H-alpha view that doesn't show the whole disc.</p>

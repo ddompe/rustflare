@@ -28,7 +28,7 @@ const WHY: Record<Feature, { not: ProfileId[]; text: string }> = {
   limb: { not: ['planet'], text: 'A planet is only a few tens of pixels across: there is no edge to fit. Use Feature, or track by hand with the slew pad.' },
   edgeCircle: { not: ['planet'], text: 'No edge circle: a planet is too small for a limb circle to be worth showing.' },
   lanes: { not: ['planet'], text: 'Exposure lanes bracket a bright and a dark scene (an eclipse, the Moon). A planet needs one exposure.' },
-  flip: { not: ['moon', 'planet', 'other'], text: 'The automatic flip and the flip assist follow the Sun for now. For the Moon or a planet flip by hand: Go to the target again after the meridian.' },
+  flip: { not: ['other'], text: 'The meridian flip follows the target: choose the Sun, Moon or Planet profile so it knows which body crosses the meridian.' },
 }
 
 export function why(p: ProfileId, f: Feature): string | null {

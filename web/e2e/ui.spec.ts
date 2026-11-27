@@ -831,3 +831,75 @@ test.describe('colour histogram', () => {
     await expect(page.getByRole('alert').filter({ hasText: /Clipping: .*%/ })).toBeVisible()
   })
 })
+
+test.describe('use profiles, stage 2: the engine knows the target', () => {
+  const setProfile = (page: Page, id: string) => put(page, '/profile', { id })
+  const status = async (page: Page) => (await (await page.request.get('/api/status')).json())
+  test.afterEach(async ({ page }) => { await setProfile(page, 'sun_ha') })
+
+  test('the flip follows the target: the Sun profile keeps the Sun numbers, the Moon its own meridian and lunar rate', async ({ page }) => {
+    await put(page, '/site', { latitude: 29.5, longitude: -96 })
+    await expect.poll(async () => (await status(page)).flip_target?.id).toBe('sun')
+    let s = await status(page)
+    expect(s.flip_target.minutes_to_meridian).toBe(s.sky_sun.minutes_to_meridian) // byte for byte what it was
+    expect(s.flip_target.rate).toBe('solar')
+    await setProfile(page, 'moon')
+    await expect.poll(async () => (await status(page)).flip_target?.id).toBe('moon')
+    s = await status(page)
+    expect(s.target.name).toBe('Moon')
+    expect(s.flip_target.rate).toBe('lunar')
+    const moon = s.sky_targets.find((t: { id: string }) => t.id === 'moon')
+    expect(s.flip_target.ra_hours).toBeCloseTo(moon.ra_hours, 3)
+    // the Moon's hour angle grows at 0.966 of the clock's: minutes = hour angle / 0.966 (a star: / 1.0027)
+    expect(Math.abs(s.flip_target.minutes_to_meridian + s.flip_target.hour_angle_h * 60 / 0.966)).toBeLessThan(0.04 * Math.abs(s.flip_target.minutes_to_meridian) + 0.5) // the topocentric Moon's rate changes through the day: a few per cent over hours
+    // Other: nothing is followed
+    await setProfile(page, 'other')
+    await expect.poll(async () => (await status(page)).flip_target).toBeNull()
+    expect((await status(page)).target).toBeNull()
+  })
+
+  test('the Planet profile follows the planet last gone to; the words and the radius are the Moon\'s and the planet\'s own', async ({ page }) => {
+    await put(page, '/site', { latitude: 29.5, longitude: -96 })
+    await setProfile(page, 'planet')
+    await expect.poll(async () => (await status(page)).sky_targets?.length).toBeGreaterThan(0)
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Aim/ }).click()
+    await page.getByText(/Meridian flip/i).first().click()
+    expect((await post(page, '/mount/goto', { target: 'jupiter', confirm: true, allow_below_horizon: true })).ok()).toBe(true)
+    await expect.poll(async () => (await status(page)).flip_target?.id, { timeout: 10_000 }).toBe('jupiter')
+    await expect(page.getByText('Go to a planet once (Aim tab)')).toHaveCount(0) // the planet is known: the flip is not greyed
+    expect((await status(page)).flip_target.rate).toBe('sidereal')
+    await expect(page.getByText(/The Jupiter (crosses|crossed) the meridian/)).toBeVisible()
+    // expected size: set the optics and compare the arcseconds
+    await put(page, '/optics', { focal_length_mm: 1000, focal_multiplier: 1, pixel_size_um: 3.76, binning: 1 })
+    await expect.poll(async () => (await status(page)).optics.target_radius_arcsec).toBeLessThan(30)
+    await setProfile(page, 'moon')
+    await expect.poll(async () => (await status(page)).optics.target_radius_arcsec).toBeGreaterThan(880)
+    const o = (await status(page)).optics
+    expect(o.expected_radius_px).toBeCloseTo(o.target_radius_arcsec / o.scale_arcsec_per_px, 3)
+    await setProfile(page, 'sun_ha')
+    await expect.poll(async () => (await status(page)).optics.target_radius_arcsec).toBeCloseTo((await status(page)).optics.solar_radius_arcsec, 3)
+  })
+
+  test('the Sun detector does not run for Other, and the engine says Moon where it speaks', async ({ page }) => {
+    await expect.poll(async () => (await status(page)).sun, { timeout: 10_000 }).not.toBeNull()
+    await setProfile(page, 'other')
+    await expect.poll(async () => (await status(page)).sun, { timeout: 10_000 }).toBeNull()
+    await setProfile(page, 'sun_ha')
+    await expect.poll(async () => (await status(page)).sun, { timeout: 10_000 }).not.toBeNull()
+  })
+
+  test('a recording with no name is named after the Moon or the planet; the Sun profile adds nothing', async ({ page }) => {
+    const fs = await import('node:fs')
+    const names = () => {
+      const out: string[] = []
+      const walk = (d: string) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { out.push(e.name); if (e.isDirectory()) walk(path.join(d, e.name)) } }
+      walk(path.resolve('.e2e-data/data'))
+      return out
+    }
+    await setProfile(page, 'moon')
+    await expect.poll(async () => (await post(page, '/capture/sequence', { frames: 6, format: 'ser' })).text(), { timeout: 10_000 }).toContain('buffer_frames')
+    await expect.poll(async () => (await status(page)).capture.state, { timeout: 20_000 }).toBe('idle')
+    await expect.poll(() => names().some((n) => /^Moon/.test(n) || /Moon/.test(n))).toBe(true)
+  })
+})
