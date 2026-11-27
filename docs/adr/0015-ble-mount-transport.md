@@ -1,6 +1,6 @@
 # 0015. Bluetooth LE transport for the ZWO mount
 
-- Status: Accepted (implemented; not yet verified against a live mount, see Consequences)
+- Status: Accepted (verified on a real AM3 over Bluetooth on 2026-11-21 and 22, see the [hardware checklist](../project/hardware-checklist.md); the Consequences below were written before that)
 - Date: 2026-11-21
 
 ## Context

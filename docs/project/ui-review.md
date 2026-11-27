@@ -1,5 +1,8 @@
 # Web UI review and redesign
 
+!!! note "Historical"
+    This is the first review, of 2026-11-21. The screen has been reworked since (0.6.4 one Start button, 0.7.0 a view that never scrolls, 0.8.1 and 0.8.2 chips on the picture, the Tools sheet, *Set up N of 5*, tab marks, optical setups as a dropdown): the rule that came out of those rounds is [ADR 0022](../adr/0022-fixed-view-and-overlay-chips.md), and the current wording is in the [user guide](../guide/screen.md). Names below (panels, *Captures*, *Start guiding*) are the old ones.
+
 The owner's verdict on the old UI was "way too complicated, I need something manageable". This page records the
 critique, the new structure and the reasoning. Everything described here lives in `web/src`; the server and the HTTP
 API are unchanged.

@@ -1,6 +1,6 @@
 # 0006. Player One cameras via the vendor SDK, not V4L2
 
-- Status: Accepted — **not yet tested on real hardware**
+- Status: Accepted. Verified on a real Apollo-M MINI on a Raspberry Pi 5 (see [Hardware](../reference/hardware.md#player-one-cameras))
 - Date: 2026-11-21
 
 ## Context

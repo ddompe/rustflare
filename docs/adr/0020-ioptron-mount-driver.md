@@ -1,6 +1,6 @@
 # 20. iOptron mount driver
 
-Date: 2026-11-26. Status: accepted (not yet verified on hardware).
+Date: 2026-11-26. Status: accepted. A real HAE69C has been connected (see Consequences); guiding and Go to Sun are not yet verified.
 
 ## Context
 
@@ -13,6 +13,7 @@ A `rustflare-mount` driver `ioptron`, generic over the serial I/O like the ZWO d
 ## Consequences
 
 - Equatorial German-style mounts work like the ZWO driver for tracking, Go to and guiding, with no Bluetooth.
-- The HAE69 is assumed to answer the same language; the model code is only used for the name, so an unknown four-digit code is accepted.
-- It has been run against a mock only. The first real connection may show wrong signs (the document's text for the pad directions is garbled in places) or timing; the debug endpoints log every command.
+- The HAE69 answers the same language: a real HAE69C answers `0066` to `:MountInfo#`. The model code is only used for the name and the top slew speed, so an unknown four-digit code is accepted (without a top speed).
+- Timing was the surprise: the HAE69C takes 300 ms or more to answer `:ST1#` and `:qR#`, so the reply timeout is 2 s and stray input is dropped before each command. It has no clock battery, which led to [ADR 0023](0023-mount-site-and-time-sync.md). Slews, Send home, Search home, tracking, and the site and time have been used on it; the pad's RA and Dec signs, guide pulses and a meridian pass are still to check (the document's text for the pad directions is garbled in places; the debug endpoints log every command).
+- The driver reports its own slew speeds and whether it can search for home, so the UI needs no iOptron knowledge.
 - Sky-Watcher (SynScan / EQMOD, the motor controller protocol) is a separate driver, researched in `docs/project/research-skywatcher.md`.

@@ -1,6 +1,6 @@
 # 0010. Debian package, GitHub Releases, and `rustflare-update`
 
-- Status: Accepted; the `rustflare-update` command was removed again, see [ADR 0017](0017-no-updater.md). Package, install, upgrade and the update command are verified on a Raspberry Pi 5 (Debian 13); the CI workflows have not yet run on GitHub.
+- Status: Accepted; the `rustflare-update` command was removed again, see [ADR 0017](0017-no-updater.md). Package, install, upgrade and the update command are verified on a Raspberry Pi 5 (Debian 13). The release workflow (a pushed tag `vX.Y.Z` builds the package and publishes it) and the CI workflow run on GitHub. A package built on a computer with `scripts/pi-deploy.sh` is a local build with a `+dev` version and says so in the status bar.
 - Date: 2026-11-21
 
 ## Context

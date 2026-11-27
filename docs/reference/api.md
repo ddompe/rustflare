@@ -23,7 +23,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `DELETE /api/optics/setups/{name}` | forgets a setup (the optics in use stay; if it was active nothing is active afterwards). 404 for an unknown name |
 | `GET/PUT /api/preview` | `{"stretch"}`: auto-stretch of the live view |
 
-`Status` has `optics`, `sun` (located target: pos, radius, partial; for the Moon profile the Moon, for the planet profile the planet, absent for Other), `camera` (name, controls, fps, mean, saturation, `peak`, histogram, size; for a colour camera also `histogram_rgb` and `saturated_rgb`), `mount`, `tracking` (mode, x, y, radius, lost), `guiding` (state, calibration, target, error_px), `capture` (state, phase, done, total, file, last_file), `error`.
+`Status` has `version` (the software version, `0.8.2`, or `0.8.2 (local <commit>)` for a build made with `scripts/build-deb.sh` on a computer), `profile`, `target`, `optics`, `sun` (located target: pos, radius, partial; for the Moon profile the Moon, for the planet profile the planet, absent for Other), `camera` (name, controls, fps, mean, saturation, `peak`, histogram, size; for a colour camera also `histogram_rgb` and `saturated_rgb`; `cooler` for a cooled one), `roi`, `colour`, `coronagraph`, `focus`, `darks`, `flats`, `mount` (below), `startup`, `session_log`, `guide_params`, `perf`, `tracking` (mode, x, y, radius, lost), `guiding` (state, calibration, target, error_px), `capture` (state, phase, done, total, file, last_file), `after_burst`, `notices`, `error`.
 
 ## Camera
 
@@ -41,13 +41,19 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 
 | | body |
 |---|---|
-| `GET /api/mount/drivers` | |
-| `POST /api/mount/connect` | `{"driver":"zwo","device":"/dev/ttyACM0"}` or `{"driver":"simulator"}` |
+| `GET /api/mount/drivers` | `["zwo","ioptron","simulator"]` |
+| `GET /api/mount/ports` | the serial devices that could be a mount (stable `/dev/serial/by-id/` names when there are any): `[{path, label}]` |
+| `GET /api/mount/scan` | nearby Bluetooth mounts (takes about 6 s; 409 if a scan is already running): `[{name, address, rssi}]` |
+| `POST /api/mount/connect` | `{"driver":"zwo"\|"ioptron","device":"/dev/ttyACM0"}`, `{"driver":"zwo","transport":"ble","device":"AA:BB:CC:DD:EE:FF"}` (Bluetooth, ZWO only; the address comes from the scan) or `{"driver":"simulator"}`. `transport` is `usb` (default) or `ble` |
 | `POST /api/mount/disconnect` | |
 | `POST /api/mount/tracking` | `{"enabled":true,"rate"?:"solar"\|"lunar"\|"sidereal"}`: switches tracking on or off. Without `rate`, enabling keeps the rate the mount last had (a Go to Saturn leaves it sidereal); `status.mount.rate` says which |
 | `POST /api/mount/slew` | `{"axis":"primary"\|"secondary","speed":8}` — signed multiples of sidereal; `0` stops |
 | `POST /api/mount/stop` | stops all motion (does not change sky tracking) |
+| `POST /api/mount/search-home` | `{"confirm":true}`: the mount moves both axes until its homing sensors find the mechanical zero and **makes that its new zero** (not the same as `/api/mount/home`). Only for drivers with `status.mount.can_search_home` (the iOptron, `:MSH#`); 400 without `confirm` or when the driver cannot |
+| `PUT /api/mount/auto-site-time` | `{"enabled"}`: whether the Pi sends its site and time by itself once after connecting when they differ (default on; `status.mount.auto_sync_site_time`) |
+| `GET /api/debug/mount-query?what=` | a read-only question to the mount by name (ZWO: `GAT` why tracking is off, `GTa` meridian behaviour, `GU` status flags, `GLC`, `GLH`, `GLL` altitude limits ...), iOptron: `MountInfo`, `GLS`, `GUT`, `GEP`, `GAC`, `GTR`, `GPC`, `GSR`, `GAL`, `AG`, `GMT`, `FW1`, `FW2`), answered `{"what","reply"}` (400 for a name the driver does not allow) |
 
+`status.mount` is `{info, tracking, rate, slewing, at_home, park, alt_az, link (usb or ble), link_up, slew_speeds, can_search_home, auto_sync_site_time, site_time}`: `slew_speeds` are the multiples of sidereal the driver offers for `POST /api/mount/slew` (the UI builds its list from them), and `info` is the model the mount reported (for example `iOptron HAE69C`). Reply times: about 60 ms a command over Bluetooth (ZWO), and 300 to 600 ms for some commands of the iOptron HAE69C (its driver waits up to 2 s for a reply).
 ## Tracking & guiding
 
 | | body |
@@ -62,10 +68,15 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 
 | | body |
 |---|---|
-| `POST /api/capture/single` | `{"name"?}` |
+| `POST /api/capture/single` | `{"name"?,"format"?}` |
 | `POST /api/capture/sequence` | `{"name"?,"frames"?,"seconds"?,"format"?}` (`format`: `ser` or `png`; at least one limit) |
 | `POST /api/capture/bursts` | `{"name"?,"frames"?,"seconds"?,"interval_s","bursts"?,"format"?}`: a burst every `interval_s` (start to start); `bursts` omitted = until stopped |
+| `POST /api/capture/lanes` | `{"name"?,"kind"?:"hdr"\|"prominence","cycle_interval_s"?,"cycles"?,"format"?,"on_full"?,"home_when_done"?,"lanes":[{"name","exposure_us","gain"?,"frames"?,"seconds"?,"mask_disc"?}]}`: HDR or prominence lanes, see [Capture formats](capture-formats.md#hdr-bracketing-lanes). `mask_disc` saves the disc position with every frame of that lane (the frames stay raw) |
+| `POST /api/capture/prominence` | `{"name"?,"factor"?}` (2 to 64, default 8): the prominence pair, a disc PNG, a PNG with `factor` times the exposure and a composite; needs the Sun in view |
+| `POST /api/capture/darks` | `{"name"?,"frames"?}` (default 30): dark frames with the cap on, at the current exposure and gain |
+| `PUT /api/darks/applied` | `{"enabled"}`: subtract the master dark in the live view |
 | `PUT /api/capture/buffer` | `{"mb"}`: RAM buffer size (64–8192) |
+| `PUT /api/capture/direct-io` | `{"enabled"}`: write recordings with `O_DIRECT` (refused if the drive does not allow it) |
 | `PUT /api/capture/after-burst` | any of `{"mode":"video"\|"video_stack"\|"stack_only"\|"best_frames","stack_keep_percent":1-100,"raw_keep_percent":1-100,"margin":1-5}`: what happens after each burst ([guide](../guide/recording-modes.md)). `stack_only` and `best_frames` are refused (400) while the stacker is not connected. Returns the settings; `status.after_burst` has them with `stacker_connected`, `stacking`, `stacked`, `last` and the measured `stack_s_per_frame` |
 | `POST /api/notices/ack` | `{"id"?}`: dismiss one notice, or all. `status.notices` lists what the user must know about (`level` error or warning, `text`, `at`, `acked`): frames lost, a recording stopped early, a stack that fell back to video |
 | `POST /api/capture/flats` | `{"name"?,"frames","level"?}` (`level` 0.1–0.9, default 0.5) |
@@ -73,6 +84,20 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `POST /api/capture/pause` | pauses a running sequence or lane recording, keeping what is left |
 | `POST /api/capture/resume` | starts the paused recording again (files named `…-resumed`) |
 | `PUT /api/flats/applied` | `{"enabled"}`: apply the master flat to the live view (needs a master flat) |
+
+## Settings the screen keeps in the engine
+
+| | body |
+|---|---|
+| `PUT /api/camera/roi` | `{"fraction"}`: read out the centre `fraction` (0.1 to 1) of the sensor; the UI offers 1, 0.75, 0.5, 0.25. Refused while recording; restarts tracking. `status.roi` is `{width, height, sensor_width, sensor_height ...}` or null where the camera cannot |
+| `PUT /api/colour` | `{"mode":"off"\|"auto"\|"manual","r"?,"b"?}`: white balance of a colour camera's live view and debayered PNG (gains 0.25 to 4) |
+| `PUT /api/coronagraph` | `{"enabled","scale"?}`: the prominence view (display only); `scale` 0.8 to 1.2 of the Sun's radius, default 1.03 |
+| `PUT /api/focus` | `{"enabled","reset"?}`: focus assist; `status.focus` carries the score and its history |
+| `PUT /api/guiding/params` | `{"window_s","deadband_px","gain","speed","fast_speed","fast_above_px"}` (all required; window 2 to 60, dead band 0 to 30, gain 0.05 to 1, speeds 0.1 to 0.9, fast above 2 to 200) |
+| `PUT /api/session-log` | `{"enabled","frame_every_s"?}`: the opt-in session log |
+| `PUT /api/startup` | `{"enabled"}`: reconnect the last camera and mount after a restart (`status.startup`) |
+| `GET /api/ui`, `PUT /api/ui` | `{"key","value"}`: small UI preferences kept on the Pi (slew speed, form fields, open sections), at most 200 keys of 4096 bytes; `GET` returns them all |
+| `GET /api/datasheet/camera`, `/mount` | see below |
 
 ## Mount: Go to Sun, site, home
 
@@ -83,7 +108,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `POST /api/mount/goto-sun` | `{"confirm":true,"allow_unsynced_clock"?}`: sends site and time to the mount, slews to the Sun, then switches solar tracking on; refused without a site, below the horizon, with a capture running, or (unless overridden) when the Pi's clock is not NTP-synchronised. `status.goto` shows progress |
 | `POST /api/mount/sync-site-time` | sends the Pi's saved site and clock to the mount (it moves nothing, so no `confirm`) and reads them back; answers `{"site_time": ...}`. Refused (400, with the reason) without a mount, without a saved site, while the mount is parked or slewing. Logs a `mount_site_time_sync` event |
 | `POST /api/debug/sim-mount-clock` | test hook, simulated mount only: `{"time_offset_s"?, "latitude_deg"?, "longitude_east_deg"?}` sets what the simulated mount holds and re-reads it, to exercise a mismatch |
-| `POST /api/mount/home` | `{"confirm":true}` |
+| `POST /api/mount/home` | `{"confirm":true}`: Send home, to the zero position the mount already has |
 | `POST /api/mount/stop` | also cancels a GoTo |
 | `POST /api/mount/flip` | meridian flip assist: `{"record_only":true}` saves the pointing and the Sun's place; `{"confirm":true}` flips and re-centres; `{"confirm":true,"restore":true}` re-centres after a manual flip. Needs an idle camera |
 | `PUT /api/mount/autoflip` | `{"enabled","record_min"?,"flip_min"?}`: unattended flip (minutes before the meridian to record, minutes after to flip). `status.auto_flip` carries `stage`, `message` and `resume_pending` |

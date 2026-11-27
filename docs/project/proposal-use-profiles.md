@@ -1,6 +1,6 @@
 # Proposal: use profiles (Sun, Moon, planets)
 
-Status: proposal, 2026-11-26, partly built (see Decisions). Sections 1 to 11 are the proposal as written; the section above says what was built and what the experiment showed. Where something was inferred and not run, the text says so. Decision record: [ADR 0021](../adr/0021-use-profiles.md).
+Status: proposal, 2026-11-26, partly built and released (0.7.1 and 0.8.0; see Decisions). Sections 1 to 11 are the proposal as written; the section above says what was built and what the experiment showed. Where something was inferred and not run, the text says so. Decision record: [ADR 0021](../adr/0021-use-profiles.md).
 
 ## Decisions (2026-11-26) and what is built
 
@@ -12,7 +12,7 @@ Status: proposal, 2026-11-26, partly built (see Decisions). Sections 1 to 11 are
 
 **Built (0.7.1):** the profile in the engine (`status.profile`, `PUT /api/profile`, saved in the settings file, FITS `OBJECT` from it), the picker on the Camera tab, the status chip, the greyed-with-reason pattern (`Segmented` options with `off`, `Why`), the gates for prominence view, prominence recording and pair, HDR lanes (planet), the disc-edge and full-disc trackers (planet), the edge circle (planet), the stacker modes for a colour camera (any profile), the words ("No Moon found", Aim, Track, Camera, Display), the white-balance wording, and the Go to switch offer. User guide: [profiles](../guide/profiles.md).
 
-**Built after 0.7.1 (branch `use-profiles`; simulators only, nothing run on a real Moon or planet):**
+**Built after 0.7.1 (released in 0.8.0; simulators only, nothing run on a real Moon or planet):**
 
 - **Colour histogram** (owner request): `status.camera.histogram_rgb` and `saturated_rgb` for a Bayer camera, binned per photosite from the raw mosaic (2x2 blocks at every 8th column and row, the same 1/16 of the pixels as the mono statistics, so it costs the same); three overlaid curves with a clipping marker per channel on the Camera tab and in the HUD widget; mono unchanged.
 - **Stage 2, the engine learns the target:** `status.target`, `status.flip_target`; the automatic flip and the assist follow the Sun (same numbers), the Moon (its own hour-angle rate, measured from its positions) or the planet last gone to, and restore the target's tracking rate; the recorded position names its target; the expected radius from the Moon's distance or a planet's globe (`optics.target_radius_arcsec`); "Moon", "planet" or "target" where the engine speaks (focus notes, flip messages, tracking-lost); an unnamed recording is named after the Moon or planet; the Sun detector does not run for Other. The UI gate R-flip is lifted for the Moon and planets (it stays for Other, and for the planet profile until a planet was gone to). `scripts/sim/autoflip-moon.sh`.

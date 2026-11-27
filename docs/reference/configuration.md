@@ -9,7 +9,9 @@
 | Environment file | `/etc/default/rustflare` |
 | Program | `/opt/rustflare` |
 | Captures | `/var/lib/rustflare/captures`, or the drive you choose in More > Storage |
-| Saved UI settings | `/var/lib/rustflare/rustflare.json` (site, flats, guiding, storage, layout) |
+| Saved settings | `/var/lib/rustflare/rustflare.json` (site, optics and optical setups, profile, flats and darks, guiding, colour, coronagraph, storage, startup, UI layout) |
+| Stacker settings | `/var/lib/rustflare/stack.json` and `stack-status.json`, see [Stacking](../guide/stacking.md) |
+| Logs | `/var/lib/rustflare/logs/<date>/` (events, mount) and `logs/<date>/` on the capture drive, see [Debugging](debugging.md) |
 | Certificates | `/var/lib/rustflare/tls/` |
 
 ## The environment file
@@ -22,6 +24,7 @@
 | `RUSTFLARE_DATA_DIR` | Default capture folder on the SD card. A drive chosen in the UI takes precedence |
 | `RUSTFLARE_PASSWORD` | Password for the UI and API (HTTP Basic, any user name). Use with HTTPS |
 | `RUSTFLARE_TLS_BIND` | HTTPS address, for example `0.0.0.0:8443`. Set up by `sudo rustflare-tls` |
+| `RUSTFLARE_CONFIG`, `RUSTFLARE_TLS_DIR`, `RUSTFLARE_WEB_DIR` | The settings file, the certificate folder and the folder of the web UI (the service runs in `/var/lib/rustflare`, so the defaults `rustflare.json` and `tls` land there; the package sets the web folder) |
 
 ## Helper commands
 

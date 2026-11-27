@@ -10,11 +10,14 @@ The logs can be read over the HTTP API, so a problem can be investigated remotel
 | **Session log**: once a second what the tracker and guider saw and the pulses sent, plus a small picture every few seconds | `session_<time>.jsonl` and `_fNNNNN.png` | opt in (More > Session log) |
 | **Snapshots**: the latest full frame and a note on request | `debug/debug_<time>.png` and `.json` | on request: `POST /api/debug/snapshot` |
 
+Files on the capture drive are listed by `GET /api/debug/logs` and fetched from `/files/<path>`; the ones on the Pi's own disk (events, mount commands) are fetched from `/api/debug/internal/<day>/<file>`. `GET /api/debug/state` shows the engine's internals and `GET /api/debug/mount-query?what=<name>` asks the mount a read-only question by name. For a long session on a Pi, `scripts/pi-sampler.py` records memory, drive, threads, temperature, kernel messages and the app's state every few seconds to the SD card.
+
 ## Reading them
 
 - *The Sun jumped.* In `events.jsonl` look for `sun_predicted` (the model refused measurements for a while) and `tracking_lost`. In `mount.jsonl` look at the commands just before: if there is none, the mount moved by itself (mechanical, firmware, or the mount's own limit). A `:GU#` reply whose first letter turns lower case (`nNGM…`) means the mount stopped tracking.
 - *The mask is in the wrong place in a prominence lane.* The model is only measured on the disc lane; compare `sun_for_mask` in `GET /api/debug/state` with a snapshot.
 - *The flip did nothing.* Look for `auto_flip_recorded` or `auto_flip_record_failed` in the events. The status bar shows the same reason.
+- A slow mount is not a fault: the iOptron HAE69C takes 300 to 600 ms to answer some commands, and `mount.jsonl` shows the time each one took.
 - Mount replies of a few letters are normal: guide and slew commands have no reply, `:GU#` returns the status flags, `:GAST#` returns `date#RA&Dec#flags#`.
 
 ## Replaying the detector

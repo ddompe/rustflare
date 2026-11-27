@@ -1,6 +1,6 @@
 # Proposal: an on-board lucky-imaging stacker (`rustflare-stack`)
 
-Status: **M0 to M3 built** (command-line stacker, multi-point alignment, Pi service, web page; see the review sections below). M4 (sharpening, time-lapse, colour, drizzle) and the open checks are listed at the end. Research done by a delegated agent on 2026-11-22 from the owner's brief ("an AutoStakkert-type stacker on board, at low priority so it never disturbs a recording, a different engine and page, started by the sequencer on a directory and watching for more files"); edited and annotated by the maintainer's assistant.
+Status: **M0 to M3 built, and the stacker is in the package since 0.4.0 and enabled by default (it restarts itself if it stops, 0.6.4 to 0.6.5)** (command-line stacker, multi-point alignment, Pi service, web page; see the review sections below). M4 (sharpening, time-lapse, colour, drizzle) and the open checks are listed at the end. Research done by a delegated agent on 2026-11-22 from the owner's brief ("an AutoStakkert-type stacker on board, at low priority so it never disturbs a recording, a different engine and page, started by the sequencer on a directory and watching for more files"); edited and annotated by the maintainer's assistant.
 
 !!! warning "Read the figures as estimates"
     The research made only a few web searches. Every per-frame time below is reasoned, not measured, crate names must be checked on crates.io before use, and the Debian version of Siril is a guess. Verify before committing to the plan.

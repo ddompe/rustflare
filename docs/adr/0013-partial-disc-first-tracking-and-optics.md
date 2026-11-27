@@ -1,6 +1,6 @@
 # 0013. Partial-disc-first tracking, Otsu detection, and the optics setting
 
-- Status: Accepted. Tested on synthetic H-alpha-like frames and on the simulator; not yet on real solar images.
+- Status: Accepted. Tested on synthetic H-alpha-like frames and on the simulator, and since 2026-11-21 on real H-alpha images (see the section below and the [hardware checklist](../project/hardware-checklist.md)). The detector was reworked after 2026-11-22 (brightness-invariant detection, one Sun model: [ADR 0008](0008-solar-tracking-and-guiding.md))
 - Date: 2026-11-21
 
 ## Context

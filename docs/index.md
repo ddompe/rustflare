@@ -4,17 +4,20 @@
 
 *One cycle of a prominence recording, straight from a RustFlare session in H-alpha (colour added for display): the disc lane (left) and the long-exposure lane with the coronagraph mask (right).*
 
-RustFlare is headless solar capture for a Raspberry Pi. It runs next to your telescope and you control it from the web browser on your phone: live view, Go to Sun, tracking and guiding, and recording in SER, FITS or PNG.
+RustFlare is headless solar, lunar and planetary capture for a Raspberry Pi (the Sun is the best-supported target). It runs next to your telescope and you control it from the web browser on your phone: live view, Go to the Sun, Moon or a planet, tracking and guiding, and recording in SER, FITS or PNG.
 
 This site has three parts.
 
 ## 1. User guide
 
-For the person using the app at the telescope. Task by task, in plain language, with screenshots.
+For the person using the app at the telescope. Task by task, in plain language. The screenshots on the tab pages are from 2026-11-21 and are older than the text.
 
 - [Getting started](guide/getting-started.md): install on the Pi and connect from the phone
-- [The screen](guide/screen.md): the live view, overlays and **Hide controls**
+- [The screen](guide/screen.md): the live view, the Tools sheet, overlays, the Start strip and **Hide controls**
 - The tabs: [Camera](guide/camera.md), [Aim](guide/aim.md), [Track](guide/track.md), [Record](guide/record.md), [More](guide/more.md)
+- [What are you imaging (profiles)](guide/profiles.md): Sun, Moon, planets
+- [After each burst](guide/recording-modes.md) and [Stacking](guide/stacking.md): video, stacks, or both
+- [Setting up the Pi](guide/pi-setup.md): the capture drive, memory, services
 - [Phone setup](guide/phone-setup.md): HTTPS, password, Home Screen app
 - [Field networking](guide/hotspot.md): the Pi as a Wi-Fi hotspot
 - [Updating](guide/updating.md)
@@ -25,10 +28,11 @@ For the person using the app at the telescope. Task by task, in plain language, 
 Look-up material: what hardware works, what the files contain, settings and numbers.
 
 - [Hardware](reference/hardware.md): supported cameras and mounts
-- [Capture formats and storage](reference/capture-formats.md)
+- [Capture formats and storage](reference/capture-formats.md), [File formats](reference/file-formats.md)
+- [Device images](reference/device-images.md): the photos in the device catalog
 - [Tracking and guiding concepts](reference/tracking-and-guiding.md)
 - [Configuration](reference/configuration.md): settings and environment files
-- [HTTP API](reference/api.md)
+- [HTTP API](reference/api.md), [Debugging and logs](reference/debugging.md)
 - [Performance](reference/performance.md)
 
 ## 3. Developer and project

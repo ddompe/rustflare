@@ -1,6 +1,6 @@
 # Hardware verification checklist
 
-Everything below was built and tested on the simulators; each item needs the real device. The build on the Pi at the time of writing is `0.5.0` (see `dpkg -s rustflare`). Tick off an item, then close its GitHub issue.
+Everything below was built and tested on the simulators; each item needs the real device. The version on the Pi is shown at the right of the status bar (or `dpkg -s rustflare`); the software at the time of writing is `0.8.2`. Tick off an item, then close its GitHub issue.
 
 ## Verified on real hardware
 
@@ -10,6 +10,8 @@ Everything below was built and tested on the simulators; each item needs the rea
 - [x] Pi clock NTP-synchronised, hardware RTC present
 - [x] 2026-11-22 (owner): BLE connection to the AM3, Go to Sun, darks applied, flat applied in the overlay
 - [x] 2026-11-22: safe eject of the FAT32 stick, tracking on real H-alpha with a Lunt LS50, the pointing readout (`:GAST#`) within 0.3 degrees of the Sun, the mount command log, guiding through a cloud pass (dead reckoning), focus assist (feedback in #78), the 60-second pointing check, and a 10-minute hotspot cycle joined from the phone
+- [x] 2026-11-26/27: iOptron HAE69C over USB: `:MountInfo#` answers `0066`, state, tracking on and off, stop (replies take 300 to 600 ms: reply timeout 2 s), slews, Send home, Search home and the site and clock read and written (its clock had never been set: 2017-01-01; it has no battery). Guide pulses and Go to Sun are still to check.
+- [x] ZWO ASI174MM Mini on a Pi 5, libasi 1.27: open, controls and frames, on a USB 2 port (8.7 fps at 16-bit; the USB 3 rate is still to measure, #30)
 - [x] 2026-11-22: real prominence-lane recordings with the coronagraph (they exposed the Sun-detection and mask problems fixed the same day; a clean run after the fixes is still to be checked)
 
 ## Found on the Sun on 2026-11-22 and fixed (to re-verify)
@@ -30,12 +32,12 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 |---|---|---|
 | #66, #70 | Safe eject | More > Storage > *Eject drive safely* while idle ("Safe to remove"); try it while recording (refused); replug the stick, storage re-detects it |
 | #57 | USB mount recovery | With the mount on USB: `echo 1-2 \| sudo tee /sys/bus/usb/drivers/usb/unbind` then `bind`; the banner clears and tracking state is read back within ~10 s |
-| #68 | Flats | Diffuser on, Camera > Flats > *Start flats*: exposure converges to ~50 %, master flat written, the live view evens out, overlay shows *Flat: applied*; restart the service, it is remembered |
+| #68 | Flats | Diffuser on, Record > Flats > *Start flats...*: exposure converges to ~50 %, master flat written, the live view evens out, overlay shows *Flat: applied*; restart the service, it is remembered |
 | #59 | Guider on a real sky | Calibrate, *Hold position* for 20+ minutes; no oscillation, few pulses per minute; try the Track > *Guiding settings* |
 | #3 | Tracking on real H-alpha | limb tracker finds the partial disc; radius matches Optics |
 
-| new | Darks | Cap on, Camera > Darks > *Capture darks*: hot pixels disappear from the live view, overlay *Dark: applied*; change the exposure and it says *mismatch* |
-| new | FITS and drop policy | Record 100 frames as FITS (open one in a viewer: image upright, EXPTIME and GAIN present); on the USB stick at full rate try *Drop frames* and check the dropped count |
+| new | Darks | Cap on, Record > Darks > *Capture darks (cap on)*: hot pixels disappear from the live view, overlay *Dark: applied*; change the exposure and it says *mismatch* |
+| new | FITS and drop policy | Record 100 frames as FITS (Record > Advanced > File format; open one in a viewer: image upright, EXPTIME and GAIN present); on the USB stick at full rate try *Keep camera speed* and check the dropped count |
 | new | Buffer reuse | With the phone tab closed and then open, `top -H -p $(pgrep -x rustflare-serve)`: compare CPU with the ~55 % measured before ([performance audit](performance-audit.md)) |
 | #72 | HTTPS on the iPhone | The Pi already serves HTTPS: install and trust the CA ([phone setup](../guide/phone-setup.md)), open https://<pi-name>.local:8443, Home Screen, location button |
 
@@ -49,7 +51,7 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 | new | iPhone and HTTPS landing page | Open http://<pi-name>.local:8080 on the phone: the page says whether HTTPS works and lists the three steps; make sure *Certificate Trust Settings* is switched on for RustFlare local CA |
 
 | new | Meridian flip assist | Near the meridian with the Sun tracked and calibrated: Record position, Flip and re-centre (watch the mount); check the image turns 180 degrees, the Sun returns to its recorded spot, and `:GAST#` pointing is read correctly. Also try the manual path: flip with the ZWO app then Restore |
-| new | Pause and resume | Record lanes for a minute, press Pause recording (Record tab or the bar under the picture), then Resume recording: new `-resumed` files continue with the cycles that were left; Discard forgets it |
+| new | Pause and resume | Record lanes for a minute, press Pause (Record tab or the bar under the picture), then Resume recording: new `-resumed` files continue with the cycles that were left; Discard forgets it |
 | new | Mount command log | After a session `GET /api/debug/mount` (or `logs/<date>/mount.jsonl`) lists every command with its reply; check the 59 ms Bluetooth round trips and that nothing is sent that you did not ask for |
 | new | Pointing readout (`:GAST#`) | Idle camera, Sun in view: Aim > Meridian flip > Record position works and shows RA and Dec close to the Sun's (15.88 h, -20 degrees in late November) |
 | new | Automatic meridian flip (unattended, guiding on) | Turn on *Flip automatically* (Aim, Meridian flip) a few minutes before the Sun crosses the meridian. Expect: position recorded, flip just after the crossing (or when the mount stops tracking), Sun re-centred, recalibration if guiding, solar tracking back on |
@@ -66,7 +68,7 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 |---|---|
 | #30 | Mono ASI: open, exposure and gain, fps at full frame; USB 3 cable and blue port; ROI 50 % and 25 % (#76) |
 | #56 | Colour ASI: header says colour with the pattern; the live view colours are plausible; a SER opens in Siril/AutoStakkert with the right Bayer pattern |
-| new | Aim > Go to: pick Moon, Jupiter, Saturn, Mars in turn (the selector shows altitude; one below the horizon should warn and offer *Go anyway*). Check the mount arrives within a degree or two, tracking starts (lunar rate for the Moon), and how far the target is from the frame centre (note it: the planets use approximate elements) |
+| new | Aim > Go to: pick Moon, Jupiter, Saturn, Mars in turn (the selector shows altitude; one below the horizon is greyed with its reason: the screen never sends the mount below the horizon). Check the mount arrives within a degree or two, tracking starts (lunar rate for the Moon), and how far the target is from the frame centre (note it: the planets use approximate elements) |
 | new | Record a short planetary video (SER, short exposure, high gain) and check it plays; try *Home when finished* at the end of a counted recording |
 
 ## Storage by UUID
@@ -113,7 +115,7 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 | Issue | Check |
 |---|---|
 | #50 | Home Screen app on the iPhone: safe areas, sunlight legibility, pad usable with a thumb, overlays draggable, opacity slider |
-| #69 | Record with the cap on (dark) and on the Sun; Record > Captures > *Check all* flags the dark one; delete both |
+| #69 | Record with the cap on (dark) and on the Sun; Files > *Check N recordings* flags the dark one; delete both |
 | #63 | Second full UI review on the phone after the overlay changes |
 
 ## M3 (last)
@@ -122,11 +124,11 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 |---|---|
 | #30 | ASI174MM Mini on a USB 3 cable and blue port: open, set exposure/gain, fps at full frame and ROI |
 
-## iOptron mount driver (new, 0.7, mock only)
+## iOptron mount driver (0.7; a real HAE69C connected on 2026-11-26 and 27, the rest mock only)
 
 | Check | How |
 |---|---|
-| Connect | Aim > Mount `ioptron`, the mount's USB serial port: the card names the model (`:MountInfo#`). CEM70 expected `0070`; **write down what the HAE69 answers** |
+| Connect | Aim > Mount `ioptron`, the mount's USB serial port: the card names the model (`:MountInfo#`). CEM70 expected `0070`; a real HAE69C answered `0066` (done, 2026-11-26) |
 | State | `GET /api/debug/mount-query?what=GLS` while tracking, slewing and parked: the status digit matches what the mount does |
 | Site and time | Go to Sun sends them; the mount's hand controller shows the right place and UTC time |
 | Mount time and place (#104) | Aim > *Mount time and place* shows the mount's site and clock (the HAE69C's clock was seen unset, 2017-01-01) and the chip says it differs. **With someone at the mount**, press *Send site and time to the mount* (set commands, no motion): the block reads "matches", the hand controller shows the Pi's place and UTC time, and the clock keeps ticking (look again after a minute). On an AM3: the clock is read from `:GAST#` (the mount's local time), the place shows "not reported" |

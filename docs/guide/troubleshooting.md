@@ -1,6 +1,6 @@
 # Troubleshooting and FAQ
 
-A red banner at the top of the screen shows the last problem. Find it below.
+The status bar at the bottom of the screen shows the last problem (tap it to read all of it, *Dismiss* removes it). Find it below.
 
 ## Camera
 
@@ -20,6 +20,14 @@ A USB 3 camera on a USB 2 port or cable runs at a fraction of its speed (about 9
 
 Close the ZWO phone app first (the mount accepts only one connection), press the mount's pairing button, then use *Scan for mounts* again. If the link drops, press the pairing button again. A USB mount is found again automatically.
 
+### The mount is not found or does not answer (USB)
+
+Press **Find my mount** on the Aim tab: it asks every serial port which mount answers. If none does, switch the mount on, check the cable (an iOptron mount needs its USB-to-serial adapter plugged into the mount's own port) and choose the driver by hand. The iOptron HAE69C answers some commands (tracking, stop) only after 300 to 600 ms; RustFlare waits up to 2 seconds for each reply. `GET /api/debug/mount` lists every command and reply.
+
+### The mount's clock or place differs
+
+The notes chip on the picture says so (*Clock off 3 min*). The iOptron HAE69C has no clock battery and starts from 2017-01-01 14:00 UTC each time it is switched on. Open **Mount time and place** on the Aim tab and press *Send site and time to the mount*, or leave *Send them by themselves when connecting* on. It needs a saved site and a synchronised Pi clock.
+
 ### Go to Sun refuses
 
 Set your site (More > Site), check that the Sun is above the horizon, and check the clock (below). It also refuses while a recording is running.
@@ -30,9 +38,9 @@ On purpose: RustFlare never switches the mount's tracking on by itself. Use Go t
 
 ## Tracking
 
-- *No Sun found*: too dark (raise the exposure) or no limb in view. Use the anchor tracker on a sunspot or plage.
+- *No Sun found*: too dark (raise the exposure) or no limb in view. Use the **Feature** tracker on a sunspot or plage.
 - *Target lost*: the tracker keeps retrying; guiding pauses until it recovers.
-- The Sun's measured size disagrees with Optics: check the focal length and Barlow factor, then use *Use measured*.
+- The Sun's measured size disagrees with the optical setup (More > Optical setup): check the focal length and Barlow factor, then use *Use measured*.
 
 ### The Sun jumps, or tracking is lost in shadows and cloud
 
@@ -48,7 +56,7 @@ The AM3 stops tracking at its own limit past the meridian (about 19 minutes on 2
 - **Disk full**: recording stops cleanly below 50 MB free, keeping the frames, and will not start below 200 MB. Free up space or pick another drive.
 - **The drive cannot be written**: after `sudo apt install` the service runs as the installing user. If another user owns the drive, run `sudo rustflare-user <your-login>`.
 - **The recording stops at 4 GB**: not a stop. FAT32 sticks cannot hold bigger files, so the recording continues in `_part2`, `_part3` files. exFAT or ext4 avoids the split (RustFlare never formats a drive).
-- **Mostly dark** in the file manager: the cap was on or the Sun was out of view.
+- **Mostly dark** in the file manager (Files): the cap was on or the Sun was out of view.
 
 ## Stacking from memory
 

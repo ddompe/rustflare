@@ -27,25 +27,27 @@ That is the whole install. For a Pi that will run unattended at the telescope, f
 !!! warning
     By default there is no password and the server can move your mount. Keep it on a trusted network, or set a password.
 
-The screen has the live view on top and five tabs along the bottom: **Camera, Aim, Track, Record, More**. They follow a session. Start with the [tour of the screen](screen.md).
+The screen has the live view on top and five tabs along the bottom: **Camera, Aim, Track, Record, More**. They follow a session. The page does not scroll; the version you run is shown at the right of the status bar. Start with the [tour of the screen](screen.md).
 
 ## Before the first night
 
 Do these once, at home (all in the **More** tab, see [More](more.md)):
 
-- **Site**: enter your latitude and longitude.
-- **Optics**: enter the telescope's focal length and any Barlow or reducer.
+- **Site**: enter your latitude and longitude (or tap *Use my location* where the page is served over HTTPS).
+- **Optical setup**: enter the telescope's focal length and any Barlow or reducer, and save it as a named setup if you use more than one telescope. Choose what you are imaging (the [profile](profiles.md), on the Camera tab).
 - **Storage**: choose the USB drive for captures.
+
+While the first session is not set up, a **Set up N of 5** strip (on the Camera tab) or chip (on the other tabs) lists what is left, each step a tap to where it is done: open the camera, profile, optical setup, site, and the mount with its time. It never blocks anything and can be hidden.
 
 ## What the service does by itself
 
-The service starts at boot; there is nothing to launch. It reconnects the last camera and mount automatically, retrying for a couple of minutes while USB devices come up. Untick *reconnect camera & mount* in the Camera tab to turn that off. Closing the camera or disconnecting the mount on purpose makes it forget them.
+The service starts at boot; there is nothing to launch. It reconnects the last camera and mount automatically, retrying for a couple of minutes while USB devices come up. Untick *Reconnect camera and mount at startup* (More > Startup) to turn that off. Closing the camera or disconnecting the mount on purpose makes it forget them.
 
 It never switches on the mount's tracking by itself, because that moves the mount. After a restart, use **Go to Sun** or tick the tracking switch again (Aim tab; the rate buttons under it choose solar, lunar or star). Tracking targets and the guider calibration are not remembered between sessions.
 
 ## Try it without hardware
 
-A simulated camera and mount are always listed. Open the simulated camera, connect the simulator mount, switch on solar tracking, start tracking, calibrate and centre. *Sim disc size* (Camera tab) above about 1.6 makes the disc overflow the frame like an H-alpha view. To make Optics agree with it, enter a focal length of 725 mm for a disc size of 3.
+A simulated camera and mount are always listed. Open the simulated camera, connect the simulator mount, switch on solar tracking, start tracking, calibrate and centre. *Sim disc size* (under *Extra controls* on the Camera tab) above about 1.6 makes the disc overflow the frame like an H-alpha view. To make Optics agree with it, enter a focal length of 725 mm for a disc size of 3.
 
 ## Remove
 

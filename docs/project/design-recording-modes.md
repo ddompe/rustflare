@@ -1,6 +1,6 @@
 # Design: recording modes, their UI and their manuals
 
-Status: plan (2026-11-22). Built so far: the shared frame ring (`rustflare-ring`) and [ADR 0019](../adr/0019-shared-frame-ring.md). Nothing of the UI exists yet; each piece below ships with the stage that makes it true, so the page never offers something the engine cannot do.
+Status: **built** (stages 1 to 5, released in 0.5.0; see the table at the end), tested on the simulators and on a real camera on a dark scene, not yet for an hour on the Sun ([hardware checklist](hardware-checklist.md)). This page is the design as planned; the user-facing description is [After each burst](../guide/recording-modes.md) and the decision is [ADR 0019](../adr/0019-shared-frame-ring.md). The UI differs from the sketch in places: the section is *Record > After each burst* with four cards, the status bar carries the notices (`status.notices`, no `status.errors`), and the settings are *Keep best (%)* fields.
 
 ## The scenarios
 

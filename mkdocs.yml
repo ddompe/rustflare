@@ -1,5 +1,5 @@
 site_name: RustFlare
-site_description: Headless, web-controlled solar capture for Raspberry Pi
+site_description: Headless, web-controlled solar, lunar and planetary capture for Raspberry Pi
 docs_dir: docs
 nav:
   - Home: index.md
@@ -50,7 +50,13 @@ nav:
           - adr/0014-zwo-asi-cameras.md
           - adr/0015-ble-mount-transport.md
           - adr/0016-optional-https-and-password.md
+          - adr/0017-no-updater.md
+          - adr/0018-storage-by-uuid.md
+          - adr/0019-shared-frame-ring.md
+          - adr/0020-ioptron-mount-driver.md
           - adr/0021-use-profiles.md
+          - adr/0022-fixed-view-and-overlay-chips.md
+          - adr/0023-mount-site-and-time-sync.md
           - adr/template.md
       - ZWO mount Bluetooth protocol: project/zwo-ble-protocol.md
       - Roadmap and status: project/roadmap.md
@@ -66,6 +72,7 @@ nav:
       - Stacker telemetry run 2026-11-22: project/stacker-telemetry-run-2026-11-22.md
       - Spike, NEON and GPU 2026-11-22: project/stacker-simd-gpu-spike-2026-11-22.md
       - Performance audit: project/performance-audit.md
+      - Stall baseline 2026-11-23: project/stall-baseline-2026-11-23.md
       - UI review: project/ui-review.md
       - Apt repository setup: project/apt-repository.md
       - Brand: project/brand.md

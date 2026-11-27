@@ -12,7 +12,7 @@ Choose it at the top of the **Camera** tab (*What are you imaging?*, one compact
 | **Planet** | a planet (a small bright disc) | also greyed: the disc-edge and full-disc trackers (a planet has no edge to fit) and HDR lanes; the edge circle; white balance Auto is explained as turning a planet grey. **Planet centroid** tracking is on (and the default), the engine marks the planet in the picture, clipping is judged by the brightest part of the picture and auto-stretch is set by it, the flip follows the planet last gone to; FITS says `OBJECT = Planet` |
 | **Other** | anything else | nothing assumed; the Sun detector does not run (no outline, no "No Sun found"); the automatic flip is greyed (it has no body to follow); FITS has no `OBJECT` |
 
-What does not apply is **greyed, not hidden**, with the reason written under the control (a phone has no hover). The page lists the same controls in every profile, and the HTTP API refuses nothing: the profile adapts the screen and the headers, it is not a lock. The **N notes** chip names the profile whenever it is not a Sun one.
+What does not apply is **greyed, not hidden**, with the reason written under the control (a phone has no hover). The page lists the same controls in every profile, and the HTTP API refuses nothing: the profile adapts the screen and the headers, it is not a lock. The profile in use is named in the line under the picker on the Camera tab (with the optical setup in use), and the status API reports it as `status.profile` and the target as `status.target`.
 
 The profile is never changed by itself. **Go to** the Moon (or a planet, or the Sun) while another profile is chosen shows a line with a button to switch.
 
@@ -24,7 +24,7 @@ The **automatic meridian flip** and the **flip assist** follow what the profile 
 
 ## A telescope carries its profile
 
-A saved [optical setup](more.md#optical-setups-your-telescopes) (a telescope with its reducer or Barlow) carries the profile it is used for: *Lunt LS50 + Barlow* with Sun, H-alpha, *C11 + reducer* with Moon. Applying the setup switches the profile along with the focal length, so changing telescope is one step. It still never moves the mount or starts anything, and you can change the profile afterwards by hand: the setup then shows as *modified* until you revert it (or save the new values over it with Edit in Manage...). A setup saved with *Keep the current profile* leaves the profile alone.
+A saved [optical setup](more.md#optical-setup-your-telescopes) (a telescope with its reducer or Barlow) carries the profile it is used for: *Lunt LS50 + Barlow* with Sun, H-alpha, *C11 + reducer* with Moon. Applying the setup switches the profile along with the focal length, so changing telescope is one step. It still never moves the mount or starts anything, and you can change the profile afterwards by hand: the setup then shows as *modified* until you revert it (or save the new values over it with Edit in Manage...). A setup saved with *Keep the current profile* leaves the profile alone.
 
 ## Moon or planets with a colour camera
 
