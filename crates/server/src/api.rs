@@ -53,6 +53,8 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/mount/goto", post(goto_target))
         .route("/api/mount/flip", post(mount_flip))
         .route("/api/site", put(site_put))
+        .route("/api/mount/sync-site-time", post(|s| run(s, Command::SyncSiteTime)))
+        .route("/api/debug/sim-mount-clock", post(sim_mount_clock))
         .route("/api/tracking/start", post(tracking_start))
         .route("/api/tracking/stop", post(|s| run(s, Command::StopTracking)))
         .route("/api/guiding/calibrate", post(|s| run(s, Command::Calibrate)))
@@ -886,6 +888,13 @@ async fn mount_flip(s: State<AppState>, Json(b): Json<FlipBody>) -> Res {
 struct AutoFlipBody { enabled: bool, record_min: Option<f64>, flip_min: Option<f64> }
 async fn mount_autoflip(s: State<AppState>, Json(b): Json<AutoFlipBody>) -> Res {
     run(s, Command::SetAutoFlip { enabled: b.enabled, record_min: b.record_min.unwrap_or(5.0), flip_min: b.flip_min.unwrap_or(1.0) }).await
+}
+
+#[derive(Deserialize)]
+struct SimClockBody { #[serde(default)] time_offset_s: i64, latitude_deg: Option<f64>, longitude_east_deg: Option<f64> }
+/// Test hook for the simulated mount only: what it holds as its site and clock, so a mismatch can be exercised without hardware.
+async fn sim_mount_clock(s: State<AppState>, Json(b): Json<SimClockBody>) -> Res {
+    run(s, Command::SimMountClock { time_offset_s: b.time_offset_s, latitude_deg: b.latitude_deg, longitude_east_deg: b.longitude_east_deg }).await
 }
 
 #[derive(Deserialize)]

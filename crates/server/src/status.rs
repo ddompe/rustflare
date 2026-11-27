@@ -68,6 +68,8 @@ pub struct MountStatus {
     pub slew_speeds: Vec<f64>,
     /// Whether the driver can search for the mechanical home position (`POST /api/mount/search-home`).
     pub can_search_home: bool,
+    /// The site and clock the mount itself holds against the Pi's (issue #104). `None` when the driver cannot read them or nothing was read yet.
+    pub site_time: Option<crate::sitetime::SiteTimeStatus>,
 }
 
 /// Something the user should know about that stays on screen until they dismiss it: a fallback, a lost frame, a failed stack.

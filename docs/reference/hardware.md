@@ -60,6 +60,15 @@ What works through the protocol: Go to (`:MS1#`, falling back to the counterweig
 !!! warning "Status: written from the protocol document, never run on a real mount"
     Everything above is tested against a mock only (`cargo test -p rustflare-mount`). Expect small surprises on the first connection and report them (Aim tab, or `GET /api/debug/mount`, which logs every command and reply). To check first, with a person at the mount: the connection and model name; Go to Sun and that it tracks at the solar rate afterwards; the slew pad directions (the signs of RA and Dec in the document are ambiguous, calibration absorbs them for guiding but the pad does not); a guide pulse; Send home; what the HAE69 answers to `:MountInfo#` (any four digits are accepted). The checklist rows are in the [hardware checklist](../project/hardware-checklist.md).
 
+### The mount's own site and time (read back)
+
+`Mount::read_site_time` reads what the mount holds, without changing it (Aim tab: *Mount time and place*; `status.mount.site_time`).
+
+- **iOptron** (protocol v3.10): `:GLS#` answers a sign and 22 digits; the first 8 are the longitude in 0.01 arc-seconds (the sign applies to it, east positive) and the next 8 are the latitude **plus 90 degrees** in 0.01 arc-seconds. `:GUT#` answers `sMMM` (minutes from UTC, no daylight saving in it), one daylight-saving flag digit and 13 digits of milliseconds since J2000.0 (Unix milliseconds of J2000.0 are 946728000000), 18 characters before the `#`. A real HAE69C answered `:GLS#` in this layout (its site matched the owner's real one, not reproduced here) and `:GUT#` `-36000536551185000` (UTC-6, no daylight saving, 2017-01-01 13:59:45 UTC: the clock had never been set). Whether that clock keeps ticking is not yet known. Every command can take 300 to 600 ms on this mount, so the engine reads these every 30 s, not with the 2 s poll.
+- **ZWO AM3/AM5**: the clock only, from `:GAST#` (`MM/DD/YY&HH:MM:SS&+06:00#RA&Dec#flags#`). The date and time are the mount's **local** time and the offset has the opposite sign to the usual one (`+06:00` is UTC-6). No command that reads the mount's site back is documented in this repository, so latitude and longitude are reported as unknown rather than guessed.
+- Writing is `set_site_time` (ZWO `:SMGE#` and `:SMTI#`; iOptron `:SG`, `:SDS`, `:SUT`, `:SLO`, `:SLA`, `:SHE`); the Aim tab button sends the Pi's saved site and clock and reads them back. It moves nothing.
+- Tolerances (`crates/server/src/sitetime.rs`): the clock differs above 5 s, the place above 0.05 degrees of arc (longitude wraps at 180).
+
 ## Simulators
 
 `simulator` camera and mount are always available. The simulated Sun drifts, responds to mount motion, and has a *Sim scene* control (0 = Sun, 1 = vignetted flat field for testing flats, 2 = Moon with a phase (*Sim Moon phase*, 0 new, 0.5 full), 3 = a 25 px planet with two small moons and *Sim seeing jitter*). Scenes 2 and 3 start at the frame centre and move with the mount like the Sun; on the colour simulator the Moon is nearly neutral and the planet orange.

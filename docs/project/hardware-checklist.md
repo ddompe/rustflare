@@ -129,6 +129,7 @@ Open: the Sun slid about 330 px along the secondary (Dec) axis three times, roug
 | Connect | Aim > Mount `ioptron`, the mount's USB serial port: the card names the model (`:MountInfo#`). CEM70 expected `0070`; **write down what the HAE69 answers** |
 | State | `GET /api/debug/mount-query?what=GLS` while tracking, slewing and parked: the status digit matches what the mount does |
 | Site and time | Go to Sun sends them; the mount's hand controller shows the right place and UTC time |
+| Mount time and place (#104) | Aim > *Mount time and place* shows the mount's site and clock (the HAE69C's clock was seen unset, 2017-01-01) and the chip says it differs. **With someone at the mount**, press *Send site and time to the mount* (set commands, no motion): the block reads "matches", the hand controller shows the Pi's place and UTC time, and the clock keeps ticking (look again after a minute). On an AM3: the clock is read from `:GAST#` (the mount's local time), the place shows "not reported" |
 | Go to Sun | Slews to the Sun, then tracks by itself; `:RT2#` (solar) is selected first |
 | Pad | N, S, E, W move the image the way the buttons say (if not, the RA and Dec signs in `ioptron.rs` `slew` are swapped) |
 | Guide | Calibrate and Hold position: pulses of 2.5 s, rate `:RGrrdd#`, no runaway |

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, Status, reportError } from '../api'
+import { api, Status, MountSiteTime, ClockPlace, reportError } from '../api'
 import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
 import { DeviceCard } from './DeviceCard'
@@ -353,6 +353,99 @@ function SearchHome({ disabled }: { disabled: boolean }) {
   )
 }
 
+/** One tap saves where this phone is as the site (the browser only shares its location over HTTPS). */
+function saveMyLocation(run: (f: () => Promise<unknown>) => unknown) {
+  navigator.geolocation.getCurrentPosition(
+    (p) => { void run(() => api('PUT', '/site', { latitude: p.coords.latitude, longitude: p.coords.longitude })) },
+    (e) => reportError(new Error(`Location unavailable (${e.message}). The browser only shares it over HTTPS: use Type it in instead.`), 'Setting the site'),
+  )
+}
+
+/** "3 min 12 s", "45 s", "2 h 5 min". */
+function spanWords(secs: number): string {
+  const s = Math.round(Math.abs(secs))
+  if (s < 60) return `${s} s`
+  if (s < 3600) return s % 60 ? `${Math.floor(s / 60)} min ${s % 60} s` : `${s / 60} min`
+  const m = Math.floor((s % 3600) / 60)
+  return m ? `${Math.floor(s / 3600)} h ${m} min` : `${s / 3600} h`
+}
+
+const placeText = (c: ClockPlace) => (c.latitude_deg == null || c.longitude_east_deg == null ? 'not reported' : `${Math.abs(c.latitude_deg).toFixed(3)}° ${c.latitude_deg >= 0 ? 'N' : 'S'}, ${Math.abs(c.longitude_east_deg).toFixed(3)}° ${c.longitude_east_deg >= 0 ? 'E' : 'W'}`)
+const timeText = (c: ClockPlace) => {
+  if (c.unix_secs == null) return 'not reported'
+  const off = c.utc_offset_minutes
+  const zone = off == null ? '' : ` (zone ${off < 0 ? '-' : '+'}${Math.floor(Math.abs(off) / 60)}${Math.abs(off) % 60 ? `:${String(Math.abs(off) % 60).padStart(2, '0')}` : ''} h)`
+  return `${new Date(c.unix_secs * 1000).toISOString().slice(0, 19).replace('T', ' ')} UTC${zone}`
+}
+
+/** "matches", or "differs: 3 min, 12 degrees". */
+function clockSummary(st: MountSiteTime | null | undefined): string {
+  if (!st) return 'not available'
+  if (st.ok) return 'matches'
+  const parts = [
+    ...(st.time_ok === false && st.time_diff_s != null ? [spanWords(st.time_diff_s)] : []),
+    ...(st.place_ok === false && st.place_diff_deg != null ? [`${st.place_diff_deg < 10 ? st.place_diff_deg.toFixed(2) : st.place_diff_deg.toFixed(0)} degrees`] : []),
+  ]
+  return `differs: ${parts.join(', ')}`
+}
+
+/** What the mount itself holds as its site and time, next to the Pi's, and a button that sends the Pi's (nothing moves). */
+function MountClock({ status, openMore }: { status: Status; openMore?: (focus: string) => void }) {
+  const { err, busy, run } = useAction()
+  const m = status.mount!
+  const st = m.site_time
+  const prof = profileOf(status)
+  const parked = m.park === 'parked' || m.park === 'parking'
+  const slewing = !!m.slewing || !!status.goto || !!status.flip
+  const ntp = status.clock?.ntp_synchronized
+  let reason: string | null = null
+  if (!st) reason = 'This mount cannot report its site and time.'
+  else if (!status.site) reason = 'Save your site first: the Pi has nothing to send.'
+  else if (parked) reason = 'The mount is parked: unpark it first.'
+  else if (slewing) reason = 'The mount is moving: wait until it stops.'
+  const row = (label: string, mine: string, pi: string) => (
+    <tr><th scope="row">{label}</th><td>{mine}</td><td>{pi}</td></tr>
+  )
+  return (
+    <Disclosure title="Mount time and place" summary={<span className="mc-sum">{st && !st.ok ? '⚠ ' : ''}{clockSummary(st)}</span>}>
+      <div className="mountclock">
+        {!st ? (
+          <p className="hint-text">This mount cannot report its site and time, so RustFlare cannot compare them with the Pi's.</p>
+        ) : (
+          <>
+            <table className="clocktable">
+              <thead><tr><td /><th scope="col">Mount</th><th scope="col">Pi</th></tr></thead>
+              <tbody>
+                {row('Place', placeText(st.mount), placeText(st.pi))}
+                {row('Time', timeText(st.mount), timeText(st.pi))}
+              </tbody>
+            </table>
+            <p className={st.ok ? 'hint-text' : 'warn'} role="status">
+              {st.ok ? 'Matches.' : 'Differs.'} {st.why}
+              {st.time_diff_s != null && <> Time difference {st.time_diff_s >= 0 ? '+' : '-'}{spanWords(st.time_diff_s)}.</>}
+              {st.place_diff_deg != null && <> Place difference {st.place_diff_deg.toFixed(3)}°.</>}
+            </p>
+          </>
+        )}
+        <p className="hint-text">The Pi's clock: {ntp === true ? 'synchronised to a time server' : ntp === false ? 'NOT synchronised to a time server: fix the Pi first, or what it sends the mount is wrong too' : 'synchronisation unknown'}.</p>
+        <p className="hint-text">Why it matters: Go to {noun(prof)} is computed from the site and time the mount holds, so a wrong clock or place sends it to the wrong spot.</p>
+        <button type="button" className="wide" disabled={busy || !!reason} aria-disabled={busy || !!reason} onClick={() => run(() => api('POST', '/mount/sync-site-time'))}>{busy ? 'Sending…' : 'Send site and time to the mount'}</button>
+        {reason && <div className="hint-text">{reason}</div>}
+        {st && !status.site && (
+          <div className="needs" role="note">
+            <b>Set your site first.</b> The Pi sends its saved position and clock.
+            <div className="btnrow tight">
+              <button type="button" className="primary grow" disabled={busy} onClick={() => saveMyLocation(run)}>Use my location</button>
+              {openMore && <button type="button" className="grow" onClick={() => openMore('site')}>Type it in</button>}
+            </div>
+          </div>
+        )}
+        <ErrorLine error={err} />
+      </div>
+    </Disclosure>
+  )
+}
+
 /** Slew to where the Sun, Moon or a bright planet is now, then switch tracking on at its rate. Needs a saved site and a trustworthy clock. */
 function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boolean; openMore?: (focus: string) => void }) {
   const [ask, setAsk] = useState(false)
@@ -370,10 +463,7 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
   const below = alt != null && alt < -1
   const low = alt != null && alt >= -1 && alt < 15
   // the site is a once-only setting, so the fix is here: one tap saves where this phone is
-  const useHere = () => navigator.geolocation.getCurrentPosition(
-    (p) => { void run(() => api('PUT', '/site', { latitude: p.coords.latitude, longitude: p.coords.longitude })) },
-    (e) => reportError(new Error(`Location unavailable (${e.message}). The browser only shares it over HTTPS: use Type it in instead.`), 'Setting the site'),
-  )
+  const useHere = () => saveMyLocation(run)
   const go = () => run(async () => { await api('POST', '/mount/goto', { target: planet ? planet.id : 'sun', confirm: true, allow_unsynced_clock: clockBad, allow_below_horizon: false }); setAsk(false) })
   if (status.goto) return <div className="hint-text" role="status">Going to {bodies.find((b) => b.id === status.goto?.target)?.name ?? 'the Sun'} ({status.goto.phase}). STOP cancels.</div>
   const label = (b: { name: string; altitude_deg: number }) => `${b.name} · ${b.altitude_deg < -1 ? 'not up (below the horizon)' : `${b.altitude_deg.toFixed(0)}° up`}`
@@ -439,6 +529,7 @@ export function AimTab({ status, next, openMore }: { status: Status | null; next
       <Offset status={status} />
       <Pad status={status} locked={parked} />
       <GoToSun status={status} disabled={parked || !!status.goto} openMore={openMore} />
+      <MountClock status={status} openMore={openMore} />
       <Disclosure title="Meridian flip">
         <MeridianFlip status={status} />
       </Disclosure>

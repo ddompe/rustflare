@@ -14,6 +14,15 @@ export interface Optics { focal_length_mm: number | null; focal_multiplier: numb
   setup?: { active: string | null; modified: boolean } }
 export interface StorageInfo { path: string; label: string; mount_point: string | null; fstype: string | null; total: number | null; free: number | null; max_file_bytes: number | null; available: boolean; problem: string | null; internal?: boolean; reserve_bytes?: number; warning?: string | null }
 export interface SunLocation { pos: { x: number; y: number }; radius: number; partial: boolean; radius_from_optics?: boolean | null; fit_rms?: number | null }
+/** A site and a clock: the mount's own or the Pi's. Null fields are unknown (the mount does not say, or no site is saved). */
+export interface ClockPlace { latitude_deg: number | null; longitude_east_deg: number | null; unix_secs: number | null; utc_offset_minutes: number | null }
+/** What the mount holds as its site and clock against the Pi's (null: this mount cannot report them, or nothing was read yet). */
+export interface MountSiteTime {
+  read_at_unix: number; mount: ClockPlace; pi: ClockPlace
+  /** Mount clock minus the Pi's, seconds. */
+  time_diff_s: number | null; place_diff_deg: number | null
+  time_ok: boolean | null; place_ok: boolean | null; ok: boolean; why: string
+}
 export interface Startup { enabled: boolean; camera: string | null; mount: string | null; retrying: boolean }
 export interface Status {
   /** The software version (a local build adds its commit): shown in the corner of the status bar. */
@@ -46,7 +55,7 @@ export interface Status {
   /** What is being imaged: sun_white, sun_ha, moon, planet or other (engine-owned, see profile.ts). */
   profile?: string
   /** What the mount itself reports (read back every ~2 s); everything but info and tracking may be null. */
-  mount: { info: string; slew_speeds?: number[]; can_search_home?: boolean; tracking: boolean; rate?: 'solar' | 'lunar' | 'sidereal'; slewing?: boolean | null; at_home?: boolean | null; park?: 'unparked' | 'parking' | 'parked' | null; alt_az?: boolean | null; link?: 'usb' | 'ble' | null; link_up?: boolean } | null
+  mount: { info: string; slew_speeds?: number[]; can_search_home?: boolean; tracking: boolean; rate?: 'solar' | 'lunar' | 'sidereal'; slewing?: boolean | null; at_home?: boolean | null; park?: 'unparked' | 'parking' | 'parked' | null; alt_az?: boolean | null; link?: 'usb' | 'ble' | null; link_up?: boolean; site_time?: MountSiteTime | null } | null
   tracking: Tracking | null
   guiding: { state: 'off' | 'calibrating' | 'guiding'; calibration: Calibration | null; target: [number, number] | null; error_px: number | null; held?: boolean; dead_reckoning?: boolean }
   capture: {

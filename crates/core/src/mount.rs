@@ -90,7 +90,22 @@ pub struct SiteTime {
     pub utc_offset_minutes: i32,
 }
 
+/// What the mount itself holds as its site and clock. Every field is `None` when the mount does not say (a ZWO mount reports its clock
+/// but, as far as the repo's protocol notes go, not its site).
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct MountSiteTime {
+    pub latitude_deg: Option<f64>,
+    /// East positive.
+    pub longitude_east_deg: Option<f64>,
+    /// The mount's clock as seconds since the Unix epoch (UTC).
+    pub unix_secs: Option<i64>,
+    /// Local time minus UTC, minutes, as the mount holds it (no daylight saving added).
+    pub utc_offset_minutes: Option<i32>,
+}
+
 pub trait Mount: Send {
+    /// Reads the site and the clock the mount holds (read-only: never changes the mount). `None`: this driver cannot read them.
+    fn read_site_time(&mut self) -> Result<Option<MountSiteTime>> { Ok(None) }
     /// Tells the mount where and when it is (the official app does this on every connect).
     fn set_site_time(&mut self, _st: &SiteTime) -> Result<()> { Err(crate::Error::Unsupported("set site/time".into())) }
     /// Starts a GoTo slew to equatorial coordinates of date (RA in hours, Dec in degrees). Moves the mount.

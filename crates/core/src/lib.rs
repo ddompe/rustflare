@@ -14,4 +14,4 @@ pub use camera::{centred_roi, Camera, CameraDriver, CameraInfo, ControlDesc, Coo
 pub use error::{Error, Result};
 pub use frame::{BayerPattern, ChannelStats, Frame, FrameStats, PixelFormat};
 pub use geom::{Mat2, Vec2};
-pub use mount::{Axis, LinkInfo, Mount, MountState, ParkState, RadPerSec, SiteTime, SlewSpeed, TrackingRate, SIDEREAL_RATE};
+pub use mount::{Axis, LinkInfo, Mount, MountSiteTime, MountState, ParkState, RadPerSec, SiteTime, SlewSpeed, TrackingRate, SIDEREAL_RATE};
