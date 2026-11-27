@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 import { api, Status } from '../api'
 import { Disclosure, Empty, Section, Segmented, useAction } from './ui'
+import { noun, profileOf, why } from '../profile'
 import { useSetting } from '../settings'
 import { GuideSettings } from './GuideSettings'
 
@@ -10,6 +11,14 @@ const MODES: { id: Mode; label: string; help: string }[] = [
   { id: 'anchor', label: 'Feature', help: 'Follow a sunspot, filament or plage. Use this when the field is entirely on the disc, with no limb in view.' },
   { id: 'sun_disc', label: 'Full disc', help: 'Centroid of the whole disc. Only when the whole disc is in frame.' },
 ]
+
+/** The mode help in the words of the profile: the texts are written for the Sun. */
+function modeHelp(t: string, p: ReturnType<typeof profileOf>): string {
+  if (p === 'moon') return t.replace('visible solar edge (limb)', 'bright edge of the Moon (the terminator is not used)').replace('a sunspot, filament or plage', 'a crater or the edge of a mare').replace('typical for H-alpha. ', '')
+  if (p === 'planet') return t.replace('a sunspot, filament or plage', 'a bright spot on the planet or a moon')
+  if (p === 'other') return t.replace('visible solar edge (limb)', 'visible edge').replace('a sunspot, filament or plage', 'a feature')
+  return t
+}
 
 const angle = (v: { x: number; y: number }) => `${((Math.atan2(v.y, v.x) * 180) / Math.PI).toFixed(0)}°`
 
@@ -42,7 +51,7 @@ export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: 
   const t = status?.tracking
   const g = status?.guiding
   const cam = status?.camera
-  if (!cam || !status) return <Empty>Open the camera first: tracking follows the Sun in the live view.</Empty>
+  if (!cam || !status) return <Empty>Open the camera first: tracking follows the {noun(profileOf(status))} in the live view.</Empty>
 
   const o = status.optics
   const sun = status.sun
@@ -64,8 +73,8 @@ export function TrackTab({ status, anchorPick, setAnchorPick, next }: { status: 
     return (
       <>
         <Section title="What should it follow?" error={err}>
-          <Segmented label="Tracking target" value={mode} options={MODES} onChange={(m) => { setMode(m); setAnchorPick(false) }} />
-          <p className="hint-text">{MODES.find((m) => m.id === mode)?.help}</p>
+          <Segmented label="Tracking target" value={mode} options={MODES.map((m) => ({ id: m.id, label: m.label, off: m.id === 'anchor' ? null : why(profileOf(status), 'limb') }))} onChange={(m) => { setMode(m); setAnchorPick(false) }} />
+          <p className="hint-text">{modeHelp(MODES.find((m) => m.id === mode)?.help ?? '', profileOf(status))}</p>
           {mode === 'limb' && (
             <Disclosure title="Disc radius" summary={radius ? `${radius} px` : status.optics.expected_radius_px ? `${status.optics.expected_radius_px.toFixed(0)} px from Optics` : 'automatic'}>
               <div className="field">

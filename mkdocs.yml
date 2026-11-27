@@ -15,6 +15,7 @@ nav:
       - Field networking: guide/hotspot.md
       - Setting up the Pi: guide/pi-setup.md
       - Stacking: guide/stacking.md
+      - What are you imaging (profiles): guide/profiles.md
       - After each burst (video, stacks): guide/recording-modes.md
       - Updating: guide/updating.md
       - Troubleshooting and FAQ: guide/troubleshooting.md

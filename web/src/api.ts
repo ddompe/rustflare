@@ -35,6 +35,8 @@ export interface Status {
   optics: Optics
   camera: CameraStatus | null
   sun: SunLocation | null
+  /** What is being imaged: sun_white, sun_ha, moon, planet or other (engine-owned, see profile.ts). */
+  profile?: string
   /** What the mount itself reports (read back every ~2 s); everything but info and tracking may be null. */
   mount: { info: string; slew_speeds?: number[]; can_search_home?: boolean; tracking: boolean; rate?: 'solar' | 'lunar' | 'sidereal'; slewing?: boolean | null; at_home?: boolean | null; park?: 'unparked' | 'parking' | 'parked' | null; alt_az?: boolean | null; link?: 'usb' | 'ble' | null; link_up?: boolean } | null
   tracking: Tracking | null

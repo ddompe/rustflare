@@ -367,6 +367,8 @@ pub struct Status {
     pub coronagraph: CoronagraphStatus,
     pub focus: FocusStatus,
     pub colour: ColourStatus,
+    /// What is being imaged (`sun_white`, `sun_ha`, `moon`, `planet`, `other`): the UI adapts its words and what it enables, the engine names the target in the FITS headers.
+    pub profile: &'static str,
     pub darks: DarksStatus,
     pub perf: PerfStatus,
     /// Region of interest of the open camera (None: no camera or not supported).
@@ -410,6 +412,7 @@ impl Default for Status {
             coronagraph: CoronagraphStatus { enabled: false, scale: 1.03 },
             focus: FocusStatus::default(),
             colour: ColourStatus { mode: "auto", r: 1.0, b: 1.0, applied: [1.0; 3] },
+            profile: "sun_ha",
             guide_params: GuideParamsStatus { window_s: 10.0, deadband_px: 3.0, gain: 0.7, speed: 0.2, fast_speed: 0.8, fast_above_px: 20.0 },
             flats: FlatsStatus { available: false, applied: false, name: None },
             site: None,
@@ -441,5 +444,31 @@ pub fn build_version() -> String {
     match option_env!("RUSTFLARE_BUILD") {
         Some(b) if !b.is_empty() => format!("{} ({b})", env!("CARGO_PKG_VERSION")),
         _ => env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
+/// The use profiles, in the order the UI offers them.
+pub const PROFILES: [&str; 5] = ["sun_white", "sun_ha", "moon", "planet", "other"];
+
+/// The FITS `OBJECT` of a profile (`None`: do not claim a target).
+pub fn profile_object(profile: &str) -> Option<String> {
+    match profile {
+        "sun_white" | "sun_ha" => Some("Sun".into()),
+        "moon" => Some("Moon".into()),
+        "planet" => Some("Planet".into()),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+
+    #[test]
+    fn every_profile_names_its_target_or_none() {
+        assert_eq!(profile_object("sun_ha").as_deref(), Some("Sun"));
+        assert_eq!(profile_object("moon").as_deref(), Some("Moon"));
+        assert_eq!(profile_object("other"), None);
+        assert!(PROFILES.iter().all(|p| *p == "other" || profile_object(p).is_some()));
     }
 }

@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { api, Status } from '../api'
 import { ErrorLine, RangeField, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
+import { profileOf, why } from '../profile'
+import { Why } from './Profile'
 
 const mins = (m: number) => { const a = Math.abs(m); return a >= 90 ? `${(a / 60).toFixed(1)} h` : `${Math.round(a)} min` }
 
@@ -10,22 +12,24 @@ export function MeridianFlip({ status }: { status: Status }) {
   const { err, busy, run } = useAction()
   const [ask, setAsk] = useState<null | 'flip' | 'restore'>(null)
   const sky = status.sky_sun
+  const offFlip = why(profileOf(status), 'flip')
   const f = status.flip
   const last = status.last_flip as { pre?: { unix?: number; ra_hours?: number; sun_x?: number; sun_y?: number }; slew_s?: number | null; total_s?: number; image_turned_over?: boolean | null; post_error_px?: number | null; result?: string } | null | undefined
   const go = (restore: boolean) => run(async () => { await api('POST', '/mount/flip', { confirm: true, restore }); setAsk(null) })
   return (
     <div>
       {sky ? <p className="hint-text"><b>{sky.minutes_to_meridian >= 0 ? `The Sun crosses the meridian in ${mins(sky.minutes_to_meridian)}.` : `The Sun crossed the meridian ${mins(sky.minutes_to_meridian)} ago.`}</b> The mount's own limits decide how far it keeps tracking past it.</p> : <p className="hint-text">Set your site (More, Site) to see how long until the Sun crosses the meridian.</p>}
-      <AutoFlip status={status} />
+      <Why id="why-flip" text={offFlip} />
+      <AutoFlip status={status} off={!!offFlip} />
       <p className="hint-text">Before the flip press <b>Record position</b>: it saves where the mount points, where the Sun is in the picture and the time. <b>Flip and re-centre</b> records, sends the mount to that position (it turns over if the mount decides to), measures how long that took, then brings the Sun back to the same place in the picture, allowing for the image turning upside down. If you flip by hand (app or mount buttons), use <b>Restore after a manual flip</b> afterwards. A guiding calibration is needed to re-centre.</p>
       {f && <div className="hint-text" role="status">Flip in progress: {f.phase} ({Math.round(f.elapsed_s)} s). STOP cancels.</div>}
       <div className="btnrow tight">
-        <button type="button" disabled={busy || !!f} onClick={() => run(() => api('POST', '/mount/flip', { record_only: true }))}>Record position</button>
+        <button type="button" disabled={busy || !!f || !!offFlip} onClick={() => run(() => api('POST', '/mount/flip', { record_only: true }))}>Record position</button>
       </div>
       {ask === null ? (
         <div className="btnrow">
-          <button type="button" className="grow" disabled={busy || !!f} onClick={() => setAsk('flip')}>Flip and re-centre…</button>
-          <button type="button" className="grow" disabled={busy || !!f || !last?.pre} onClick={() => setAsk('restore')}>Restore after a manual flip…</button>
+          <button type="button" className="grow" disabled={busy || !!f || !!offFlip} onClick={() => setAsk('flip')}>Flip and re-centre…</button>
+          <button type="button" className="grow" disabled={busy || !!f || !last?.pre || !!offFlip} onClick={() => setAsk('restore')}>Restore after a manual flip…</button>
         </div>
       ) : (
         <div className="confirm" role="alertdialog" aria-label="Meridian flip">
@@ -56,7 +60,7 @@ const STAGE: Record<string, string> = {
 }
 
 /** Unattended flip: records the position before the meridian, then flips (and recalibrates if it was guiding). */
-function AutoFlip({ status }: { status: Status }) {
+function AutoFlip({ status, off }: { status: Status; off: boolean }) {
   const { err, run } = useAction()
   const a = status.auto_flip
   const [record, setRecord] = useSetting<number>('autoflip.record', a?.record_min ?? 5)
@@ -64,7 +68,7 @@ function AutoFlip({ status }: { status: Status }) {
   const put = (enabled: boolean, r = a?.record_min ?? record, f = a?.flip_min ?? after) => run(() => api('PUT', '/mount/autoflip', { enabled, record_min: r, flip_min: f }))
   return (
     <div className="autoflip">
-      <Switch label="Flip automatically" checked={!!a?.enabled} disabled={!status.site || !status.mount} onChange={(on) => put(on)} hint={!status.site ? 'Set your site first (More, Site).' : !status.mount ? 'Connect the mount first.' : a?.enabled ? STAGE[a.stage] ?? '' : 'Unattended: records the position a few minutes before the meridian and flips just after it, or as soon as the mount stops tracking by itself. It stops a running capture, recalibrates if it was guiding, and does not resume the capture.'} />
+      <Switch label="Flip automatically" checked={!!a?.enabled} disabled={!status.site || !status.mount || (off && !a?.enabled)} onChange={(on) => put(on)} hint={!status.site ? 'Set your site first (More, Site).' : !status.mount ? 'Connect the mount first.' : a?.enabled ? STAGE[a.stage] ?? '' : 'Unattended: records the position a few minutes before the meridian and flips just after it, or as soon as the mount stops tracking by itself. It stops a running capture, recalibrates if it was guiding, and does not resume the capture.'} />
       {a?.enabled && (
         <>
           <RangeField label="Record before the meridian" value={a.record_min} min={1} max={30} step={1} show={`${a.record_min} min`} onChange={(v) => { setRecord(v); put(true, v, a.flip_min) }} />

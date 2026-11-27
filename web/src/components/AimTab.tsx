@@ -4,6 +4,7 @@ import { Disclosure, ErrorLine, Section, Switch, useAction } from './ui'
 import { useSetting } from '../settings'
 import { DeviceCard } from './DeviceCard'
 import { useDatasheet } from '../datasheet'
+import { isSun, noun, profileForTarget, profileOf, PROFILES } from '../profile'
 
 // Speeds the ZWO AM3/AM5 supports, as multiples of the sidereal rate.
 const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 20, 60, 720, 1440]
@@ -50,7 +51,7 @@ function MountConnect() {
   useEffect(() => { void scan() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Section title="Connect the mount" error={err}>
-      <p className="lead">Connect the mount to slew, track and hold the Sun in view.</p>
+      <p className="lead">Connect the mount to slew, track and hold the target in view.</p>
       <div className="field">
         <label htmlFor="mount-driver">Mount</label>
         <select id="mount-driver" value={driver} onChange={(e) => setDriver(e.target.value)}>
@@ -158,7 +159,7 @@ function Offset({ status }: { status: Status }) {
   return (
     <div className="offset" aria-live="polite">
       {/* three fixed rows whatever the state, so the panel never changes size and pushes the pad around */}
-      <div className={`offset-big ${centered ? 'ok' : ''} ${sun ? '' : 'muted'}`}>{!sun ? 'No Sun found' : centered ? 'Centred' : `${dist.toFixed(0)} px off centre`}</div>
+      <div className={`offset-big ${centered ? 'ok' : ''} ${sun ? '' : 'muted'}`}>{!sun ? `No ${noun(profileOf(status))} found` : centered ? 'Centred' : `${dist.toFixed(0)} px off centre`}</div>
       <div className="offset-move">
         {!sun ? <span className="muted">Too dark? Try more exposure.</span> : centered ? <span className="muted">Nothing to move.</span> : (
           <>
@@ -169,7 +170,7 @@ function Offset({ status }: { status: Status }) {
         )}
       </div>
       <div className="hint-text offset-info">
-        {sun ? <>Sun centre {sun.pos.x.toFixed(0)}, {sun.pos.y.toFixed(0)} · radius {sun.radius.toFixed(0)} px{sun.partial ? ' (partial, fitted)' : ''} · {((dist / sun.radius) * 100).toFixed(0)}% of radius</> : '\u00a0'}
+        {sun ? <>{noun(profileOf(status))[0].toUpperCase() + noun(profileOf(status)).slice(1)} centre {sun.pos.x.toFixed(0)}, {sun.pos.y.toFixed(0)} · radius {sun.radius.toFixed(0)} px{sun.partial ? ' (partial, fitted)' : ''} · {((dist / sun.radius) * 100).toFixed(0)}% of radius</> : '\u00a0'}
       </div>
     </div>
   )
@@ -363,6 +364,9 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
   const sky = status.sky_sun
   const name = planet?.name ?? 'the Sun'
   const alt = planet ? planet.altitude_deg : sky?.altitude_deg
+  const prof = profileOf(status)
+  const wantProfile = profileForTarget(target)
+  const offerSwitch = wantProfile ? (prof !== wantProfile ? wantProfile : null) : (isSun(prof) ? null : 'sun_ha')
   const below = alt != null && alt < -1
   const low = alt != null && alt >= -1 && alt < 15
   // the site is a once-only setting, so the fix is here: one tap saves where this phone is
@@ -403,6 +407,12 @@ function GoToSun({ status, disabled, openMore }: { status: Status; disabled: boo
             <button type="button" className="grow" onClick={() => setAsk(false)}>Cancel</button>
             <button type="button" className="danger grow" disabled={busy} onClick={go}>{`Go to ${planet ? planet.name : 'Sun'}`}</button>
           </div>
+        </div>
+      )}
+      {offerSwitch && (
+        <div className="needs" role="note">
+          You are on the <b>{PROFILES.find((x) => x.id === prof)?.label}</b> profile and chose {name}. Switch to <b>{PROFILES.find((x) => x.id === offerSwitch)?.label}</b> so the words and the tools match?
+          <div className="btnrow tight"><button type="button" className="grow" onClick={() => run(() => api('PUT', '/profile', { id: offerSwitch }))}>Switch to {PROFILES.find((x) => x.id === offerSwitch)?.label}</button></div>
         </div>
       )}
       {alt != null && !planet && sky && <div className="hint-text">Sun now: altitude {sky.altitude_deg.toFixed(1)}°, azimuth {sky.azimuth_deg.toFixed(0)}°{sky.altitude_deg < 0 ? ' (below the horizon: Go to is off until it rises)' : ''}</div>}

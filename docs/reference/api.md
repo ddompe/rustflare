@@ -15,6 +15,7 @@ JSON over HTTP; errors are `400 {"error": "…"}`. The web UI uses only this API
 | `PUT /api/storage/reserve` | `{"gb": 2 to 100}`: how much of the internal disk a recording must leave free (default 8). `GET /api/storage` marks the internal disk with `internal: true` and its `reserve_bytes`, and lists it among the candidates |
 | `PUT /api/storage` | `{"path"}`: choose a location (a folder on a drive); refused while capturing |
 | `GET /api/mount/detect` | the serial ports, each with `driver` and `model` when a mount we drive answered a read-only question there (ZWO `:GVP#` at 9600 baud, iOptron `:MountInfo#` at 115200); a few hundred ms a port; no answers while a mount is connected |
+| `PUT /api/profile` | `{id}`: what is imaged, one of `sun_white`, `sun_ha` (default), `moon`, `planet`, `other`. Saved in the settings file, reported as `status.profile`, used for the FITS `OBJECT` and by the UI for its words and its greyed controls; the API refuses nothing because of it |
 | `PUT /api/optics` | `{"focal_length_mm"?,"pixel_size_um"?,"binning"}` |
 | `GET/PUT /api/preview` | `{"stretch"}`: auto-stretch of the live view |
 
