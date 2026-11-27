@@ -802,3 +802,32 @@ test.describe('use profiles: the words and the enabled tools follow what is imag
     await expect.poll(() => profile(page)).toBe('moon')
   })
 })
+
+test.describe('colour histogram', () => {
+  const status = async (page: Page) => (await (await page.request.get('/api/status')).json()).camera
+  test('a colour camera shows R, G and B curves, with a clipping marker per channel; mono is unchanged', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('tab', { name: /^Camera/ }).click()
+    // mono (the default camera in these tests): one series, no per-channel fields
+    await expect.poll(async () => (await status(page)).histogram.length).toBe(64)
+    expect((await status(page)).histogram_rgb).toBeUndefined()
+    await expect(page.locator('.hist svg')).toBeVisible()
+    await expect(page.getByTestId('hist-rgb')).toHaveCount(0)
+
+    await post(page, '/camera/close')
+    await post(page, '/camera/open', { driver: 'simulator', id: 'sim_osc' })
+    await expect.poll(async () => (await status(page))?.histogram_rgb?.length, { timeout: 10_000 }).toBe(3)
+    const c = await status(page)
+    expect(c.bayer).toBe('RGGB')
+    for (const h of c.histogram_rgb) { expect(h.length).toBe(64); expect(h.reduce((a: number, b: number) => a + b, 0)).toBeCloseTo(1, 3) }
+    await expect(page.getByTestId('hist-rgb')).toBeVisible()
+    await expect(page.getByTestId('hist-rgb').locator('path')).toHaveCount(3)
+
+    // over-expose: every channel clips and each gets its marker and a word
+    await put(page, '/camera/control', { id: 'exposure_us', value: 1_000_000 })
+    await put(page, '/camera/control', { id: 'gain', value: 400 })
+    await expect.poll(async () => ((await status(page)).saturated_rgb ?? [0, 0, 0]).some((v: number) => v > 0.001), { timeout: 15_000 }).toBe(true)
+    await expect(page.getByTestId('hist-rgb').locator('[data-clip]').first()).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: /Clipping: .*%/ })).toBeVisible()
+  })
+})

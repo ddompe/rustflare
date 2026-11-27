@@ -186,6 +186,10 @@ input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--
 /* histogram */
 .hist { margin-bottom: .5rem; }
 .hist svg { width: 100%; height: 4.25rem; background: #080606; border: 1.5px solid var(--line); border-radius: 6px; display: block; }
+.hist-rgb path { mix-blend-mode: screen; }
+:root[data-theme='day'] .hist-rgb path { mix-blend-mode: multiply; }
+.hist-legend { display: flex; gap: .8rem; font-weight: 700; font-size: .85rem; margin-top: .25rem; }
+.hist-legend i { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; margin-right: .25rem; vertical-align: -1px; }
 .hist-msg { margin-top: .35rem; font-weight: 700; font-size: .95rem; }
 .hist-msg.ok { color: var(--ok); } .hist-msg.bad { color: var(--bad); }
 

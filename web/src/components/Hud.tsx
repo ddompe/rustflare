@@ -2,6 +2,7 @@ import { KeyboardEvent, PointerEvent, ReactNode, useEffect, useRef, useState } f
 import { Snow } from './ui'
 import { api as callApi, Status, reportError } from '../api'
 import { FocusBody } from './FocusAssist'
+import { clipText, HistPlot } from './Histogram'
 import { useSetting } from '../settings'
 
 /**
@@ -207,15 +208,12 @@ export function HudLayer({ status, api, previewFps }: { status: Status | null; a
     )
   }
   if (w('hist').on && cam.histogram.length > 0) {
-    const max = Math.max(...cam.histogram.map(Math.sqrt), 1e-6)
     const clipped = cam.saturated > 0.001
     out.push(
       <Widget key="hist" id="hist" label="Histogram" w={w('hist')} api={api}
-        mini={<span className={clipped ? 'bad-text' : ''}>{clipped ? <>Clip <b className="cv">{(cam.saturated * 100).toFixed(1)}%</b></> : 'No clipping'}</span>}>
-        <svg className="hud-hist" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
-          {cam.histogram.map((b, i, a) => <rect key={i} x={(i * 100) / a.length} y={30 - (Math.sqrt(b) / max) * 30} width={(100 / a.length) * 0.9} height={(Math.sqrt(b) / max) * 30} fill={i === a.length - 1 && clipped ? '#ff7466' : '#7dd3fc'} />)}
-        </svg>
-        <div className={clipped ? 'bad-text' : 'ok'}>{clipped ? `Clipping ${(cam.saturated * 100).toFixed(1)}%` : 'No clipping'}</div>
+        mini={<span className={clipped ? 'bad-text' : ''}>{clipped ? <>Clip <b className="cv">{clipText(cam.saturated_rgb) || (cam.saturated * 100).toFixed(1) + '%'}</b></> : 'No clipping'}</span>}>
+        <HistPlot className="hud-hist" bins={cam.histogram} rgb={cam.histogram_rgb} saturatedRgb={cam.saturated_rgb} clipped={clipped} hidden />
+        <div className={clipped ? 'bad-text' : 'ok'}>{clipped ? `Clipping ${clipText(cam.saturated_rgb) || (cam.saturated * 100).toFixed(1) + '%'}` : 'No clipping'}</div>
       </Widget>,
     )
   }

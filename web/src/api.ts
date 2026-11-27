@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 export interface Control { id: string; label: string; min: number; max: number; step: number; value: number; unit: string | null; log: boolean }
 export interface Cooler { available: boolean; on: boolean; target_c: number | null; target_min_c: number | null; target_max_c: number | null; power_pct: number | null; temp_c: number | null; fan: boolean | null; heater: boolean | null; warming_up: boolean }
-export interface CameraStatus { driver: string; id: string; name: string; controls: Control[]; temperature_c: number | null; cooler?: Cooler; width: number; height: number; bits: number; bayer?: string | null; fps: number; mean: number; saturated: number; histogram: number[] }
+export interface CameraStatus { driver: string; id: string; name: string; controls: Control[]; temperature_c: number | null; cooler?: Cooler; width: number; height: number; bits: number; bayer?: string | null; fps: number; mean: number; saturated: number; histogram: number[]; histogram_rgb?: number[][]; saturated_rgb?: number[] }
 export interface Tracking { mode: string; x: number; y: number; radius: number | null; lost: boolean }
 export interface Calibration { primary_dir: { x: number; y: number }; secondary_dir: { x: number; y: number } }
 export interface Optics { focal_length_mm: number | null; focal_multiplier: number; effective_focal_mm: number | null; pixel_size_override_um: number | null; pixel_size_um: number | null; pixel_size_source: 'camera' | 'manual' | null; binning: number; scale_arcsec_per_px: number | null; solar_radius_arcsec: number; expected_radius_px: number | null

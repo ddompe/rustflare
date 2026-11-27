@@ -12,6 +12,6 @@ pub mod sim;
 
 pub use camera::{centred_roi, Camera, CameraDriver, CameraInfo, ControlDesc, CoolerRequest, CoolerStatus, Roi};
 pub use error::{Error, Result};
-pub use frame::{BayerPattern, Frame, PixelFormat};
+pub use frame::{BayerPattern, ChannelStats, Frame, FrameStats, PixelFormat};
 pub use geom::{Mat2, Vec2};
 pub use mount::{Axis, LinkInfo, Mount, MountState, ParkState, RadPerSec, SiteTime, SlewSpeed, TrackingRate, SIDEREAL_RATE};

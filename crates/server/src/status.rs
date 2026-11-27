@@ -23,6 +23,12 @@ pub struct CameraStatus {
     pub saturated: f64,
     /// 64-bin normalised histogram over full scale.
     pub histogram: Vec<f32>,
+    /// Colour (Bayer) cameras only: normalised R, G and B histograms of the raw mosaic, `[r, g, b]`, 64 bins each. Absent for mono.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub histogram_rgb: Option<[Vec<f32>; 3]>,
+    /// Colour cameras only: fraction of each channel's photosites at full scale, `[r, g, b]`. `saturated` is the largest of them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saturated_rgb: Option<[f64; 3]>,
 }
 
 /// What the Camera tab shows about the cooler: the camera's own report plus the sensor temperature and whether a gentle switch-off is running.

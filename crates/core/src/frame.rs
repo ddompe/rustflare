@@ -75,6 +75,16 @@ pub struct FrameStats {
     pub mean: f64,
     pub saturated: f64,
     pub histogram: Vec<f32>,
+    /// One-shot-colour frames only: normalised R, G and B histograms from the raw mosaic (see `Frame::channel_stats`).
+    pub channels: Option<ChannelStats>,
+}
+
+/// Per-channel statistics of a Bayer mosaic: each photosite counts in its own channel (0 = R, 1 = G, 2 = B).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChannelStats {
+    pub histogram: [Vec<f32>; 3],
+    /// Fraction of each channel's sampled photosites at full scale.
+    pub saturated: [f64; 3],
 }
 
 impl Frame {
@@ -125,7 +135,36 @@ impl Frame {
             }
         }
         let nn = n.max(1) as f64;
-        FrameStats { mean: if n == 0 { 0.0 } else { sum as f64 / nn / full }, saturated: if n == 0 { 0.0 } else { sat as f64 / nn }, histogram: hist.into_iter().map(|c| c as f32 / nn as f32).collect() }
+        FrameStats { mean: if n == 0 { 0.0 } else { sum as f64 / nn / full }, saturated: if n == 0 { 0.0 } else { sat as f64 / nn }, histogram: hist.into_iter().map(|c| c as f32 / nn as f32).collect(), channels: self.channel_stats(bins) }
+    }
+
+    /// R, G and B histograms of a Bayer frame, None for mono. Samples the 2x2 blocks at every 8th column and row (the same 1/16 of
+    /// the pixels as `stats`, but all four photosites of a block, so every channel is seen: a stride of 4 would only ever land on
+    /// one photosite). Green has two sites per block and is normalised by its own count.
+    pub fn channel_stats(&self, bins: usize) -> Option<ChannelStats> {
+        let pat = self.bayer?;
+        let bins = bins.max(1);
+        let (w, h) = (self.width as usize, self.height as usize);
+        let full = self.format.full_scale();
+        let max = full as u16;
+        let scale = bins as f64 / (full + 1.0);
+        let block = pat.block();
+        let mut hist = [vec![0u32; bins], vec![0u32; bins], vec![0u32; bins]];
+        let (mut sat, mut n) = ([0u64; 3], [0u64; 3]);
+        for by in (0..h.saturating_sub(1)).step_by(8) {
+            for bx in (0..w.saturating_sub(1)).step_by(8) {
+                for k in 0..4 {
+                    let (x, y) = (bx + (k & 1), by + (k >> 1));
+                    let v = self.pixel(x as u32, y as u32);
+                    let c = block[k];
+                    hist[c][((v as f64 * scale) as usize).min(bins - 1)] += 1;
+                    sat[c] += (v >= max) as u64;
+                    n[c] += 1;
+                }
+            }
+        }
+        let norm = |c: usize| hist[c].iter().map(|&v| v as f32 / n[c].max(1) as f32).collect::<Vec<f32>>();
+        Some(ChannelStats { histogram: [norm(0), norm(1), norm(2)], saturated: [0, 1, 2].map(|c| sat[c] as f64 / n[c].max(1) as f64) })
     }
 
     /// Mean pixel value as a fraction of full scale (0..1). Subsamples for speed.
@@ -229,6 +268,30 @@ mod stats_tests {
             assert!((st.mean - f.mean_fraction()).abs() < 1e-12, "{w}x{h}");
             assert!((st.saturated - f.saturated_fraction()).abs() < 1e-12);
             assert_eq!(st.histogram, f.histogram(64));
+        }
+    }
+
+    #[test]
+    fn channel_histograms_follow_the_pattern_and_mono_has_none() {
+        // 32x32 mosaic: every R site 60000, G 20000, B 65535 (clipped), for each pattern
+        for pat in [BayerPattern::Rggb, BayerPattern::Bggr, BayerPattern::Grbg, BayerPattern::Gbrg] {
+            let block = pat.block();
+            let mut data = vec![0u8; 32 * 32 * 2];
+            for y in 0..32usize {
+                for x in 0..32usize {
+                    let v: u16 = match block[(y & 1) * 2 + (x & 1)] { 0 => 60000, 1 => 20000, _ => 65535 };
+                    data[2 * (y * 32 + x)..2 * (y * 32 + x) + 2].copy_from_slice(&v.to_le_bytes());
+                }
+            }
+            let mut f = Frame::new(32, 32, PixelFormat::Mono16, data);
+            assert!(f.stats(64).channels.is_none());
+            f.bayer = Some(pat);
+            let c = f.stats(64).channels.expect("colour frame has channel stats");
+            for (ch, bin) in [(0usize, 60000 * 64 / 65536), (1, 20000 * 64 / 65536), (2, 63)] {
+                assert!((c.histogram[ch].iter().sum::<f32>() - 1.0).abs() < 1e-5, "{pat:?} channel {ch} sums to one");
+                assert!((c.histogram[ch][bin] - 1.0).abs() < 1e-5, "{pat:?} channel {ch} sits in bin {bin}");
+            }
+            assert_eq!(c.saturated, [0.0, 0.0, 1.0]);
         }
     }
 }

@@ -2582,8 +2582,10 @@ impl Engine {
                 c.height = frame.height;
                 c.bits = (frame.format.bytes_per_pixel() * 8) as u32;
                 c.mean = mean;
-                c.saturated = fs.saturated;
+                c.saturated = fs.channels.as_ref().map_or(fs.saturated, |ch| ch.saturated.iter().cloned().fold(fs.saturated, f64::max));
                 c.histogram = fs.histogram;
+                c.histogram_rgb = fs.channels.as_ref().map(|ch| ch.histogram.clone());
+                c.saturated_rgb = fs.channels.as_ref().map(|ch| ch.saturated);
                 if refresh_temp {
                     c.temperature_c = temp;
                 }
