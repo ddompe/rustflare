@@ -1159,3 +1159,16 @@ test.describe('mount time and place (issue #104)', () => {
     expect((await post(page, '/mount/sync-site-time')).status()).toBe(400)
   })
 })
+
+test('the automatic site and time sync on connecting is a saved setting, on by default', async ({ page }) => {
+  const flag = async () => ((await (await page.request.get('/api/status')).json()) as { mount: { auto_sync_site_time: boolean } }).mount.auto_sync_site_time
+  expect(await flag()).toBe(true)
+  expect((await put(page, '/mount/auto-site-time', { enabled: false })).ok()).toBe(true)
+  await expect.poll(flag).toBe(false)
+  await page.goto('/')
+  await page.getByRole('tab', { name: /^Aim/ }).click()
+  await page.getByText('Mount time and place', { exact: false }).first().click()
+  await expect(page.getByRole('switch', { name: 'Send them by themselves when connecting' })).not.toBeChecked()
+  await page.getByRole('switch', { name: 'Send them by themselves when connecting' }).click()
+  await expect.poll(flag).toBe(true)
+})

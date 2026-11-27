@@ -53,6 +53,7 @@ pub fn router(state: AppState, web_dir: PathBuf) -> Router {
         .route("/api/mount/goto", post(goto_target))
         .route("/api/mount/flip", post(mount_flip))
         .route("/api/site", put(site_put))
+        .route("/api/mount/auto-site-time", put(|s, Json(b): Json<AutoSiteBody>| async move { run(s, Command::SetAutoSiteSync { enabled: b.enabled }).await }))
         .route("/api/mount/sync-site-time", post(|s| run(s, Command::SyncSiteTime)))
         .route("/api/debug/sim-mount-clock", post(sim_mount_clock))
         .route("/api/tracking/start", post(tracking_start))
@@ -593,6 +594,9 @@ struct FocusBody { enabled: bool, #[serde(default)] reset: bool }
 async fn focus(s: State<AppState>, Json(b): Json<FocusBody>) -> Res {
     run(s, Command::SetFocus { enabled: b.enabled, reset: b.reset }).await
 }
+
+#[derive(Deserialize)]
+struct AutoSiteBody { enabled: bool }
 
 #[derive(Deserialize)]
 struct ProfileBody { id: String }

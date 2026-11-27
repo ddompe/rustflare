@@ -52,6 +52,8 @@ pub struct CoolerView {
 
 #[derive(Clone, Serialize)]
 pub struct MountStatus {
+    /// Whether the Pi sends its site and time by itself when it connects to a mount whose clock or place is off (setting `auto_sync_site_time`).
+    pub auto_sync_site_time: bool,
     pub info: String,
     /// Whether the mount is tracking, as last read back from the mount itself.
     pub tracking: bool,

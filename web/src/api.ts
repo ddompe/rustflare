@@ -55,7 +55,7 @@ export interface Status {
   /** What is being imaged: sun_white, sun_ha, moon, planet or other (engine-owned, see profile.ts). */
   profile?: string
   /** What the mount itself reports (read back every ~2 s); everything but info and tracking may be null. */
-  mount: { info: string; slew_speeds?: number[]; can_search_home?: boolean; tracking: boolean; rate?: 'solar' | 'lunar' | 'sidereal'; slewing?: boolean | null; at_home?: boolean | null; park?: 'unparked' | 'parking' | 'parked' | null; alt_az?: boolean | null; link?: 'usb' | 'ble' | null; link_up?: boolean; site_time?: MountSiteTime | null } | null
+  mount: { info: string; slew_speeds?: number[]; auto_sync_site_time?: boolean; can_search_home?: boolean; tracking: boolean; rate?: 'solar' | 'lunar' | 'sidereal'; slewing?: boolean | null; at_home?: boolean | null; park?: 'unparked' | 'parking' | 'parked' | null; alt_az?: boolean | null; link?: 'usb' | 'ble' | null; link_up?: boolean; site_time?: MountSiteTime | null } | null
   tracking: Tracking | null
   guiding: { state: 'off' | 'calibrating' | 'guiding'; calibration: Calibration | null; target: [number, number] | null; error_px: number | null; held?: boolean; dead_reckoning?: boolean }
   capture: {

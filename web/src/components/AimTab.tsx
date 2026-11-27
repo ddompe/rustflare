@@ -431,6 +431,8 @@ function MountClock({ status, openMore }: { status: Status; openMore?: (focus: s
         <p className="hint-text">Why it matters: Go to {noun(prof)} is computed from the site and time the mount holds, so a wrong clock or place sends it to the wrong spot.</p>
         <button type="button" className="wide" disabled={busy || !!reason} aria-disabled={busy || !!reason} onClick={() => run(() => api('POST', '/mount/sync-site-time'))}>{busy ? 'Sending…' : 'Send site and time to the mount'}</button>
         {reason && <div className="hint-text">{reason}</div>}
+        <Switch label="Send them by themselves when connecting" checked={!!status.mount?.auto_sync_site_time} onChange={(on) => run(() => api('PUT', '/mount/auto-site-time', { enabled: on }))}
+          hint="Some mounts have no clock battery and start from a default time at every power-up. When this is on, the Pi sends its site and time once after connecting if the mount's differ, but only when the Pi's own clock is synchronised to a time server, a site is saved and the mount is not moving. It moves nothing." />
         {st && !status.site && (
           <div className="needs" role="note">
             <b>Set your site first.</b> The Pi sends its saved position and clock.
