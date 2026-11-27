@@ -1012,6 +1012,8 @@ progress.buf { height: .5rem; }
 @media (max-width: 699px) and (orientation: portrait) {
   .live-tools { left: auto; right: .4rem; align-items: flex-end; }
   .chips-wrap { max-width: calc(100% - 7.5rem); }
+  /* the Tools button holds the bottom right corner here: the picture size moves to the top left, where nothing sits */
+  .hud[data-testid='size-label'] { right: auto; left: .4rem; bottom: auto; top: .3rem; }
 }
 /* a phone that is not tall: a little less bar and pad, so the pad is on screen */
 @media (max-height: 700px) and (max-width: 699px) and (orientation: portrait) {

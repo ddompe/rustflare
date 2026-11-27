@@ -44,6 +44,8 @@ export function App() {
   /** Which section a tab should open when it is entered from elsewhere (the Aim tab's Mount time and place). */
   const [aimFocus, setAimFocus] = useState<{ id: string; nonce: number } | null>(null)
   const [full, setFull] = useState(false)
+  /** the Aim tab's Mount time and place section is open: the notes sheet then leaves the sending to it */
+  const [clockOpen, setClockOpen] = useState(false)
   const [theme, setTheme] = useSetting<'night' | 'day'>('ui.theme', 'night')
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
@@ -127,7 +129,7 @@ export function App() {
         <div className="live-slot">
           <LiveView status={status} display={display} setDisplay={setDisplay} anchorPick={anchorPick} onPicked={() => setAnchorPick(false)} onDisplay={() => openMore('display')} region={region} />
         </div>
-        <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} hide={tab === 'aim' ? ['sun'] : []} saved={saved} onSavedOpen={() => { openFiles(saved?.dir ?? ''); }} onSavedDismiss={dismissSaved} setup={tab !== 'camera' ? <SetupStrip status={status} onStep={onSetupStep} variant="pill" /> : undefined} />
+        <StatusStrip status={status} goto={goto} onStop={stopCapture} hideRec={tab === 'record'} clockOpen={clockOpen && tab === 'aim'} hide={tab === 'aim' ? ['sun'] : []} saved={saved} onSavedOpen={() => { openFiles(saved?.dir ?? ''); }} onSavedDismiss={dismissSaved} setup={tab !== 'camera' ? <SetupStrip status={status} onStep={onSetupStep} variant="pill" /> : undefined} />
       </section>
 
       <nav className="tabs" role="tablist" aria-label="Session steps" onKeyDown={onKey}>
@@ -159,7 +161,7 @@ export function App() {
         {region.active && <RegionPanel region={region} />}
         {!region.active && <RegionDone region={region} />}
         {!region.active && tab === 'camera' && <CameraTab status={status} region={region} next={() => goto('aim')} openOptics={() => setOpticsOpen(true)} setup={<SetupStrip status={status} onStep={onSetupStep} variant="bar" />} />}
-        {!region.active && tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} focus={aimFocus} />}
+        {!region.active && tab === 'aim' && <AimTab status={status} next={() => goto('track')} openMore={openMore} focus={aimFocus} onClockOpen={setClockOpen} />}
         {!region.active && tab === 'track' && <TrackTab status={status} anchorPick={anchorPick} setAnchorPick={setAnchorPick} goto={() => goto('aim')} next={() => goto('record')} toCamera={() => setTab('camera')} />}
         {!region.active && tab === 'record' && <RecordTab status={status} goto={(_t, f) => openMore(f)} openFiles={openFiles} saved={saved} dismissSaved={dismissSaved} toCamera={() => setTab('camera')} />}
         {!region.active && tab === 'more' && <MoreTab status={status} display={display} setDisplay={setDisplay} resetDisplay={resetDisplay} focus={focus} openFiles={openFiles} openOptics={() => setOpticsOpen(true)} opticsOpen={opticsOpen} />}

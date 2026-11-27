@@ -151,7 +151,7 @@ const baseName = (p: string | null | undefined) => (p ? p.split('/').pop() ?? p 
 const BINNING = [1, 2, 3, 4]
 
 /** The one form, for New and Edit. */
-function SetupForm({ status, list, editing, onDone, onCancel }: { status: Status | null; list: OpticalSetup[]; editing: OpticalSetup | null; onDone: (message: string) => void; onCancel: () => void }) {
+function SetupForm({ status, list, editing, onDone, onCancel, dirtyRef, held }: { /** set to whether the form holds typing that Save has not kept */ dirtyRef: { current: boolean }; /** Escape was pressed while it did */ held: boolean; status: Status | null; list: OpticalSetup[]; editing: OpticalSetup | null; onDone: (message: string) => void; onCancel: () => void }) {
   const o = status?.optics
   const active = o?.setup?.active ?? null
   const recording = !!status && status.capture.state !== 'idle'
@@ -168,6 +168,10 @@ function SetupForm({ status, list, editing, onDone, onCancel }: { status: Status
   // New: store the flat and dark in use (on). Edit: keep the stored ones, or replace them with those in use.
   const [useCurrent, setUseCurrent] = useState(!editing)
   const [tried, setTried] = useState(false)
+  const mark = JSON.stringify([name, focal, mult, pixel, bin, aperture, profile, notes, useCurrent])
+  const first = useRef(mark)
+  dirtyRef.current = mark !== first.current
+  useEffect(() => () => { dirtyRef.current = false }, [dirtyRef])
   const { err, busy, run } = useAction()
   const head = useRef<HTMLHeadingElement>(null)
   useEffect(() => { head.current?.focus() }, [])
@@ -270,6 +274,7 @@ function SetupForm({ status, list, editing, onDone, onCancel }: { status: Status
       </div>
       <div className="modal-foot">
         <ErrorLine error={err} />
+        {held && <p className="hint-text" role="status">Escape keeps this form open while it has changes: Save them, or Cancel to drop them.</p>}
         {tried && firstBad && <div className="err" role="alert">Fix the marked fields before saving.</div>}
         <div className="btnrow tight wrap">
           <button type="button" className="grow" onClick={onCancel}>Cancel</button>
@@ -293,6 +298,9 @@ export function OpticalSetupsModal({ status, onClose }: { status: Status | null;
   const [note, setNote] = useState<string | null>(null)
   const [ask, setAsk] = useState<string | null>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
+  const dirty = useRef(false)
+  const [held, setHeld] = useState(false)
+  useEffect(() => { setHeld(false) }, [view])
   const { err, busy, run } = useAction()
   useEffect(() => { if (focusId) { document.getElementById(focusId)?.focus(); setFocusId(null) } }, [focusId, view, ask])
 
@@ -313,10 +321,10 @@ export function OpticalSetupsModal({ status, onClose }: { status: Status | null;
   const editing = view?.editing ? list.find((s) => s.name === view.editing) ?? null : null
 
   return (
-    <Modal title="Optical setups" onClose={onClose}>
+    <Modal title="Optical setups" onClose={onClose} canEscape={() => { if (dirty.current) { setHeld(true); return false } return true }}>
       {view && (view.editing == null || editing) ? (
         <SetupForm
-          key={view.editing ?? '*new'} status={status} list={list} editing={editing}
+          key={view.editing ?? '*new'} dirtyRef={dirty} held={held} status={status} list={list} editing={editing}
           onCancel={() => { setView(null); setFocusId(view.editing ? `setup-edit-${view.editing}` : 'setup-new') }}
           onDone={async (m) => { await reload(); setView(null); setNote(m); setFocusId('setup-new') }}
         />

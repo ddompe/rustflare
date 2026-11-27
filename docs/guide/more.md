@@ -29,7 +29,7 @@ The page has three things and nothing else:
 
 When the optics in use match no saved setup the dropdown shows **Custom (not saved)** first. If you change the optics or the profile after applying a setup, the dropdown shows *name (modified)* with a small **Revert** link that goes back to the saved values. Nothing is overwritten by itself.
 
-**The Optical setups dialog** (a full-screen sheet on a phone, a centred panel on a computer; Escape or the close button leaves it and puts you back on Manage...) lists the saved setups with their values and profile and marks the one in use. Each row has:
+**The Optical setups dialog** (a full-screen sheet on a phone, a centred panel on a computer; Escape or the close button leaves it and puts you back on Manage...; in the New or Edit form, Escape does nothing while you have typed something, and says so, so that a slip of the key does not lose it: use Save, or Cancel to drop the changes) lists the saved setups with their values and profile and marks the one in use. Each row has:
 
 - **Edit**, which opens the one form below.
 - **Duplicate**, which adds a copy named *name copy*; Edit renames it.

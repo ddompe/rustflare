@@ -58,7 +58,7 @@ function keepText(status: Status): { text: string; warn: boolean } {
 }
 
 /** The one Start button: always visible when the camera is open and idle, and says what one tap will do. */
-export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick, setup, saved, onSavedOpen, onSavedDismiss }: { status: Status | null; goto: (t: TabId, focus?: string) => void; onStop: () => void; hideRec?: boolean; hide?: string[]; noQuick?: boolean; /** the collapsed set-up chip, shown with the other chips */ setup?: React.ReactNode; /** what the last recording saved: a note for a few minutes, with the way to it */ saved?: Saved | null; onSavedOpen?: () => void; onSavedDismiss?: () => void }) {
+export function StatusStrip({ status, goto, onStop, hideRec, hide = [], clockOpen, noQuick, setup, saved, onSavedOpen, onSavedDismiss }: { status: Status | null; goto: (t: TabId, focus?: string) => void; onStop: () => void; hideRec?: boolean; hide?: string[]; /** the Mount time and place section on Aim is open: it has the Send control */ clockOpen?: boolean; noQuick?: boolean; /** the collapsed set-up chip, shown with the other chips */ setup?: React.ReactNode; /** what the last recording saved: a note for a few minutes, with the way to it */ saved?: Saved | null; onSavedOpen?: () => void; onSavedDismiss?: () => void }) {
   const quick = !!status?.camera && status.capture.state === 'idle' && !status.capture.paused && !noQuick
   const [qerr, setQerr] = useState('')
   const quickCall = (path: string, body?: unknown) => { setQerr(''); api('POST', path, body).catch((e: Error) => setQerr(e.message)) }
@@ -119,12 +119,13 @@ export function StatusStrip({ status, goto, onStop, hideRec, hide = [], noQuick,
                   <li key={n.key}>
                     <p>{n.text}</p>
                     <div className="btnrow tight wrap">
-                      {n.send && <button type="button" className="small" disabled={sending || !!sendWhy} aria-describedby={sendWhy ? 'notes-send-why' : undefined} onClick={() => { setSending(true); api('POST', '/mount/sync-site-time').catch((e) => reportError(e, 'Sending the site and time')).finally(() => setSending(false)) }}>{sending ? 'Sending…' : 'Send now'}</button>}
+                      {n.send && !clockOpen && <button type="button" className="small" disabled={sending || !!sendWhy} aria-describedby={sendWhy ? 'notes-send-why' : undefined} onClick={() => { setSending(true); api('POST', '/mount/sync-site-time').catch((e) => reportError(e, 'Sending the site and time')).finally(() => setSending(false)) }}>{sending ? 'Sending…' : 'Send now'}</button>}
                       {n.saved && <button type="button" className="small" onClick={() => { setSheet(false); onSavedOpen?.() }}>Open in Files</button>}
                       {n.saved && <button type="button" className="small quiet" onClick={() => { setSheet(false); onSavedDismiss?.() }}>Dismiss</button>}
-                      {n.focus && n.tab && <button type="button" className="small" onClick={() => { setSheet(false); goto(n.tab!, n.focus) }}>{n.focus ? `Show on ${n.tabLabel}` : `Open ${n.tabLabel}`}</button>}
+                      {n.focus && n.tab && !(n.send && clockOpen) && <button type="button" className="small" onClick={() => { setSheet(false); goto(n.tab!, n.focus) }}>{n.focus ? `Show on ${n.tabLabel}` : `Open ${n.tabLabel}`}</button>}
                     </div>
-                    {n.send && sendWhy && <p className="hint-text gate-why" id="notes-send-why">{sendWhy}</p>}
+                    {n.send && clockOpen && <p className="hint-text">Send the site and time from Mount time and place, open below.</p>}
+                    {n.send && !clockOpen && sendWhy && <p className="hint-text gate-why" id="notes-send-why">{sendWhy}</p>}
                   </li>
                 ))}
               </ul>

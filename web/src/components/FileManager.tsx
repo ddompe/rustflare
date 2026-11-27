@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, Status } from '../api'
 import { ErrorLine } from './ui'
+import { Modal } from './Modal'
 import { useStorage } from './Storage'
 
 interface StackInfo { frames: number | null; kept: number | null; seconds: number | null; dark: boolean | null; flat: boolean | null }
@@ -111,37 +112,6 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
 
   const go = (p: string) => { setLimit(120); setPeek(null); setCwd(p); setSel(new Set()); setAsk(false); setErr(null); setQ(''); sessionStorage.setItem('rf-fm-cwd', p); listRef.current?.scrollTo(0, 0) }
 
-  // A modal: focus moves in, Tab stays inside (and the page behind is inert), Escape closes, and focus goes back to whatever opened it.
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    closeRef.current?.focus()
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !(e.target instanceof HTMLInputElement) && !document.querySelector('.fm-peek')) onClose() }
-    const trap = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return
-      const scope = document.querySelector('.fm-peek') ?? document.querySelector('.fm-screen')
-      if (!scope) return
-      const items = Array.from(scope.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary')).filter((el) => el.getClientRects().length > 0)
-      if (!items.length) return
-      const first = items[0], last = items[items.length - 1]
-      const at = document.activeElement
-      if (!scope.contains(at)) { e.preventDefault(); first.focus() }
-      else if (e.shiftKey && at === first) { e.preventDefault(); last.focus() }
-      else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus() }
-    }
-    document.addEventListener('keydown', esc)
-    document.addEventListener('keydown', trap)
-    const behind = Array.from(document.querySelectorAll<HTMLElement>('.app > :not(.fm-screen)'))
-    behind.forEach((el) => el.setAttribute('inert', ''))
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', esc)
-      document.removeEventListener('keydown', trap)
-      behind.forEach((el) => el.removeAttribute('inert'))
-      document.body.style.overflow = prev
-      opener?.focus()
-    }
-  }, [onClose])
 
   // a remembered folder that no longer exists (deleted, other drive): say so, and go back to the top
   useEffect(() => { if (error && cwd) { setErr(`${cwd} is not on the drive any more: showing the top.`); setCwd(''); sessionStorage.removeItem('rf-fm-cwd') } }, [error, cwd])
@@ -229,7 +199,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
   }
 
   return (
-    <div className="fm-screen" role="dialog" aria-modal="true" aria-label="Files">
+    <Modal bare title="Files" className="fm-screen" onClose={onClose} initialFocus={closeRef} canEscape={(e) => !(e.target instanceof HTMLInputElement) && !document.querySelector('.fm-peek')}>
       <header className="fm-top">
         <h2>Files</h2>
         <div className="fm-summary muted">
@@ -335,7 +305,7 @@ export function FileManagerScreen({ status, onClose }: { status: Status | null; 
           </div>
         )}
       </footer>
-    </div>
+    </Modal>
   )
 }
 
