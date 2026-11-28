@@ -370,6 +370,8 @@ test.describe('Files is a real modal (accessibility)', () => {
     }
     // the folder tree groups have names
     expect(await page.locator('.fm-tree [role=group]:not([aria-label])').count()).toBe(0)
+    // where 40 Tabs end depends on how many files the server holds (it may be the filter box, where Escape is meant to be ignored): put focus on a button first
+    await fm.getByRole('button', { name: 'Close Files' }).focus()
     await page.keyboard.press('Escape')
     await expect(fm).toHaveCount(0)
     expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe('Files')
