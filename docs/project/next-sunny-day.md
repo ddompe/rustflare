@@ -2,6 +2,21 @@
 
 Everything below was built and tested on the simulators, and some of it was run once on the Sun on 2026-11-26. Each line says what to do, what to look at and when it counts as passed. The issue numbers are on the [board](https://github.com/ddompe/rustflare/issues). Version 0.8.2 is assumed.
 
+## A clear night with the ASI533MC on the C11
+
+Added 2026-11-28 while it was cloudy. Done indoors that day (see the [hardware checklist](hardware-checklist.md)): the USB 3 link, frame rate against region size, region rounding, recording 512 x 512 at 16-bit to the USB 2 drive. What needs sky:
+
+1. **Real image scale and Barlow factor (the drift test).** Telescope in place, camera on the planned train. Aim at a bright star near the celestial equator, tracking **off**, record 20 s at a short exposure, note how many pixels N the star moves in T seconds: scale = 15.04 x T / N arcsec per pixel (times the cosine of the declination), focal length = 206.265 x 3.76 / scale mm (3.76 um pixels). Compare with the estimate (about 6000 mm, f/22, 0.13"/px for the C11 with the GSO 2x and the IR-cut adapter) and enter the result as the measured factor in the optical setup (*Barlow measured* / *Use measured*). Repeat for each train (native, Barlow threaded on the camera, Barlow element on the nosepiece).
+2. **Planet focus assist (new).** A planet on the Planet profile, a region of about 512 x 512, 16-bit, an exposure that does not clip. Switch focus assist on and turn the focuser in small steps through focus and back, waiting 2 to 3 bursts at each position. Write down the score at each step. Passed when the history has one clear peak, the error band is smaller than the difference between in focus and a few turns out, and "you are at the best" appears at the peak. Also note: whether the planet is found (the note "No planet found..." must not appear), what happens with the planet drifting, and whether a clipped (white) planet scores visibly lower.
+3. **Offset and black level.** Cap on, 16-bit, the exposure you will use: raise the offset until the sky's black peak in the histogram clears the left edge (a few hundred counts of 65535). Then take a dark: *Dark* in the overlay must say applied with nothing differing; change the offset by 20 and the Darks panel must say "offset".
+4. **Calibration per camera.** Take a flat on the Barlow train (Record > Flats), then switch to the Apollo (or the other camera) and back: each camera keeps its own dark and flat and never gets the other's. Change the region position at the same size: the dark must report "region".
+5. **A planet recording.** Go to the planet, Planet centroid tracking, a 512 x 512 region at 16-bit, bursts of 60 to 90 s (the drive writes about 28 MB/s, so bursts longer than about 2.5 minutes at 100 fps drop frames; or use 8-bit). Check the frame counts in the files against the camera's fps and `dropped` in the status.
+6. **Seeing across bursts (for the per-frame quality idea).** Record 5 to 10 bursts of the same planet over some minutes and stack each one separately (AutoStakkert or Siril). Note which bursts look best: this is the reference to compare the future per-frame scores with.
+7. **Region on the sky (#113).** With a planet in view, an odd region request (the planet near the corner): the colours stay right after the app rounds to an even corner, and the fps rises with the smaller region.
+8. **The Moon with the 533** if it is up: the Moon profile, a region on a limb, 16-bit; the focus assist on the Moon (it still uses the Sun's surface-detail score; note how it behaves).
+
+If the Sun is out as well: the tracker analysis time on the Pi (`GET /api/debug/state`, `perf`) for the limb-fit speed-up (#100), the cloudy case especially.
+
 ## Before the Sun
 
 - **Drive on a black USB 2.0 port, camera on a blue USB 3 port.** More > Storage must show no USB warning. (Plug the drive into a blue port once to see the warning appear, then move it back.)

@@ -57,6 +57,7 @@ nav:
           - adr/0021-use-profiles.md
           - adr/0022-fixed-view-and-overlay-chips.md
           - adr/0023-mount-site-and-time-sync.md
+          - adr/0024-file-layout-and-calibration-catalog.md
           - adr/template.md
       - ZWO mount Bluetooth protocol: project/zwo-ble-protocol.md
       - Roadmap and status: project/roadmap.md

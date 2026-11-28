@@ -1,6 +1,6 @@
 # Proposal: a file layout that explains itself, and a catalog that ties recordings to their calibration
 
-Status: proposal, for review. Nothing here is built.
+Status: accepted by the owner on 2026-11-28 ([ADR 0024](../adr/0024-file-layout-and-calibration-catalog.md)). Step 1 (the match key and per-camera masters) is built; steps 2 to 4 are not.
 
 ## Why
 
@@ -70,8 +70,10 @@ One active dark and flat **per camera** (not per app), remembered across reconne
 3. `catalog.json`: written, refreshed, read by the stacker.
 4. The Files screen: filter and group by camera, setup and kind; "matching this camera" by default for calibration files; export with calibration.
 
-## Open points
+## Decisions (owner, 2026-11-28)
 
-- Target at the top of a day's folder name is `saturn_533MC_...`; for the Sun, `sun_ha_...` (the profile).
-- Tag collisions (two setups slugify to the same text): the app appends `-2` and shows the full name in the note.
-- Region position changes between recordings in one folder: the catalog is per recording, so it handles that, but the file name's `roi` part names only the size.
+- The Sun's folder is named from the profile: `sun_ha_<camera>_<setup>` or `sun_white_...`, like `saturn_533MC_c11-barlow2x` for a planet.
+- Two setups or cameras that give the same tag: the app adds `-2` to the second and the note keeps the full name; a tag can be renamed in the app.
+- File names carry the region's **size** only (`roi512`); the position and the exact box are in the note and the catalog.
+- Build order: the match key and per-camera masters first (built), then the tags and the layout, then `catalog.json`, then the Files screen.
+- The catalog (`catalog.json`, one per recording folder) was the owner's addition: it says which library darks and flats belong to which recording, so tools on a laptop do not guess.

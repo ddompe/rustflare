@@ -29,3 +29,4 @@ an accepted record: supersede it with a new one and link both ways.
 | [0021](0021-use-profiles.md) | Use profiles: what is imaged, grey out with a reason, never hide | Accepted (simulators only) |
 | [0022](0022-fixed-view-and-overlay-chips.md) | A fixed view: the page never scrolls, messages sit on the picture | Accepted |
 | [0023](0023-mount-site-and-time-sync.md) | The mount's own site and time: read back, compare, send | Accepted |
+| [0024](0024-file-layout-and-calibration-catalog.md) | A self-describing file layout, a calibration library per camera and a catalog per folder | Accepted (step 1 built) |
