@@ -16,6 +16,7 @@ export function Flats({ status }: { status: Status | null }) {
   return (
     <div>
       <Switch label="Apply flat to the live view" checked={!!status.flats?.applied} disabled={!status.flats?.available} onChange={(on) => run(() => api('PUT', '/flats/applied', { enabled: on }))} hint={status.flats?.available ? `Master flat: ${status.flats.name}. Recordings stay raw.` : 'No master flat yet: capture flats below.'} />
+      {status.flats?.available && (status.flats.differs?.length ?? 0) > 0 && <div className="warn" role="status">This flat was taken with a different {status.flats.differs.join(', ')}, so it will not correct this picture. Capture a new flat.</div>}
       {status.capture.state === 'flats' ? (
         <div className="confirm" role="status"><p>Capturing flats: {status.capture.phase}</p><div className="hint-text">Keep the cap or diffuser on until this finishes. Exposure is adjusted automatically and restored afterwards.</div></div>
       ) : step === 'idle' ? (

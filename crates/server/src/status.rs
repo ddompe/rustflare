@@ -304,6 +304,8 @@ pub struct FlatsStatus {
     /// The live view is flat-corrected right now.
     pub applied: bool,
     pub name: Option<String>,
+    /// What differs between the settings the flat was taken with and the camera's now (empty when it fits or when not known).
+    pub differs: Vec<&'static str>,
 }
 
 #[derive(Clone, Serialize)]
@@ -368,6 +370,8 @@ pub struct DarksStatus {
     pub gain: Option<f64>,
     /// The camera's current exposure and gain equal the ones the dark was taken at (otherwise it does not help).
     pub matches_camera: bool,
+    /// What differs between the settings the dark was taken with and the camera's now: camera, region, bit depth, gain, offset, exposure, temperature.
+    pub differs: Vec<&'static str>,
 }
 
 #[derive(Clone, Serialize)]
@@ -457,13 +461,13 @@ impl Default for Status {
             session_log: SessionLogStatus { lost_frames: true, lost_saved: 0, enabled: false, lines: 0, frames: 0, bytes: 0, file: None },
             roi: None,
             perf: PerfStatus::default(),
-            darks: DarksStatus { available: false, applied: false, name: None, exposure_us: None, gain: None, matches_camera: false },
+            darks: DarksStatus { available: false, applied: false, name: None, exposure_us: None, gain: None, matches_camera: false, differs: vec![] },
             coronagraph: CoronagraphStatus { enabled: false, scale: 1.03 },
             focus: FocusStatus::default(),
             colour: ColourStatus { mode: "auto", r: 1.0, b: 1.0, applied: [1.0; 3] },
             profile: "sun_ha",
             guide_params: GuideParamsStatus { window_s: 10.0, deadband_px: 3.0, gain: 0.7, speed: 0.2, fast_speed: 0.8, fast_above_px: 20.0 },
-            flats: FlatsStatus { available: false, applied: false, name: None },
+            flats: FlatsStatus { available: false, applied: false, name: None, differs: vec![] },
             site: None,
             sky_sun: None,
             target: None,

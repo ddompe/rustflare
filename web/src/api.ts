@@ -46,8 +46,8 @@ export interface Status {
   colour?: { mode: string; r: number; b: number; applied: [number, number, number] }
   session_log?: { lost_frames: boolean; lost_saved: number; enabled: boolean; lines: number; frames: number; bytes: number; file: string | null }
   roi?: { x: number; y: number; width: number; height: number; sensor_width: number; sensor_height: number; limits: { step_x: number; step_y: number; step_w: number; step_h: number; min_w: number; min_h: number } } | null
-  darks?: { available: boolean; applied: boolean; name: string | null; exposure_us: number | null; gain: number | null; matches_camera: boolean }
-  flats?: { applied: boolean; available: boolean; name: string | null }
+  darks?: { available: boolean; applied: boolean; name: string | null; exposure_us: number | null; gain: number | null; matches_camera: boolean; differs: string[] }
+  flats?: { applied: boolean; available: boolean; name: string | null; differs: string[] }
   startup: Startup
   optics: Optics
   camera: CameraStatus | null

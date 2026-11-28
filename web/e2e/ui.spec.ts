@@ -224,6 +224,29 @@ test('focus assist scores the image, falls when defocused and keeps a best marke
   await page.getByRole('switch', { name: 'Focus assist' }).uncheck()
 })
 
+test('a dark names what differs from the camera, and each camera keeps its own dark', async ({ page }) => {
+  const st = async () => (await page.request.get('/api/status')).json()
+  const control = async (id: string) => ((await st()).camera.controls as { id: string; value: number }[]).find((c) => c.id === id)!.value
+  await post(page, '/capture/darks', { frames: 5 })
+  await expect.poll(async () => (await st()).darks.available, { timeout: 60_000 }).toBe(true)
+  await expect.poll(async () => (await st()).capture.state, { timeout: 60_000 }).toBe('idle')
+  expect((await st()).darks.differs).toEqual([])
+  const offset = await control('offset')
+  await put(page, '/camera/control', { id: 'offset', value: offset + 20 })
+  await expect.poll(async () => (await st()).darks.differs, { timeout: 10_000 }).toContain('offset')
+  await put(page, '/camera/control', { id: 'offset', value: offset })
+  await expect.poll(async () => (await st()).darks.differs, { timeout: 10_000 }).toEqual([])
+  // another camera has no dark of its own, and the first one gets its dark back
+  await post(page, '/camera/close')
+  await post(page, '/camera/open', { driver: 'simulator', id: 'sim_cooled' })
+  await expect.poll(async () => (await st()).camera?.name ?? null, { timeout: 10_000 }).not.toBeNull()
+  expect((await st()).darks.available).toBe(false)
+  await post(page, '/camera/close')
+  await post(page, '/camera/open', { driver: 'simulator', id: 'sim0' })
+  await expect.poll(async () => (await st()).darks.available, { timeout: 10_000 }).toBe(true)
+  await put(page, '/darks/applied', { enabled: false }) // leave the live view as the other tests expect it
+})
+
 test('quick Rec and Snap are on the Camera tab and use the saved recipe', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('radio', { name: 'Sequence' }).count()
