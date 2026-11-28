@@ -34,6 +34,9 @@ pub struct SimMount {
 
 impl SimMount {
     pub fn new(sky: SimSky) -> Self {
+        // a newly connected simulated mount finds the simulated Sun at the frame centre: the shared sky drifts 15 px/s while nothing tracks,
+        // so after a slow stretch (a long wait, a loaded CI runner) the Sun would otherwise be out of the frame for whatever runs next
+        sky.recentre();
         SimMount { clock: SimClock::default(), sky, tracking: false, guide: [0.0; 2], slew: [0.0; 2], goto_until: None, pointing: (15.8, -19.9), at_home: false }
     }
     fn take_hook(&mut self) {
