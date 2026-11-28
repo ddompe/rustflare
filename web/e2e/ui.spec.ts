@@ -238,6 +238,8 @@ test('focus assist on a planet scores the planet and falls when it is defocused'
   await put(page, '/camera/control', { id: 'sim_defocus', value: 0 })
   await put(page, '/camera/control', { id: 'sim_scene', value: 0 })
   await put(page, '/focus', { enabled: false })
+})
+
 test('a dark names what differs from the camera, and each camera keeps its own dark', async ({ page }) => {
   const st = async () => (await page.request.get('/api/status')).json()
   const control = async (id: string) => ((await st()).camera.controls as { id: string; value: number }[]).find((c) => c.id === id)!.value
