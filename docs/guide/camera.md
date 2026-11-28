@@ -60,7 +60,7 @@ The exposure is found automatically (about 50 % of full scale). The master flat 
 
 ## Darks
 
-Cap on, the same exposure and gain as on the Sun, then *Capture darks*. The master dark is subtracted from the live view (before the flat). The Status overlay shows *Dark: applied*, or *mismatch* if the camera's settings changed since. Recordings stay raw.
+Cap on, the same exposure and gain as on the Sun, then *Capture darks*. The master dark is subtracted from the live view (before the flat). The Status overlay shows *Dark: applied*, or *mismatch* if the camera's settings changed since; the Darks panel then says which setting differs (camera, region, bit depth, gain, offset, exposure or sensor temperature). Each camera keeps its own master dark and flat, remembered across restarts, and a master flat also names the optical setup it was taken with. Recordings stay raw.
 
 ## Colour cameras
 

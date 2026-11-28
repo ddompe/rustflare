@@ -3,6 +3,7 @@
 mod api;
 #[cfg(test)]
 mod bench;
+mod calkey;
 mod asynclog;
 mod config;
 mod cooler;

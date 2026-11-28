@@ -524,6 +524,8 @@ pub struct Engine {
     status_tx: watch::Sender<Status>,
     preview_tx: SyncSender<Frame>,
     flat: rustflare_capture::SharedFlat,
+    /// Keys read from the notes of masters (by master path), so a master's settings are read once.
+    master_keys: std::collections::HashMap<String, crate::calkey::CalKey>,
     corona: preview::SharedCorona,
     /// Auto-stretch to the brightest part of the frame instead of the 99.8th percentile (the planet profile: a planet covers well under 0.2 % of the frame).
     peak_stretch: Arc<std::sync::atomic::AtomicBool>,
@@ -568,8 +570,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         g.scale = c.get("coronagraph").and_then(|v| v.get("scale")).and_then(|v| v.as_f64()).filter(|s| (0.8..=1.2).contains(s)).unwrap_or(1.03);
     }
     let flat: rustflare_capture::SharedFlat = Default::default();
-    load_saved_flat(&storage, &flat);
-    load_saved_dark(&storage, &flat);
+    // masters are loaded when a camera opens: each camera has its own (see `load_calibration_for_camera`)
     let engine = Engine {
         drivers: cams::drivers(sky.clone()),
         sky,
@@ -677,6 +678,7 @@ pub fn spawn(storage: Arc<Storage>, stretch: Arc<std::sync::atomic::AtomicBool>,
         preview_tx: preview::spawn(jpeg_tx, stretch, peak_stretch.clone(), flat.clone(), corona.clone(), colour.clone()),
         peak_stretch,
         flat,
+        master_keys: Default::default(),
         corona,
         colour,
         demand,
@@ -739,28 +741,6 @@ fn load_dark(storage: &Storage, flat: &rustflare_capture::SharedFlat, rel: &str,
     s.dark_exposure_us = exposure_us;
     s.dark_gain = gain;
     Ok(())
-}
-
-/// Restores the master flat chosen last time (config key `flat`: master path relative to the storage folder).
-fn load_saved_flat(storage: &Storage, flat: &rustflare_capture::SharedFlat) {
-    let cfg = crate::config::read(storage.config_file());
-    let Some(f) = cfg.get("flat") else { return };
-    let (Some(rel), enabled) = (f.get("master").and_then(|v| v.as_str()), f.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true)) else { return };
-    match load_flat(storage, flat, rel, enabled) {
-        Ok(()) => log::info!("flat: loaded {rel} (enabled: {enabled})"),
-        Err(e) => log::warn!("flat: cannot load {rel}: {e}"),
-    }
-}
-
-/// Restores the master dark (config key `dark`), same idea as the flat.
-fn load_saved_dark(storage: &Storage, flat: &rustflare_capture::SharedFlat) {
-    let cfg = crate::config::read(storage.config_file());
-    let Some(d) = cfg.get("dark") else { return };
-    let Some(rel) = d.get("master").and_then(|v| v.as_str()) else { return };
-    match load_dark(storage, flat, rel, d.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true), d.get("exposure_us").and_then(|v| v.as_f64()), d.get("gain").and_then(|v| v.as_f64())) {
-        Ok(()) => log::info!("dark: loaded {rel}"),
-        Err(e) => log::warn!("dark: cannot load {rel}: {e}"),
-    }
 }
 
 impl Engine {
@@ -1312,12 +1292,25 @@ impl Engine {
         self.refresh_optics();
         self.refresh_ntp(false);
         {
+            let (dark_name, flat_name) = { let s = self.flat.lock().unwrap(); (s.dark_name.clone(), s.name.clone()) };
+            let now = self.cal_key();
+            let dark_taken = dark_name.as_deref().and_then(|n| self.master_key(n));
+            let flat_taken = flat_name.as_deref().and_then(|n| self.master_key(n));
             let s = self.flat.lock().unwrap();
             let cur_exp = self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == CTRL_EXPOSURE_US)).map(|c| c.value);
             let cur_gain = self.status.camera.as_ref().and_then(|c| c.controls.iter().find(|c| c.id == "gain")).map(|c| c.value);
             let close = |a: Option<f64>, b: Option<f64>| match (a, b) { (Some(a), Some(b)) => (a - b).abs() <= 0.01 * a.abs().max(b.abs()).max(1.0), _ => false };
-            self.status.darks = DarksStatus { available: s.dark.is_some(), applied: s.dark_enabled && s.dark.is_some(), name: s.dark_name.clone(), exposure_us: s.dark_exposure_us, gain: s.dark_gain, matches_camera: close(s.dark_exposure_us, cur_exp) && close(s.dark_gain, cur_gain) };
-            self.status.flats = FlatsStatus { available: s.field.is_some(), applied: s.enabled && s.field.is_some(), name: s.name.clone() };
+            // a master taken after the key was introduced says what differs; an older one is judged by exposure and gain, as before
+            let dark_differs: Vec<&'static str> = match (&dark_taken, &now) {
+                (Some(t), Some(n)) => crate::calkey::differences(t, n, crate::calkey::Kind::Dark),
+                _ => { let mut d = Vec::new(); if !close(s.dark_exposure_us, cur_exp) { d.push("exposure") } if !close(s.dark_gain, cur_gain) { d.push("gain") } d }
+            };
+            let flat_differs: Vec<&'static str> = match (&flat_taken, &now) {
+                (Some(t), Some(n)) => crate::calkey::differences(t, n, crate::calkey::Kind::Flat),
+                _ => Vec::new(),
+            };
+            self.status.darks = DarksStatus { available: s.dark.is_some(), applied: s.dark_enabled && s.dark.is_some(), name: s.dark_name.clone(), exposure_us: s.dark_exposure_us, gain: s.dark_gain, matches_camera: dark_differs.is_empty(), differs: dark_differs };
+            self.status.flats = FlatsStatus { available: s.field.is_some(), applied: s.enabled && s.field.is_some(), name: s.name.clone(), differs: flat_differs };
         }
         let gp = self.guide_params;
         self.status.guide_params = GuideParamsStatus { window_s: gp.window.as_secs_f64(), deadband_px: gp.deadband_px, gain: gp.gain, speed: gp.speed, fast_speed: gp.fast_speed, fast_above_px: gp.fast_above_px };
@@ -2452,6 +2445,7 @@ impl Engine {
         self.camera_pixel_um = cam.pixel_size_um();
         let bayer = self.camera.as_ref().and_then(|c| c.bayer()).map(|b| b.name());
         self.status.camera = Some(CameraStatus { driver: info.driver, id: info.id, name: info.name, controls, bayer, ..Default::default() });
+        self.load_calibration_for_camera();
         self.camera = Some(cam);
         self.cooler_warmup = None;
         self.refresh_roi();
@@ -3811,7 +3805,7 @@ impl Engine {
                 if let Err(e) = master_res {
                     self.status.error = Some(format!("master flat failed: {e}"));
                 }
-                let sc = self.sidecar("flats", json!({ "frames": n, "exposure_us": exposure_used, "target_level": target.level, "final_mean": mean, "master": master.file_name().map(|n| n.to_string_lossy().to_string()), "restored_exposure_us": original_exposure }));
+                let sc = self.sidecar("flats", json!({ "frames": n, "exposure_us": exposure_used, "target_level": target.level, "final_mean": mean, "master": master.file_name().map(|n| n.to_string_lossy().to_string()), "restored_exposure_us": original_exposure, "calibration_key": self.cal_key() }));
                 self.write_sidecar(&stem, &sc);
                 self.finish_capture(Some(rel(&self.data_dir(), &stem.with_extension("ser"))), "saved");
                 Job::Idle
@@ -3867,7 +3861,7 @@ impl Engine {
                             st.dark_gain = Some(d.gain);
                         }
                         self.save_flat_choice();
-                        let sc = self.sidecar("darks", json!({ "frames": d.frames, "exposure_us": d.exposure_us, "gain": d.gain, "master": rel_png }));
+                        let sc = self.sidecar("darks", json!({ "frames": d.frames, "exposure_us": d.exposure_us, "gain": d.gain, "master": rel_png, "calibration_key": self.cal_key() }));
                         self.write_sidecar(&d.stem, &sc);
                         self.finish_capture(Some(rel_png), "saved");
                     }
@@ -4002,13 +3996,95 @@ impl Engine {
         Ok(json!({ "applied": setup.name, "before": before, "after": summary(&self.status), "not_restored": not_restored }))
     }
 
+    /// Remembers the master flat and dark of the open camera (config key `calibration`, by camera): each camera has its own.
     fn save_flat_choice(&self) {
+        let Some(cs) = self.status.camera.as_ref() else { return };
+        let key = format!("{}/{}", cs.driver, cs.id);
         let s = self.flat.lock().unwrap();
+        let mut cfg = crate::config::read(self.storage.config_file()).get("calibration").and_then(|v| v.as_object().cloned()).unwrap_or_default();
+        let mut entry = cfg.get(&key).and_then(|v| v.as_object().cloned()).unwrap_or_default();
         if let Some(name) = &s.name {
-            let _ = crate::config::set(self.storage.config_file(), "flat", json!({ "master": name, "enabled": s.enabled }));
+            entry.insert("flat".into(), json!({ "master": name, "enabled": s.enabled }));
         }
         if let Some(name) = &s.dark_name {
-            let _ = crate::config::set(self.storage.config_file(), "dark", json!({ "master": name, "enabled": s.dark_enabled, "exposure_us": s.dark_exposure_us, "gain": s.dark_gain }));
+            entry.insert("dark".into(), json!({ "master": name, "enabled": s.dark_enabled, "exposure_us": s.dark_exposure_us, "gain": s.dark_gain }));
+        }
+        cfg.insert(key, Value::Object(entry));
+        let _ = crate::config::set(self.storage.config_file(), "calibration", Value::Object(cfg));
+    }
+
+    /// The settings the camera has now, as a calibration key; `None` without a camera.
+    fn cal_key(&self) -> Option<crate::calkey::CalKey> {
+        let cam = self.status.camera.as_ref()?;
+        let ctl = |id: &str| cam.controls.iter().find(|c| c.id == id).map(|c| c.value);
+        Some(crate::calkey::CalKey {
+            camera: cam.name.clone(),
+            roi: self.status.roi.as_ref().map(|r| [r.x, r.y, r.width, r.height]),
+            exposure_us: ctl(CTRL_EXPOSURE_US),
+            gain: ctl("gain"),
+            offset: ctl("offset"),
+            bit16: ctl("high_bit_depth").map(|v| v >= 0.5),
+            temp_c: self.sensor_temps().0,
+            setup: self.status.optics.setup.active.clone(),
+        })
+    }
+
+    /// The note beside a master (`<stem>_master.png` has `<stem>.json`).
+    fn master_note(&self, rel: &str) -> Option<Value> {
+        let stem = rel.strip_suffix("_master.png")?;
+        let path = crate::files::resolve(&self.storage.dir(), &format!("{stem}.json")).ok()?;
+        serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+    }
+
+    /// The settings a master was taken with, from its note (cached; `None` for a master from before the key was written).
+    fn master_key(&mut self, rel: &str) -> Option<crate::calkey::CalKey> {
+        if let Some(k) = self.master_keys.get(rel) {
+            return Some(k.clone());
+        }
+        let k = crate::calkey::read_from_note(&self.master_note(rel)?)?;
+        self.master_keys.insert(rel.to_string(), k.clone());
+        Some(k)
+    }
+
+    /// Loads the flat and dark remembered for the camera that was just opened, and none of another camera's. A master saved before there was
+    /// one per camera is taken over only when its note says it was made with this camera.
+    fn load_calibration_for_camera(&mut self) {
+        let Some(cs) = self.status.camera.as_ref() else { return };
+        let (key, name) = (format!("{}/{}", cs.driver, cs.id), cs.name.clone());
+        {
+            let mut s = self.flat.lock().unwrap();
+            s.field = None;
+            s.name = None;
+            s.dark = None;
+            s.dark_name = None;
+            s.dark_exposure_us = None;
+            s.dark_gain = None;
+        }
+        let cfg = crate::config::read(self.storage.config_file());
+        let saved = cfg.get("calibration").and_then(|c| c.get(&key)).cloned();
+        let mut migrated = false;
+        for kind in ["flat", "dark"] {
+            let entry = match saved.as_ref().and_then(|e| e.get(kind)) {
+                Some(e) => e.clone(),
+                None => match cfg.get(kind) {
+                    Some(old) if old.get("master").and_then(|v| v.as_str()).and_then(|m| self.master_note(m)).and_then(|n| n.get("camera").and_then(|c| c.as_str()).map(|c| c == name)) == Some(true) => { migrated = true; old.clone() }
+                    _ => continue,
+                },
+            };
+            let Some(rel) = entry.get("master").and_then(|v| v.as_str()) else { continue };
+            let enabled = entry.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+            let res = if kind == "flat" {
+                load_flat(&self.storage, &self.flat, rel, enabled)
+            } else {
+                load_dark(&self.storage, &self.flat, rel, enabled, entry.get("exposure_us").and_then(|v| v.as_f64()), entry.get("gain").and_then(|v| v.as_f64()))
+            };
+            match res {
+                Ok(()) => log::info!("{kind}: loaded {rel} for {key}"),
+                Err(e) => log::warn!("{kind}: cannot load {rel}: {e}"),
+            }
+        }
+        if migrated {
+            self.save_flat_choice();
         }
     }
 
