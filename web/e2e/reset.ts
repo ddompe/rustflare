@@ -14,6 +14,9 @@ export async function resetSimulators(page: Page) {
   const post = (path: string, data: unknown = {}) => page.request.post(`/api${path}`, { data })
   const put = (path: string, data: unknown) => page.request.put(`/api${path}`, { data })
   await stopCapture(page)
+  // a calibration, guiding or a tracker left running by an earlier (possibly failed) test disturbs every test after it
+  await post('/guiding/stop'); await post('/tracking/stop')
+  await expect.poll(async () => (await (await page.request.get('/api/status')).json()).guiding?.state, { timeout: 15_000 }).not.toBe('calibrating')
   await put('/storage/reserve', { gb: 2 }) // the test server records to its own disk: keep its reserve small (a CI runner has little free)
   await post('/camera/close'); await post('/mount/disconnect')
   await post('/camera/open', { driver: 'simulator', id: 'sim0' })

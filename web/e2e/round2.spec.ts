@@ -282,6 +282,7 @@ test.describe('notes chip and mount time words (P1b, P2d)', () => {
 
 test.describe('Start while calibrating (P2d)', () => {
   test('Start is disabled with its reason, and Calibrating stays a visible warning', async ({ page }) => {
+    test.setTimeout(120_000) // the calibration itself takes 15 s here and longer on a busy CI runner; the test waits up to 60 s for it
     await post(page, '/mount/tracking', { enabled: true })
     await post(page, '/tracking/start', { mode: 'limb' })
     await page.goto('/')
