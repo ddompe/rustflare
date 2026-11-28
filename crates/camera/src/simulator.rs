@@ -178,7 +178,20 @@ impl Camera for SimCamera {
             for x in 0..W {
                 let signal = if self.scene >= 2 {
                     let (dx, dy) = (x as f64 - cx, y as f64 - cy);
-                    if self.scene == 2 { moon_signal(dx, dy, radius, self.phase, level) } else { planet_signal(dx, dy, radius, level) }
+                    if self.scene == 2 {
+                        moon_signal(dx, dy, radius, self.phase, level)
+                    } else if self.defocus > 0.1 && dx * dx + dy * dy < (1.4 * radius + 2.0 * self.defocus).powi(2) {
+                        // out of focus: the planet seen through a disc of confusion (9 samples), which softens the limb and the bands
+                        let k = self.defocus * 0.7;
+                        let mut sum = planet_signal(dx, dy, radius, level);
+                        for i in 0..8 {
+                            let a = i as f64 * std::f64::consts::FRAC_PI_4;
+                            sum += planet_signal(dx + k * a.cos(), dy + k * a.sin(), radius, level);
+                        }
+                        sum / 9.0
+                    } else {
+                        planet_signal(dx, dy, radius, level)
+                    }
                 } else if self.scene == 0 {
                     let (dx, dy) = (x as f64 - cx, y as f64 - cy);
                     let r2 = (dx * dx + dy * dy) / (radius * radius);

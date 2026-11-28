@@ -224,6 +224,22 @@ test('focus assist scores the image, falls when defocused and keeps a best marke
   await page.getByRole('switch', { name: 'Focus assist' }).uncheck()
 })
 
+test('focus assist on a planet scores the planet and falls when it is defocused', async ({ page }) => {
+  await put(page, '/profile', { id: 'planet' })
+  await put(page, '/camera/control', { id: 'sim_scene', value: 3 })
+  await put(page, '/camera/control', { id: 'sim_defocus', value: 0 })
+  await put(page, '/focus', { enabled: true, reset: true })
+  const lucky = async () => (await (await page.request.get('/api/status')).json()).focus.lucky as number | null
+  await expect.poll(lucky, { timeout: 20_000 }).not.toBeNull()
+  const sharp = (await lucky())!
+  expect(sharp).toBeGreaterThan(0)
+  await put(page, '/camera/control', { id: 'sim_defocus', value: 8 })
+  await expect.poll(lucky, { timeout: 20_000 }).toBeLessThan(sharp * 0.85)
+  await put(page, '/camera/control', { id: 'sim_defocus', value: 0 })
+  await put(page, '/camera/control', { id: 'sim_scene', value: 0 })
+  await put(page, '/focus', { enabled: false })
+})
+
 test('quick Rec and Snap are on the Camera tab and use the saved recipe', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('radio', { name: 'Sequence' }).count()

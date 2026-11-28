@@ -2731,6 +2731,7 @@ impl Engine {
     /// publish the history and the peak of its smoothed curve.
     fn step_focus(&mut self, frame: &Frame) {
         let noun = self.noun();
+        let planet = self.status.profile == "planet";
         let Some(f) = self.focus.as_mut() else { return };
         let now = Instant::now();
         if now.duration_since(f.last_scored) < Duration::from_millis(40) {
@@ -2745,15 +2746,18 @@ impl Engine {
         }
         let win = f.window.unwrap().0;
         let mut note = None;
-        match rustflare_tracking::focus::sharpness(frame, win, sun) {
+        // a planet is a few tens of pixels across and has no surface texture to score: its own measure finds it in the frame and scores its edge and bands
+        let scored = if planet { rustflare_tracking::focus::planet_sharpness(frame) } else { rustflare_tracking::focus::sharpness(frame, win, sun) };
+        match scored {
             Some(sc) => {
                 f.burst.push(sc);
                 f.live = Some(f.live.map_or(sc, |l| 0.7 * l + 0.3 * sc));
             }
+            None if planet => note = Some("No planet found in the frame: is it in view, the cap off, and the exposure short enough not to clip it?".into()),
             None if sun.is_some() => note = Some(format!("The {noun} has moved out of the scoring window (a Go to, or a long drift): press Reset history.")),
             None => note = Some(format!("Nothing bright to judge: is the {noun} in view and the cap off?")),
         }
-        if sun.is_none() && note.is_none() {
+        if sun.is_none() && note.is_none() && !planet {
             note = Some(format!("The {noun} is not detected, so the score includes its edge and moves with the {noun}."));
         }
         if now.duration_since(f.burst_started) >= FOCUS_BURST {

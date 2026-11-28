@@ -22,7 +22,7 @@ RustFlare began as a solar imaging server and assumed the Sun in its words, its 
 - The Sun detector does not find a planet: run on the simulated 25 px planet it returns a confident phantom disc of about 450 px radius. This is why the planet profile has its own measurer rather than a tuned threshold. On the Moon with a phase it takes the lit part for the disc (the centre moves toward the lit side, the radius shrinks): the Moon profile says so and the limb fit is right for a mostly full Moon only. Both are pinned by tests in `crates/server/src/target_tests.rs`; a robust lunar limb with a terminator is not done.
 - Everything was built and tested on the simulators (a Moon with a phase, a planet with seeing jitter). Real seeing, a real planet's bands and moons, and the Moon's terminator on a real camera are unverified.
 - The profile is state. A chip names it whenever it is not a Sun profile, and Go to offers the switch when target and profile disagree.
-- Per-profile recording defaults, per-channel colour display controls, a planet focus metric and the dead band in arcseconds are not built.
+- Per-profile recording defaults, per-channel colour display controls and the dead band in arcseconds are not built.
 
 ## Addendum: an optical train carries a default profile (2026-11-26)
 

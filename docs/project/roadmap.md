@@ -28,7 +28,7 @@ Still open (see the board for the numbers):
 
 - **ZWO ASI camera follow-ups:** measure the ASI174MM Mini on a USB 3 port and cable; try a colour ASI, the ASI region of interest and the cooler, fan and anti-dew controls (built in 0.7.1 and 0.8.0, tested on the simulator and a fake SDK only); binning.
 - **EAF support and seeing-robust autofocus**: drive a ZWO EAF; compute a focus metric on an *average of several frames* (aligned on the limb) so turbulence does not corrupt the metric. Focus assist by hand (0.6.1) is built and its score is not yet tuned on real data (#84).
-- **The Moon and planets on real targets:** the profiles, the Moon and planet measurers, Go to for the Moon and planets, per-channel colour display, a planet focus metric, the dead band in arcseconds and per-profile recording defaults ([proposal](proposal-use-profiles.md) lists what is built). Nothing here has run on a real Moon or planet.
+- **The Moon and planets on real targets:** the profiles, the Moon and planet measurers, Go to for the Moon and planets, per-channel colour display, the dead band in arcseconds and per-profile recording defaults ([proposal](proposal-use-profiles.md) lists what is built). Nothing here has run on a real Moon or planet.
 - **More mounts:** Sky-Watcher (SynScan / EQMOD, a separate protocol, [research](research-skywatcher.md)); the rest of the iOptron range beyond the HAE69C (guiding and Go to Sun after a time sync are still to be checked on the real mount).
 - **Stacking:** from memory on the Sun for an hour, against AutoStakkert and Siril (#87, #91); colour recordings (the stacker is mono only).
 - **Real-hardware checks** of what was built on the simulators: the [hardware checklist](hardware-checklist.md).

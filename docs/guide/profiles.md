@@ -40,4 +40,4 @@ For the planet, *clipping* means the brightest part of the picture reaches full 
 
 The Moon's bright edge is found well when it is nearly full. With a terminator the detector takes the **lit part** for the disc: the marked centre moves toward the lit side and the circle is smaller than the Moon. That is why the Moon profile explains that the terminator is not used. Hold a crescent or quarter Moon by hand or with **Feature** on a crater.
 
-What is not there yet, from the [proposal](../project/proposal-use-profiles.md): per-channel levels, a planet focus metric, the dead band in arcseconds, and recording defaults (frames, seconds) per profile. Nothing in this section has been tried on a real Moon or planet yet, only on the simulators.
+What is not there yet, from the [proposal](../project/proposal-use-profiles.md): per-channel levels, the dead band in arcseconds, and recording defaults (frames, seconds) per profile. Nothing in this section has been tried on a real Moon or planet yet, only on the simulators.

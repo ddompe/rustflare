@@ -61,7 +61,9 @@ export function FocusAssist({ status }: { status: Status | null }) {
           </div>
           <Graph history={h} best={f?.best ?? null} />
           {f?.note && <div className="warn-text" role="status">{f.note}</div>}
-          <div className="hint-text">Each point is a burst of about 2.5 seconds that counts only its sharpest frames, so seeing does not fool it, and the grey band is how far a point could be off. Differences inside the band are noise: look for the broad top of the curve, then come back to the dashed best line (the peak of the smoothed curve). Only the Sun's surface detail is scored, in a window that stays where the Sun was when you switched this on, so the Sun drifting a little while you turn the focuser does not matter. After a Go to, press Reset history.</div>
+          <div className="hint-text">Each point is a burst of about 2.5 seconds that counts only its sharpest frames, so seeing does not fool it, and the grey band is how far a point could be off. Differences inside the band are noise: look for the broad top of the curve, then come back to the dashed best line (the peak of the smoothed curve). {status?.profile === 'planet'
+            ? 'The planet is found in the frame by itself and its edge, bands and rings are scored, so it can drift or be moved without a reset. Keep it from clipping: a white, flat-topped planet scores lower than it should (shorten the exposure).'
+            : "Only the Sun's surface detail is scored, in a window that stays where the Sun was when you switched this on, so the Sun drifting a little while you turn the focuser does not matter. After a Go to, press Reset history."}</div>
           <button type="button" onClick={() => run(() => api('PUT', '/focus', { enabled: true, reset: true }))}>Reset history</button>
         </>
       )}
